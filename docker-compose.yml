@@ -1,0 +1,48 @@
+name: new-chat
+
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: stockflow
+      POSTGRES_USER: stockflow
+      POSTGRES_PASSWORD: stockflow-local-password
+    volumes:
+      - stockflow_db:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U stockflow -d stockflow"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+
+  app:
+    build: .
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      DATABASE_URL: postgresql://stockflow:stockflow-local-password@db:5432/stockflow?schema=public
+      ADMIN_NAME: ${ADMIN_NAME:-系統管理員}
+      ADMIN_EMAIL: ${ADMIN_EMAIL:-admin@example.com}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-change-me-now}
+      TOTP_ENCRYPTION_KEY: ${TOTP_ENCRYPTION_KEY:-646d392c966a5c2eb660394e26da5d252d1028246722ccac049fc49757e09750}
+      UPLOAD_DIR: /data/uploads
+      GOOGLE_SHEET_ID: ${GOOGLE_SHEET_ID:-121W1NjIfpNk_nDX9TcpjtiaqokXKLwaOoPujQRoKaRE}
+      GOOGLE_SERVICE_ACCOUNT_JSON: ${GOOGLE_SERVICE_ACCOUNT_JSON:-}
+      GOOGLE_SERVICE_ACCOUNT_EMAIL: ${GOOGLE_SERVICE_ACCOUNT_EMAIL:-}
+      GOOGLE_PRIVATE_KEY: ${GOOGLE_PRIVATE_KEY:-}
+      GOOGLE_SHEET_SYNC_ENABLED: ${GOOGLE_SHEET_SYNC_ENABLED:-false}
+      GOOGLE_SHEET_SYNC_TIME_ZONE: ${GOOGLE_SHEET_SYNC_TIME_ZONE:-Asia/Taipei}
+      GOOGLE_SHEET_SYNC_HOUR: ${GOOGLE_SHEET_SYNC_HOUR:-3}
+      GOOGLE_SHEET_SYNC_MINUTE: ${GOOGLE_SHEET_SYNC_MINUTE:-0}
+      GOOGLE_SHEETS_DEMO_FILE: ${GOOGLE_SHEETS_DEMO_FILE:-/app/prisma/google-sheet-data.json}
+    volumes:
+      - stockflow_uploads:/data/uploads
+    depends_on:
+      db:
+        condition: service_healthy
+
+volumes:
+  stockflow_db:
+  stockflow_uploads:

@@ -1,0 +1,8 @@
+node_modules
+.next
+.git
+.zeabur
+work
+.env*
+*.log
+README.md

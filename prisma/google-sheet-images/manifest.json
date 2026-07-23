@@ -1,0 +1,385 @@
+[
+  {
+    "cell": "A2",
+    "skus": [
+      "N202512-M",
+      "N202512-L"
+    ],
+    "file": "N202512-M.webp",
+    "mime": "image/webp",
+    "bytes": 24812,
+    "width": 1280,
+    "height": 1600
+  },
+  {
+    "cell": "A3",
+    "skus": [
+      "N202511-M",
+      "N202511-L",
+      "N202511-XL"
+    ],
+    "file": "N202511-M.webp",
+    "mime": "image/webp",
+    "bytes": 11288,
+    "width": 1277,
+    "height": 1600
+  },
+  {
+    "cell": "A4",
+    "skus": [
+      "N202510"
+    ],
+    "file": "N202510.webp",
+    "mime": "image/webp",
+    "bytes": 34320,
+    "width": 1280,
+    "height": 1600
+  },
+  {
+    "cell": "A5",
+    "skus": [
+      "N202509-01",
+      "N202509-02",
+      "N202509-03"
+    ],
+    "file": "N202509-01.webp",
+    "mime": "image/webp",
+    "bytes": 51562,
+    "width": 1280,
+    "height": 1600
+  },
+  {
+    "cell": "A6",
+    "skus": [
+      "N202508-M",
+      "N202508-L",
+      "N202508-XL"
+    ],
+    "file": "N202508-M.webp",
+    "mime": "image/webp",
+    "bytes": 27440,
+    "width": 1280,
+    "height": 1600
+  },
+  {
+    "cell": "A7",
+    "skus": [
+      "N202507"
+    ],
+    "file": "N202507.webp",
+    "mime": "image/webp",
+    "bytes": 25292,
+    "width": 1600,
+    "height": 1600
+  },
+  {
+    "cell": "A8",
+    "skus": [
+      "N202506-S",
+      "N202506-M",
+      "N202506-L"
+    ],
+    "file": "N202506-S.webp",
+    "mime": "image/webp",
+    "bytes": 29382,
+    "width": 1600,
+    "height": 1600
+  },
+  {
+    "cell": "A9",
+    "skus": [
+      "N202505-M",
+      "N202505-L"
+    ],
+    "file": "N202505-M.webp",
+    "mime": "image/webp",
+    "bytes": 98556,
+    "width": 1280,
+    "height": 1600
+  },
+  {
+    "cell": "A10",
+    "skus": [
+      "N202504-S",
+      "N202504-M",
+      "N202504-L"
+    ],
+    "file": "N202504-S.webp",
+    "mime": "image/webp",
+    "bytes": 37148,
+    "width": 1280,
+    "height": 1600
+  },
+  {
+    "cell": "A11",
+    "skus": [
+      "N202503-S",
+      "N202503-M",
+      "N202503-L"
+    ],
+    "file": "N202503-S.webp",
+    "mime": "image/webp",
+    "bytes": 27400,
+    "width": 1280,
+    "height": 1600
+  },
+  {
+    "cell": "A12",
+    "skus": [
+      "N202502-M",
+      "N202502-L"
+    ],
+    "file": "N202502-M.webp",
+    "mime": "image/webp",
+    "bytes": 63118,
+    "width": 1280,
+    "height": 1600
+  },
+  {
+    "cell": "A13",
+    "skus": [
+      "N202501-M",
+      "N202501-L"
+    ],
+    "file": "N202501-M.webp",
+    "mime": "image/webp",
+    "bytes": 13154,
+    "width": 1280,
+    "height": 1600
+  },
+  {
+    "cell": "A14",
+    "skus": [
+      "N202500-M",
+      "N202500-L"
+    ],
+    "file": "N202500-M.webp",
+    "mime": "image/webp",
+    "bytes": 22524,
+    "width": 1277,
+    "height": 1600
+  },
+  {
+    "cell": "A15",
+    "skus": [
+      "N202600-B",
+      "N202600-R"
+    ],
+    "file": "N202600-B.webp",
+    "mime": "image/webp",
+    "bytes": 27684,
+    "width": 1280,
+    "height": 1600
+  },
+  {
+    "cell": "A16",
+    "skus": [
+      "N202601-S",
+      "N202601-M",
+      "N202601-L"
+    ],
+    "file": "N202601-S.webp",
+    "mime": "image/webp",
+    "bytes": 32218,
+    "width": 1280,
+    "height": 1600
+  },
+  {
+    "cell": "A17",
+    "skus": [
+      "N202602"
+    ],
+    "file": "N202602.webp",
+    "mime": "image/webp",
+    "bytes": 33650,
+    "width": 1280,
+    "height": 1600
+  },
+  {
+    "cell": "A18",
+    "skus": [
+      "N202603-M",
+      "N202603-L",
+      "N202603-XL"
+    ],
+    "file": "N202603-M.webp",
+    "mime": "image/webp",
+    "bytes": 16204,
+    "width": 1280,
+    "height": 1600
+  },
+  {
+    "cell": "A19",
+    "skus": [
+      "N202604-S",
+      "N202604-M",
+      "N202604-L"
+    ],
+    "file": "N202604-S.webp",
+    "mime": "image/webp",
+    "bytes": 59946,
+    "width": 1277,
+    "height": 1600
+  },
+  {
+    "cell": "A20",
+    "skus": [
+      "N202605P-M",
+      "N202605P-L",
+      "N202605P-XL"
+    ],
+    "file": "N202605P-M.webp",
+    "mime": "image/webp",
+    "bytes": 21190,
+    "width": 1280,
+    "height": 1600
+  },
+  {
+    "cell": "A21",
+    "skus": [
+      "N202605B-M",
+      "N202605B-L",
+      "N202605B-XL"
+    ],
+    "file": "N202605B-M.webp",
+    "mime": "image/webp",
+    "bytes": 12980,
+    "width": 1280,
+    "height": 1600
+  },
+  {
+    "cell": "A22",
+    "skus": [
+      "N202606-S",
+      "N202606-M",
+      "N202606-L"
+    ],
+    "file": "N202606-S.webp",
+    "mime": "image/webp",
+    "bytes": 39520,
+    "width": 1279,
+    "height": 1600
+  },
+  {
+    "cell": "A23",
+    "skus": [
+      "N202607"
+    ],
+    "file": "N202607.webp",
+    "mime": "image/webp",
+    "bytes": 18924,
+    "width": 1280,
+    "height": 1600
+  },
+  {
+    "cell": "A24",
+    "skus": [
+      "N202608-L",
+      "N202608-XL"
+    ],
+    "file": "N202608-L.webp",
+    "mime": "image/webp",
+    "bytes": 14420,
+    "width": 1227,
+    "height": 1600
+  },
+  {
+    "cell": "A25",
+    "skus": [
+      "N202609-M",
+      "N202609-L",
+      "N202609-XL"
+    ],
+    "file": "N202609-M.webp",
+    "mime": "image/webp",
+    "bytes": 9628,
+    "width": 1280,
+    "height": 1600
+  },
+  {
+    "cell": "A26",
+    "skus": [
+      "N202610-L",
+      "N202610-XL"
+    ],
+    "file": "N202610-L.webp",
+    "mime": "image/webp",
+    "bytes": 21666,
+    "width": 1280,
+    "height": 1600
+  },
+  {
+    "cell": "A27",
+    "skus": [
+      "N202611"
+    ],
+    "file": "N202611.webp",
+    "mime": "image/webp",
+    "bytes": 14676,
+    "width": 1280,
+    "height": 1600
+  },
+  {
+    "cell": "A28",
+    "skus": [
+      "N202612-01",
+      "N202612-02",
+      "N202612-03"
+    ],
+    "file": "N202612-01.webp",
+    "mime": "image/webp",
+    "bytes": 30080,
+    "width": 1289,
+    "height": 1600
+  },
+  {
+    "cell": "A29",
+    "skus": [
+      "N202613"
+    ],
+    "file": "N202613.webp",
+    "mime": "image/webp",
+    "bytes": 22002,
+    "width": 1280,
+    "height": 1600
+  },
+  {
+    "cell": "A30",
+    "skus": [
+      "N202614-S",
+      "N202614-M",
+      "N202614-L"
+    ],
+    "file": "N202614-S.webp",
+    "mime": "image/webp",
+    "bytes": 23960,
+    "width": 1280,
+    "height": 1600
+  },
+  {
+    "cell": "A31",
+    "skus": [
+      "N202615O-S",
+      "N202615O-M",
+      "N202615O-L"
+    ],
+    "file": "N202615O-S.webp",
+    "mime": "image/webp",
+    "bytes": 15098,
+    "width": 1280,
+    "height": 1600
+  },
+  {
+    "cell": "A32",
+    "skus": [
+      "N202615B-S",
+      "N202615B-M",
+      "N202615B-L"
+    ],
+    "file": "N202615B-S.webp",
+    "mime": "image/webp",
+    "bytes": 11658,
+    "width": 1280,
+    "height": 1600
+  }
+]
