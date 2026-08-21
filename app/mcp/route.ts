@@ -76,6 +76,14 @@ function createServer(auth: McpAuth) {
   return server;
 }
 
+export function createNeverlandMcpHandler(auth: McpAuth) {
+  return createMcpHandler(() => createServer(auth), {
+    responseMode: "json",
+    legacy: "stateless",
+    onerror: (error) => console.error("mcp_protocol_error", error),
+  });
+}
+
 export async function POST(request: Request) {
   try {
     const authenticated = await authenticate(request);
@@ -91,11 +99,7 @@ export async function POST(request: Request) {
       connectionId: authenticated.auth.connectionId,
     });
 
-    const handler = createMcpHandler(() => createServer(authenticated.auth), {
-      responseMode: "json",
-      legacy: "stateless",
-      onerror: (error) => console.error("mcp_protocol_error", error),
-    });
+    const handler = createNeverlandMcpHandler(authenticated.auth);
     const response = await handler.fetch(request, {
       authInfo: {
         token: "validated",

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { validateRedirectUri } from "../lib/mcp/oauth";
+import { validateAuthorizationResponseIssuer, validateRedirectUri } from "../lib/mcp/oauth";
 
 test("web clients require HTTPS redirect URIs", () => {
   assert.equal(validateRedirectUri("https://chatgpt.com/connector/oauth/callback", "web"), "https://chatgpt.com/connector/oauth/callback");
@@ -18,4 +18,10 @@ test("native HTTP redirects cannot escape the loopback host", () => {
   assert.throws(() => validateRedirectUri("http://127.0.0.1.example.com/callback", "native"), /loopback/);
   assert.throws(() => validateRedirectUri("http://user@127.0.0.1/callback", "native"), /帳密/);
   assert.throws(() => validateRedirectUri("http://127.0.0.1/callback#token", "native"), /fragment/);
+});
+
+test("RFC 9207 issuer validation rejects missing and mismatched issuers", () => {
+  assert.equal(validateAuthorizationResponseIssuer("https://erp.example.com", "https://erp.example.com"), "https://erp.example.com");
+  assert.throws(() => validateAuthorizationResponseIssuer(undefined, "https://erp.example.com"), /issuer/);
+  assert.throws(() => validateAuthorizationResponseIssuer("https://evil.example", "https://erp.example.com"), /issuer/);
 });

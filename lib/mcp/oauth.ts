@@ -1,4 +1,6 @@
 import { createHash, randomBytes, timingSafeEqual } from "crypto";
+import { lookup } from "node:dns/promises";
+import { isIP } from "node:net";
 import type { UserRole } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 
@@ -39,6 +41,11 @@ export function supportedScopes(raw: string | null | undefined) {
   return [...new Set(requested)] as McpScope[];
 }
 
+export function validateAuthorizationResponseIssuer(received: string | null | undefined, expected: string) {
+  if (!received || received !== expected) throw new Error("OAuth authorization response issuer 不符");
+  return received;
+}
+
 function configuredClients(): Record<string, ConfiguredClient> {
   const raw = process.env.MCP_OAUTH_CLIENTS_JSON;
   if (!raw) return {};
@@ -49,17 +56,25 @@ function configuredClients(): Record<string, ConfiguredClient> {
 }
 
 function isPrivateClientMetadataHost(hostname: string) {
-  const host = hostname.toLowerCase();
+  const host = hostname.toLowerCase().replace(/^\[|\]$/g, "");
   if (host === "localhost" || host === "[::1]" || host.endsWith(".local")) return true;
+  if (host === "::1" || host === "::" || /^f[cd][0-9a-f]:/i.test(host) || /^fe[89ab][0-9a-f]:/i.test(host)) return true;
   if (/^127\./.test(host) || /^10\./.test(host) || /^192\.168\./.test(host)) return true;
   const match = host.match(/^172\.(\d+)\./);
   return Boolean(match && Number(match[1]) >= 16 && Number(match[1]) <= 31);
+}
+
+async function assertPublicClientMetadataHost(hostname: string) {
+  if (isPrivateClientMetadataHost(hostname)) throw new Error("OAuth client metadata host 不允許使用本機或私有位址");
+  const addresses = await lookup(hostname, { all: true });
+  if (!addresses.length || addresses.some(({ address }) => isIP(address) > 0 && isPrivateClientMetadataHost(address))) throw new Error("OAuth client metadata host 解析到私有位址");
 }
 
 async function clientFromMetadataDocument(clientId: string): Promise<OAuthClient | null> {
   let url: URL;
   try { url = new URL(clientId); } catch { return null; }
   if (url.protocol !== "https:" || url.pathname === "/" || url.hash || url.username || url.password || isPrivateClientMetadataHost(url.hostname)) return null;
+  await assertPublicClientMetadataHost(url.hostname);
 
   const response = await fetch(url, {
     headers: { Accept: "application/json" },

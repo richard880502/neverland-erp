@@ -263,6 +263,22 @@ model OAuthClient {
   @@index([createdAt])
 }
 
+model McpPreparedAction {
+  id           String   @id @default(cuid())
+  tokenHash    String   @unique
+  kind         String
+  payload      Json
+  userId       String
+  connectionId String
+  clientId     String
+  expiresAt    DateTime
+  consumedAt   DateTime?
+  createdAt    DateTime @default(now())
+
+  @@index([connectionId, consumedAt])
+  @@index([expiresAt])
+}
+
 model Product {
   id          String          @id @default(cuid())
   sku         String          @unique
