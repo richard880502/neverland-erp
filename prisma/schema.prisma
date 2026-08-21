@@ -249,6 +249,19 @@ model OAuthRefreshToken {
   @@index([expiresAt])
 }
 
+/// OAuth Dynamic Client Registration records. These are public-client
+/// identifiers and exact redirect URI allowlists, never client secrets.
+model OAuthClient {
+  id           String   @id @default(cuid())
+  clientId     String   @unique
+  clientName   String
+  redirectUris String[]
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@index([createdAt])
+}
+
 model Product {
   id          String          @id @default(cuid())
   sku         String          @unique

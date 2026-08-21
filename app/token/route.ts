@@ -13,7 +13,7 @@ export async function POST(request: Request) {
     if (typeof clientId !== "string") return oauthError("invalid_request", "client_id is required"); const audience = `${baseUrl(request)}/mcp`;
     if (grantType === "authorization_code") {
       const code = form.get("code"), redirectUri = form.get("redirect_uri"), verifier = form.get("code_verifier");
-      if (typeof code !== "string" || typeof redirectUri !== "string" || typeof verifier !== "string") return oauthError("invalid_request", "code, redirect_uri and code_verifier are required"); getClient(clientId, redirectUri);
+      if (typeof code !== "string" || typeof redirectUri !== "string" || typeof verifier !== "string") return oauthError("invalid_request", "code, redirect_uri and code_verifier are required"); await getClient(clientId, redirectUri);
       return NextResponse.json(await exchangeAuthorizationCode({ code, clientId, redirectUri, codeVerifier: verifier, audience }), { headers: { "Cache-Control": "no-store" } });
     }
     if (grantType === "refresh_token") { const refreshToken = form.get("refresh_token"); if (typeof refreshToken !== "string") return oauthError("invalid_request", "refresh_token is required"); return NextResponse.json(await rotateRefreshToken({ refreshToken, clientId, audience }), { headers: { "Cache-Control": "no-store" } }); }

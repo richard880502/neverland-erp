@@ -13,6 +13,7 @@ const REFRESH_TOKEN_DAYS = 30;
 const CODE_MINUTES = 5;
 
 type ConfiguredClient = { name?: string; redirectUris: string[] };
+type OAuthClient = { name: string; redirectUris: string[] };
 
 function sha256(value: string) { return createHash("sha256").update(value).digest("hex"); }
 function randomToken() { return randomBytes(32).toString("base64url"); }
@@ -46,14 +47,22 @@ function configuredClients(): Record<string, ConfiguredClient> {
   } catch { throw new Error("MCP_OAUTH_CLIENTS_JSON 格式無效"); }
 }
 
-export function getClient(clientId: string, redirectUri: string) {
-  const client = configuredClients()[clientId];
-  if (!client) throw new Error("未註冊的 OAuth client");
-  if (!client.redirectUris.includes(redirectUri)) throw new Error("redirect_uri 未註冊");
-  return client;
+export function validateRedirectUri(value: string) {
+  let uri: URL;
+  try { uri = new URL(value); } catch { throw new Error("redirect_uri 無效"); }
+  if (uri.hash || uri.username || uri.password || uri.protocol !== "https:") throw new Error("redirect_uri 必須為 HTTPS URL，且不可含 fragment 或帳密");
+  return uri.toString();
 }
 
-export function validateAuthorizationRequest(params: URLSearchParams, request: Request) {
+export async function getClient(clientId: string, redirectUri: string): Promise<OAuthClient> {
+  const dynamic = await prisma.oAuthClient.findUnique({ where: { clientId } });
+  const client = dynamic ? { name: dynamic.clientName, redirectUris: dynamic.redirectUris } : configuredClients()[clientId];
+  if (!client) throw new Error("未註冊的 OAuth client");
+  if (!client.redirectUris.includes(redirectUri)) throw new Error("redirect_uri 未註冊");
+  return { name: client.name ?? clientId, redirectUris: client.redirectUris };
+}
+
+export async function validateAuthorizationRequest(params: URLSearchParams, request: Request) {
   requireHttpsInProduction(request);
   const responseType = params.get("response_type"); const clientId = params.get("client_id"); const redirectUri = params.get("redirect_uri");
   const state = params.get("state"); const challenge = params.get("code_challenge"); const method = params.get("code_challenge_method");
@@ -61,8 +70,20 @@ export function validateAuthorizationRequest(params: URLSearchParams, request: R
   if (challenge.length < 43 || challenge.length > 128 || !/^[A-Za-z0-9\-._~]+$/.test(challenge)) throw new Error("無效的 PKCE code_challenge");
   const resource = params.get("resource"); const expectedResource = `${baseUrl(request)}/mcp`;
   if (resource && resource !== expectedResource) throw new Error("OAuth token resource 不符");
-  const client = getClient(clientId, redirectUri);
-  return { clientId, clientName: client.name ?? clientId, redirectUri, state, codeChallenge: challenge, requestedScopes: supportedScopes(params.get("scope")), resource: expectedResource };
+  validateRedirectUri(redirectUri);
+  const client = await getClient(clientId, redirectUri);
+  return { clientId, clientName: client.name, redirectUri, state, codeChallenge: challenge, requestedScopes: supportedScopes(params.get("scope")), resource: expectedResource };
+}
+
+export async function registerDynamicClient(input: { redirectUris: string[]; clientName?: string; grantTypes?: string[]; responseTypes?: string[]; tokenEndpointAuthMethod?: string }) {
+  if (!Array.isArray(input.redirectUris) || input.redirectUris.length < 1 || input.redirectUris.length > 20) throw new Error("redirect_uris 必須介於 1 至 20 個");
+  if (input.tokenEndpointAuthMethod && input.tokenEndpointAuthMethod !== "none") throw new Error("Dynamic MCP client 僅支援 public client（token_endpoint_auth_method=none）");
+  if (input.grantTypes?.some((type) => !["authorization_code", "refresh_token"].includes(type)) || input.responseTypes?.some((type) => type !== "code")) throw new Error("OAuth client grant 或 response type 不支援");
+  const redirectUris = [...new Set(input.redirectUris.map(validateRedirectUri))];
+  const clientName = input.clientName?.trim().slice(0, 120) || "MCP client";
+  const clientId = `mcp_client_${randomBytes(24).toString("base64url")}`;
+  await prisma.oAuthClient.create({ data: { clientId, clientName, redirectUris } });
+  return { client_id: clientId, client_name: clientName, redirect_uris: redirectUris, grant_types: ["authorization_code", "refresh_token"], response_types: ["code"], token_endpoint_auth_method: "none" };
 }
 
 export async function issueAuthorizationCode(input: { userId: string; clientId: string; clientName: string; redirectUri: string; codeChallenge: string; scopes: McpScope[]; userAgent: string | null }) {

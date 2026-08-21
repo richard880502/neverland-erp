@@ -16,7 +16,7 @@ export async function GET(request: Request) {
     if (!takeRateLimit(`authorize:${ip}`, 30).allowed) return page("請稍後再試", "<h1>請稍後再試</h1><p>授權請求次數過多。</p>", 429);
     const auth = await getAuthContext(); if (!auth) return NextResponse.redirect(new URL(`/login?returnTo=${encodeURIComponent(`${new URL(request.url).pathname}${new URL(request.url).search}`)}`, baseUrl(request)));
     if (auth.user.mustChangePassword) return page("需要變更密碼", "<h1>請先變更密碼</h1><p>為保護 MCP connection，請先在 ERP 變更初始密碼。</p>", 403);
-    const authorization = validateAuthorizationRequest(new URL(request.url).searchParams, request);
+    const authorization = await validateAuthorizationRequest(new URL(request.url).searchParams, request);
     const options = authorization.requestedScopes.map((scope) => `<label><input type="checkbox" name="scope" value="${escapeHtml(scope)}" ${highRisk.has(scope) ? "" : "checked"}> <b>${escapeHtml(scope)}</b>${highRisk.has(scope) ? " <small>需要明確授權</small>" : ""}</label>`).join("");
     const hidden = [...new URL(request.url).searchParams.entries()].map(([key, value]) => `<input type="hidden" name="${escapeHtml(key)}" value="${escapeHtml(value)}">`).join("");
     return page("授權 Neverland ERP MCP", `<h1>授權 AI Assistant</h1><p><b>${escapeHtml(authorization.clientName)}</b> 想連線 Neverland ERP。</p><p>此連線會使用你的 ERP 角色權限；勾選 scope 不會提高原本角色的權限。</p><form method="post" action="/authorize">${hidden}<section>${options}</section><button type="submit" name="decision" value="allow">允許連線</button><button class="secondary" type="submit" name="decision" value="deny">拒絕</button></form>`);
@@ -28,7 +28,7 @@ export async function POST(request: Request) {
     const ip = request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || "unknown";
     if (!takeRateLimit(`authorize:${ip}`, 30).allowed) return page("請稍後再試", "<h1>請稍後再試</h1><p>授權請求次數過多。</p>", 429);
     assertSameOrigin(request); const auth = await getAuthContext(); if (!auth || auth.user.mustChangePassword) return page("未授權", "<h1>請先登入並完成帳號設定</h1>", 401);
-    const form = await request.formData(); const authorization = validateAuthorizationRequest(queryFromForm(form), request);
+    const form = await request.formData(); const authorization = await validateAuthorizationRequest(queryFromForm(form), request);
     if (form.get("decision") !== "allow") { const denied = new URL(authorization.redirectUri); denied.searchParams.set("error", "access_denied"); denied.searchParams.set("state", authorization.state); return NextResponse.redirect(denied); }
     const selected = form.getAll("scope").filter((scope): scope is string => typeof scope === "string"); const scopes = authorization.requestedScopes.filter((scope) => selected.includes(scope));
     if (!scopes.length) return page("請選擇權限", "<h1>請選擇至少一項授權範圍</h1><p>請返回上一頁選擇需要的 read scope。</p>", 400);

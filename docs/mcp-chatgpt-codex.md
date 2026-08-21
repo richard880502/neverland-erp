@@ -22,13 +22,7 @@ It uses a credential separate from the ERP browser session. The access token and
    npm run db:migrate
    ```
 
-3. Register each OAuth public client and its exact callback URL. This prevents an authorization code from ever being sent to an arbitrary redirect URI.
-
-   ```dotenv
-   MCP_OAUTH_CLIENTS_JSON={"<client-id>":{"name":"ChatGPT","redirectUris":["https://<exact-callback-host>/oauth/callback"]}}
-   ```
-
-   The `client_id` and callback URI must come from the MCP host's connection setup. Do not use wildcards, a development callback, or a browser URL guessed from an email domain. Keep this value in the deployment secret store, not committed source.
+3. The server supports OAuth Dynamic Client Registration at `/register`. ChatGPT/Codex registers its public client and exact HTTPS callback URI automatically during the first connection; no per-client environment variable is required. The server stores only the public client identifier, display name, and exact redirect URI allowlist.
 
 4. Configure edge rate limiting as a second layer for `/mcp`, `/authorize`, `/token`, and `/revoke`. The application has per-instance guardrails, but edge limits work across replicas.
 
@@ -57,7 +51,7 @@ ERP roles are still authoritative. Effective permission is the intersection of t
 ## ChatGPT / Codex draft test
 
 1. In the MCP host, add a custom remote MCP server with `https://<erp-domain>/mcp`.
-2. Start the connection. If the host shows an unknown client error, add its supplied client ID and exact callback URI to `MCP_OAUTH_CLIENTS_JSON`, redeploy, and start over.
+2. Start the connection. The MCP host automatically registers its public client, then opens Neverland ERP login.
 3. Sign in to Neverland ERP, select only the scopes required, and approve.
 4. Scan tools. Verify `get_inventory`, `get_low_stock`, and `get_sheet_sync_status` work.
 5. With an Inventory/Admin account and `inventory:write`, ask for a movement. Confirm the host presents the non-read-only tool confirmation. Verify it creates an immutable movement, audit record, and Google Sheet queue item.
