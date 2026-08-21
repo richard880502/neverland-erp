@@ -256,6 +256,7 @@ model OAuthClient {
   clientId     String   @unique
   clientName   String
   redirectUris String[]
+  applicationType String @default("web")
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 

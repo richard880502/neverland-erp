@@ -7,7 +7,7 @@ import { processGoogleSheetMovementQueue } from "@/lib/google-sheet-movement-que
 import { runScheduledGoogleSheetSync } from "@/lib/google-sheet-sync";
 import type { McpAuth, McpScope } from "@/lib/mcp/oauth";
 
-type Tool = { name: string; description: string; inputSchema: Record<string, unknown>; annotations: Record<string, boolean>; scope: McpScope; run: (input: unknown, auth: McpAuth) => Promise<unknown> };
+type Tool = { name: string; description: string; inputSchema: { type: "object"; properties?: Record<string, unknown>; required?: string[] }; annotations: Record<string, boolean>; scope: McpScope; run: (input: unknown, auth: McpAuth) => Promise<unknown> };
 const pagination = { limit: z.coerce.number().int().min(1).max(100).default(30), offset: z.coerce.number().int().min(0).default(0) };
 const dateRange = { from: z.string().date().optional(), to: z.string().date().optional() };
 function json(result: unknown) {
@@ -69,5 +69,15 @@ const tools: Tool[] = [
   tool({ name: "run_sheet_sync", description: "立即執行 Google Sheet 同步與 movement queue 處理；有外部副作用，執行前必須由使用者確認。", inputSchema: { type: "object", properties: {} }, annotations: { readOnlyHint: false, idempotentHint: false, destructiveHint: false }, scope: "sync:run", run: async (_raw, auth) => { if (auth.role !== "ADMIN") throw new Error("FORBIDDEN"); const run = await runScheduledGoogleSheetSync(undefined, auth.userId); const queue = await processGoogleSheetMovementQueue(); await prisma.auditLog.create({ data: { userId: auth.userId, action: "MCP_SHEET_SYNC_RUN", entityType: "GoogleSheetSyncRun", metadata: { source: "MCP", connectionId: auth.connectionId, clientId: auth.clientId } } }); return { run, movementQueue: queue }; } }),
 ];
 
-export function listMcpTools() { return tools.map(({ name, description, inputSchema, annotations }) => ({ name, description, inputSchema, annotations })); }
-export async function callMcpTool(name: string, input: unknown, auth: McpAuth) { const definition = tools.find((item) => item.name === name); if (!definition) throw new Error("找不到 MCP tool"); if (!auth.scopes.includes(definition.scope)) throw new Error("OAuth scope 不足"); return json(await definition.run(input ?? {}, auth)); }
+function roleAllowsTool(tool: Tool, role: McpAuth["role"]) {
+  if (role === "ADMIN") return true;
+  if (role === "STAFF") return tool.scope !== "sync:run";
+  return tool.annotations.readOnlyHint === true;
+}
+
+export function listMcpTools(auth?: McpAuth) {
+  return tools
+    .filter((definition) => !auth || (auth.scopes.includes(definition.scope) && roleAllowsTool(definition, auth.role)))
+    .map(({ name, description, inputSchema, annotations }) => ({ name, description, inputSchema, annotations }));
+}
+export async function callMcpTool(name: string, input: unknown, auth: McpAuth) { const definition = tools.find((item) => item.name === name); if (!definition) throw new Error("找不到 MCP tool"); if (!auth.scopes.includes(definition.scope)) throw new Error("OAuth scope 不足"); if (!roleAllowsTool(definition, auth.role)) throw new Error("ERP 角色權限不足"); return json(await definition.run(input ?? {}, auth)); }

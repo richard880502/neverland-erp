@@ -43,10 +43,10 @@ export async function POST(request: Request) {
     if (!takeRateLimit(`authorize:${ip}`, 30).allowed) return page("請稍後再試", "<h1>請稍後再試</h1><p>授權請求次數過多。</p>", 429);
     assertSameOrigin(request); const auth = await getAuthContext(); if (!auth || auth.user.mustChangePassword) return page("未授權", "<h1>請先登入並完成帳號設定</h1>", 401);
     const form = await request.formData(); const authorization = await validateAuthorizationRequest(queryFromForm(form), request);
-    if (form.get("decision") !== "allow") { const denied = new URL(authorization.redirectUri); denied.searchParams.set("error", "access_denied"); denied.searchParams.set("state", authorization.state); return NextResponse.redirect(denied, 303); }
+    if (form.get("decision") !== "allow") { const denied = new URL(authorization.redirectUri); denied.searchParams.set("error", "access_denied"); denied.searchParams.set("state", authorization.state); denied.searchParams.set("iss", baseUrl(request)); return NextResponse.redirect(denied, 303); }
     const selected = form.getAll("scope").filter((scope): scope is string => typeof scope === "string"); const scopes = authorization.requestedScopes.filter((scope) => selected.includes(scope));
     if (!scopes.length) return page("請選擇權限", "<h1>請選擇至少一項授權範圍</h1><p>請返回上一頁選擇需要的 read scope。</p>", 400);
     const code = await issueAuthorizationCode({ userId: auth.user.id, clientId: authorization.clientId, clientName: authorization.clientName, redirectUri: authorization.redirectUri, codeChallenge: authorization.codeChallenge, scopes, userAgent: request.headers.get("user-agent")?.slice(0, 500) ?? null });
-    const redirect = new URL(authorization.redirectUri); redirect.searchParams.set("code", code); redirect.searchParams.set("state", authorization.state); return NextResponse.redirect(redirect, 303);
+    const redirect = new URL(authorization.redirectUri); redirect.searchParams.set("code", code); redirect.searchParams.set("state", authorization.state); redirect.searchParams.set("iss", baseUrl(request)); return NextResponse.redirect(redirect, 303);
   } catch (cause) { return page("授權失敗", `<h1>授權失敗</h1><p>${escapeHtml(cause instanceof Error ? cause.message : "請重新嘗試")}</p>`, 400); }
 }

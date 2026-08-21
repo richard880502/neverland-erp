@@ -1,6 +1,5 @@
-import { Server } from "@modelcontextprotocol/sdk/server/index.js";
-import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js";
-import { CallToolRequestSchema, ListToolsRequestSchema } from "@modelcontextprotocol/sdk/types.js";
+import { createMcpHandler, Server } from "@modelcontextprotocol/server";
+import type { ListToolsResult } from "@modelcontextprotocol/server";
 import { NextResponse } from "next/server";
 import { authenticateMcpAccessToken, baseUrl, requireHttpsInProduction, type McpAuth } from "@/lib/mcp/oauth";
 import { callMcpTool, listMcpTools } from "@/lib/mcp/tools";
@@ -64,8 +63,8 @@ function createServer(auth: McpAuth) {
     });
   };
 
-  server.setRequestHandler(ListToolsRequestSchema, async () => ({ tools: listMcpTools() }));
-  server.setRequestHandler(CallToolRequestSchema, async (request) => {
+  server.setRequestHandler("tools/list", async () => ({ tools: listMcpTools(auth) as ListToolsResult["tools"], ttlMs: 0, cacheScope: "private" }));
+  server.setRequestHandler("tools/call", async (request) => {
     try {
       return await callMcpTool(request.params.name, request.params.arguments, auth);
     } catch (cause) {
@@ -92,14 +91,24 @@ export async function POST(request: Request) {
       connectionId: authenticated.auth.connectionId,
     });
 
-    const transport = new WebStandardStreamableHTTPServerTransport({
-      sessionIdGenerator: undefined,
-      enableJsonResponse: true,
+    const handler = createMcpHandler(() => createServer(authenticated.auth), {
+      responseMode: "json",
+      legacy: "stateless",
+      onerror: (error) => console.error("mcp_protocol_error", error),
     });
-    const server = createServer(authenticated.auth);
-    await server.connect(transport);
-
-    const response = await transport.handleRequest(request);
+    const response = await handler.fetch(request, {
+      authInfo: {
+        token: "validated",
+        clientId: authenticated.auth.clientId,
+        scopes: authenticated.auth.scopes,
+        resource: new URL(`${baseUrl(request)}/mcp`),
+        extra: {
+          userId: authenticated.auth.userId,
+          role: authenticated.auth.role,
+          connectionId: authenticated.auth.connectionId,
+        },
+      },
+    });
     response.headers.set("Cache-Control", "no-store");
     return response;
   } catch (cause) {
