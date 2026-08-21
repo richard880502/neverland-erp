@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 
-export function LoginForm() {
+export function LoginForm({ returnTo }: { returnTo?: string }) {
   const router = useRouter();
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
@@ -20,7 +20,7 @@ export function LoginForm() {
     const result = await response.json();
     if (!response.ok) { setError(result.error ?? "登入失敗"); setLoading(false); return; }
     if (result.requiresTwoFactor) { setRequiresTwoFactor(true); setLoading(false); return; }
-    router.push(result.mustChangePassword ? "/account" : "/"); router.refresh();
+    router.push(result.mustChangePassword ? "/account" : safeReturnTo(returnTo)); router.refresh();
   }
 
   async function verifySecondFactor(event: React.FormEvent<HTMLFormElement>) {
@@ -35,7 +35,7 @@ export function LoginForm() {
       if (result.restart) setRequiresTwoFactor(false);
       return;
     }
-    router.push(result.usedRecoveryCode ? "/account?recovery=used" : result.mustChangePassword ? "/account" : "/"); router.refresh();
+    router.push(result.usedRecoveryCode ? "/account?recovery=used" : result.mustChangePassword ? "/account" : safeReturnTo(returnTo)); router.refresh();
   }
 
   async function backToPassword() {
@@ -61,4 +61,8 @@ export function LoginForm() {
       <button className="btn btn-primary btn-block" disabled={loading}>{loading ? "登入中…" : "登入系統"}</button>
     </form>
   );
+}
+
+function safeReturnTo(value?: string) {
+  return value?.startsWith("/") && !value.startsWith("//") ? value : "/";
 }

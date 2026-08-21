@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { BarChart3, Boxes, DatabaseZap, PackagePlus, Route, ShieldCheck, ShoppingBag, Users } from "lucide-react";
+import { BarChart3, Boxes, Bot, DatabaseZap, PackagePlus, Route, ShieldCheck, ShoppingBag, Users } from "lucide-react";
 
 const links = [
   { href: "/", label: "營運儀表板", icon: BarChart3 },
@@ -21,6 +21,7 @@ export function AppShell({ user, children }: { user: { name: string; email: stri
           {links.map(({ href, label, icon: Icon }) => <Link href={href} key={href}><Icon size={18} />{label}</Link>)}
           {user.role === "ADMIN" && <Link href="/users"><Users size={18} />使用者控管</Link>}
           {user.role === "ADMIN" && <Link href="/settings/sync"><DatabaseZap size={18} />Google Sheet 同步</Link>}
+          <Link href="/settings/mcp"><Bot size={18} />AI Assistants / MCP</Link>
         </nav>
         <div className="sidebar-user">
           <small className="user-label">AUTHORISED USER</small>

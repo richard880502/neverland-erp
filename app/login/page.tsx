@@ -2,8 +2,9 @@ import { redirect } from "next/navigation";
 import { getCurrentUser } from "@/lib/auth";
 import { LoginForm } from "@/components/LoginForm";
 
-export default async function LoginPage() {
-  if (await getCurrentUser()) redirect("/");
+export default async function LoginPage({ searchParams }: { searchParams: Promise<{ returnTo?: string }> }) {
+  const returnTo = (await searchParams).returnTo;
+  if (await getCurrentUser()) redirect(returnTo?.startsWith("/") && !returnTo.startsWith("//") ? returnTo : "/");
   return (
     <div className="login-page">
       <section className="login-hero">
@@ -42,7 +43,7 @@ export default async function LoginPage() {
           <span className="login-card-kicker">NEVERLAND / OPERATIONS</span>
           <h2>登入管理系統</h2>
           <p>使用你的管理員帳號，進入庫存與銷售後台。</p>
-          <LoginForm />
+          <LoginForm returnTo={returnTo} />
           <div className="login-security-note">
             <span aria-hidden="true">◆</span>
             <p>安全連線已啟用<br /><small>支援 Google Authenticator 雙重驗證</small></p>

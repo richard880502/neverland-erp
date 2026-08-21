@@ -728,3 +728,6 @@ ERP 只寫 A:C、E:F、N:R，不會改寫 D、G:M。
 - 更換 Service Account 時先驗證新金鑰，再撤銷舊金鑰。
 - 更換 Sheet 前先處理完舊 Queue。
 - 定期檢查 Queue 的 `FAILED`、同步紀錄與安全稽核。
+## Remote MCP / OAuth
+
+ChatGPT/Codex deployment, OAuth registration, connection testing, and revocation instructions are in [docs/mcp-chatgpt-codex.md](docs/mcp-chatgpt-codex.md).

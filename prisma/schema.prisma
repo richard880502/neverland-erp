@@ -52,6 +52,9 @@ model User {
   googleSheetConnections GoogleSheetConnection[]
   totpRecoveryCodes TotpRecoveryCode[]
   loginChallenges LoginChallenge[]
+  mcpConnections McpConnection[]
+  oauthAuthorizationCodes OAuthAuthorizationCode[]
+  oauthAccessTokens OAuthAccessToken[]
   createdAt    DateTime        @default(now())
   updatedAt    DateTime        @updatedAt
 }
@@ -165,6 +168,85 @@ model AuditLog {
 
   @@index([createdAt])
   @@index([userId, createdAt])
+}
+
+/// A separately revocable grant for an AI/MCP client.  Browser sessions are
+/// intentionally not used as MCP credentials.
+model McpConnection {
+  id          String   @id @default(cuid())
+  userId      String
+  clientId    String
+  clientName  String?
+  scopes      String[]
+  lastUsedAt  DateTime?
+  revokedAt   DateTime?
+  userAgent   String?
+  metadata    Json?
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  accessTokens OAuthAccessToken[]
+  refreshTokens OAuthRefreshToken[]
+  authorizationCodes OAuthAuthorizationCode[]
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([userId, revokedAt])
+  @@index([clientId])
+}
+
+model OAuthAuthorizationCode {
+  id            String   @id @default(cuid())
+  codeHash      String   @unique
+  userId        String
+  connectionId  String
+  clientId      String
+  redirectUri   String
+  codeChallenge String
+  scopes        String[]
+  expiresAt     DateTime
+  usedAt        DateTime?
+  user          User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  connection    McpConnection @relation(fields: [connectionId], references: [id], onDelete: Cascade)
+  createdAt     DateTime @default(now())
+
+  @@index([clientId, expiresAt])
+  @@index([connectionId])
+}
+
+model OAuthAccessToken {
+  id           String   @id @default(cuid())
+  tokenHash    String   @unique
+  userId       String
+  connectionId String
+  clientId     String
+  audience     String
+  scopes       String[]
+  expiresAt    DateTime
+  revokedAt    DateTime?
+  lastUsedAt   DateTime?
+  user         User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  connection   McpConnection @relation(fields: [connectionId], references: [id], onDelete: Cascade)
+  createdAt    DateTime @default(now())
+
+  @@index([tokenHash])
+  @@index([connectionId, revokedAt])
+  @@index([expiresAt])
+}
+
+model OAuthRefreshToken {
+  id           String   @id @default(cuid())
+  tokenHash    String   @unique
+  connectionId String
+  clientId     String
+  scopes       String[]
+  expiresAt    DateTime
+  rotatedAt    DateTime?
+  revokedAt    DateTime?
+  connection   McpConnection @relation(fields: [connectionId], references: [id], onDelete: Cascade)
+  createdAt    DateTime @default(now())
+
+  @@index([tokenHash])
+  @@index([connectionId, revokedAt])
+  @@index([expiresAt])
 }
 
 model Product {
