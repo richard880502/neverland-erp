@@ -6,6 +6,7 @@ import { takeRateLimit } from "@/lib/mcp/rate-limit";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 const PROTOCOL_VERSION = "2025-06-18";
+const SUPPORTED_PROTOCOL_VERSIONS = new Set([PROTOCOL_VERSION, "2025-03-26", "2024-11-05"]);
 
 function response(id: unknown, result: unknown, status = 200) { return NextResponse.json({ jsonrpc: "2.0", id, result }, { status, headers: { "MCP-Protocol-Version": PROTOCOL_VERSION, "Cache-Control": "no-store" } }); }
 function error(id: unknown, code: number, message: string, status = 200) { return NextResponse.json({ jsonrpc: "2.0", id, error: { code, message } }, { status, headers: { "MCP-Protocol-Version": PROTOCOL_VERSION, "Cache-Control": "no-store" } }); }
@@ -23,7 +24,12 @@ export async function POST(request: Request) {
     if (rpc.jsonrpc !== "2.0" || typeof rpc.method !== "string") return error(rpc.id ?? null, -32600, "Invalid Request", 400);
     const isNotification = rpc.id === undefined;
     if (rpc.method === "notifications/initialized") return new NextResponse(null, { status: 202, headers: { "MCP-Protocol-Version": PROTOCOL_VERSION } });
-    if (rpc.method === "initialize") return response(rpc.id, { protocolVersion: PROTOCOL_VERSION, capabilities: { tools: { listChanged: false } }, serverInfo: { name: "Neverland ERP", version: "1.0.0" }, instructions: "Neverland ERP MCP。所有庫存寫入與沖銷均需取得使用者確認。" });
+    if (rpc.method === "initialize") {
+      const requestedVersion = typeof rpc.params?.protocolVersion === "string" ? rpc.params.protocolVersion : null;
+      const protocolVersion = requestedVersion && SUPPORTED_PROTOCOL_VERSIONS.has(requestedVersion) ? requestedVersion : PROTOCOL_VERSION;
+      console.info("mcp_initialized", { protocolVersion });
+      return response(rpc.id, { protocolVersion, capabilities: { tools: { listChanged: false } }, serverInfo: { name: "Neverland ERP", version: "1.0.0" }, instructions: "Neverland ERP MCP。所有庫存寫入與沖銷均需取得使用者確認。" });
+    }
     if (rpc.method === "tools/list") return response(rpc.id, { tools: listMcpTools() });
     if (rpc.method === "tools/call") {
       const name = rpc.params?.name; if (typeof name !== "string") return error(rpc.id ?? null, -32602, "tool name is required");

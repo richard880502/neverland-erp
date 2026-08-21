@@ -11,7 +11,7 @@ const schema = z.object({
   grant_types: z.array(z.string().max(80)).max(5).optional(),
   response_types: z.array(z.string().max(80)).max(5).optional(),
   token_endpoint_auth_method: z.string().max(80).optional(),
-}).strict();
+}).passthrough();
 
 export async function POST(request: Request) {
   try {
