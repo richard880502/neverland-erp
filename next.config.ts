@@ -6,8 +6,8 @@ const nextConfig: NextConfig = {
     // Local-upload packagers can omit dot-directories. Keep the public RFC
     // paths while compiling their handlers from a normal application folder.
     return [
-      { source: "/.well-known/oauth-protected-resource", destination: "/_oauth/protected-resource" },
-      { source: "/.well-known/oauth-authorization-server", destination: "/_oauth/authorization-server" },
+      { source: "/.well-known/oauth-protected-resource", destination: "/oauth-metadata/protected-resource" },
+      { source: "/.well-known/oauth-authorization-server", destination: "/oauth-metadata/authorization-server" },
     ];
   },
 };
