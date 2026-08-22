@@ -17,7 +17,7 @@ function error(id: unknown, code: number, message: string, status = 200) {
 }
 
 function unauthorized(request: Request) {
-  const metadata = `${baseUrl(request)}/.well-known/oauth-protected-resource`;
+  const metadata = `${baseUrl(request)}/.well-known/oauth-protected-resource/mcp`;
   return NextResponse.json({ error: "invalid_token" }, { status: 401, headers: { "WWW-Authenticate": `Bearer resource_metadata="${metadata}"`, "Cache-Control": "no-store" } });
 }
 
@@ -66,4 +66,15 @@ export async function POST(request: Request) {
   }
 }
 
-export async function GET() { return new NextResponse(null, { status: 405, headers: { Allow: "POST" } }); }
+export async function GET(request: Request) {
+  try {
+    requireHttpsInProduction(request);
+    const header = request.headers.get("authorization");
+    if (!header?.startsWith("Bearer ")) return unauthorized(request);
+    const auth = await authenticateMcpAccessToken(header.slice(7), `${baseUrl(request)}/mcp`);
+    if (!auth) return unauthorized(request);
+    return new NextResponse(null, { status: 405, headers: { Allow: "POST", "Cache-Control": "no-store" } });
+  } catch {
+    return unauthorized(request);
+  }
+}

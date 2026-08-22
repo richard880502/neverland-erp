@@ -17,6 +17,7 @@ const scopeLabels: Record<string, { title: string; detail: string }> = {
   "inventory:write": { title: "建立庫存異動", detail: "可新增入庫、出貨、寄賣及庫存調整紀錄。" },
   "movements:reverse": { title: "沖銷庫存異動", detail: "可建立反向紀錄，影響目前庫存數量。" },
   "sync:run": { title: "執行資料同步", detail: "可立即啟動 Google Sheet 同步及佇列處理。" },
+  "offline_access": { title: "維持連線", detail: "允許 ChatGPT 以 refresh token 安全續期，不必頻繁重新登入。" },
 };
 function escapeHtml(value: string) { return value.replace(/[&<>'"]/g, (character) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", "'": "&#39;", '"': "&quot;" })[character] ?? character); }
 function page(title: string, content: string, status = 200) { return new NextResponse(`<!doctype html><html lang="zh-Hant"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${escapeHtml(title)}</title><style>

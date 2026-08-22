@@ -32,15 +32,16 @@ The deployment serves:
 
 ```text
 /.well-known/oauth-protected-resource
+/.well-known/oauth-protected-resource/mcp
 /.well-known/oauth-authorization-server
 /authorize
 /token
 /revoke
 ```
 
-Only Authorization Code + PKCE `S256` is accepted. Implicit and password grants are not exposed. Tokens are audience-bound to `https://<erp-domain>/mcp`; a token cannot be replayed against another endpoint.
+Only Authorization Code + PKCE `S256` is accepted. Implicit and password grants are not exposed. Tokens are audience-bound to `https://<erp-domain>/mcp`; a token cannot be replayed against another endpoint. The authorization metadata advertises `offline_access`, which is selected by default so ChatGPT can use the rotating refresh token without requiring frequent sign-in.
 
-Authorization responses include the RFC 9207 `iss` parameter, exactly matching the authorization metadata issuer. MCP `2026-07-28` requests are handled without protocol sessions or sticky routing and must carry `MCP-Protocol-Version`, `Mcp-Method`, and, for `tools/call`, `Mcp-Name`. The same endpoint keeps a stateless 2025-era fallback for clients that have not upgraded yet.
+Authorization responses include the RFC 9207 `iss` parameter, exactly matching the authorization metadata issuer. The MCP endpoint uses stateless JSON-RPC and negotiates the stable 2025 protocol versions without sticky routing.
 
 When an MCP client first calls `/mcp` without a token, it receives a `401` and a `WWW-Authenticate` header pointing at the protected-resource metadata. The host then opens the Neverland ERP login page, where the user sees a consent screen. Read scopes are selected by default; the following are unchecked until explicitly approved:
 

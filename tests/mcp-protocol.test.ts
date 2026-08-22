@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { handleAuthenticatedMcpRequest } from "../app/mcp/route";
+import { GET, handleAuthenticatedMcpRequest } from "../app/mcp/route";
 import type { McpAuth } from "../lib/mcp/oauth";
 
 const auth: McpAuth = {
@@ -48,4 +48,10 @@ test("legacy MCP tools/list is stateless and permission filtered", async () => {
 test("legacy MCP ignores optional routing headers used by newer clients", async () => {
   const response = await handleAuthenticatedMcpRequest(modernRequest("tools/list", {}, { "mcp-method": "tools/call" }), auth);
   assert.equal(response.status, 200);
+});
+
+test("GET /mcp advertises OAuth discovery before authentication", async () => {
+  const response = await GET(new Request("https://erp.example.com/mcp"));
+  assert.equal(response.status, 401);
+  assert.equal(response.headers.get("www-authenticate"), 'Bearer resource_metadata="https://erp.example.com/.well-known/oauth-protected-resource/mcp"');
 });
