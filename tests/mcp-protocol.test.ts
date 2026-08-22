@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { createNeverlandMcpHandler } from "../app/mcp/route";
+import { handleAuthenticatedMcpRequest } from "../app/mcp/route";
 import type { McpAuth } from "../lib/mcp/oauth";
 
 const auth: McpAuth = {
@@ -37,24 +37,15 @@ function modernRequest(method: string, params: Record<string, unknown> = {}, hea
   });
 }
 
-test("MCP 2026 tools/list is stateless and permission filtered", async () => {
-  const handler = createNeverlandMcpHandler(auth);
-  const response = await handler.fetch(modernRequest("tools/list"));
+test("legacy MCP tools/list is stateless and permission filtered", async () => {
+  const response = await handleAuthenticatedMcpRequest(modernRequest("tools/list"), auth);
   assert.equal(response.status, 200);
   assert.equal(response.headers.get("mcp-session-id"), null);
   const body = await response.json() as { result: { tools: Array<{ name: string }> } };
   assert.deepEqual(body.result.tools.map((tool) => tool.name), ["get_inventory", "get_inventory_by_channel", "get_low_stock"]);
-  await handler.close();
 });
 
-test("MCP 2026 rejects missing and mismatched routing headers", async () => {
-  const missing = createNeverlandMcpHandler(auth);
-  const missingResponse = await missing.fetch(modernRequest("tools/list", {}, { "mcp-method": "" }));
-  assert.equal(missingResponse.status, 400);
-  await missing.close();
-
-  const mismatched = createNeverlandMcpHandler(auth);
-  const mismatchResponse = await mismatched.fetch(modernRequest("tools/list", {}, { "mcp-method": "tools/call" }));
-  assert.equal(mismatchResponse.status, 400);
-  await mismatched.close();
+test("legacy MCP ignores optional routing headers used by newer clients", async () => {
+  const response = await handleAuthenticatedMcpRequest(modernRequest("tools/list", {}, { "mcp-method": "tools/call" }), auth);
+  assert.equal(response.status, 200);
 });

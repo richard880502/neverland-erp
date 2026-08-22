@@ -11,12 +11,7 @@ import { consumeMcpAction, prepareMcpAction } from "@/lib/mcp/confirmation";
 type Tool = { name: string; description: string; inputSchema: { type: "object"; properties?: Record<string, unknown>; required?: string[] }; annotations: Record<string, boolean>; scope: McpScope; run: (input: unknown, auth: McpAuth) => Promise<unknown> };
 const pagination = { limit: z.coerce.number().int().min(1).max(100).default(30), offset: z.coerce.number().int().min(0).default(0) };
 const dateRange = { from: z.string().date().optional(), to: z.string().date().optional() };
-function json(result: unknown) {
-  const text = JSON.stringify(result, null, 2);
-  const value: unknown = JSON.parse(text);
-  const structuredContent = value !== null && typeof value === "object" && !Array.isArray(value) ? value : { result: value };
-  return { content: [{ type: "text" as const, text }], structuredContent };
-}
+function json(result: unknown) { return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }], structuredContent: result }; }
 function number(value: unknown) { return value == null ? null : Number(value); }
 function bounds(from?: string, to?: string) { return { ...(from ? { gte: new Date(`${from}T00:00:00.000Z`) } : {}), ...(to ? { lte: new Date(`${to}T23:59:59.999Z`) } : {}) }; }
 function tool(definition: Tool) { return definition; }
