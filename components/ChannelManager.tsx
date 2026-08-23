@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Power, PowerOff, Plus, Trash2 } from "lucide-react";
+import { PageHeader } from "@/components/ui/PageHeader";
 import { channelTypeLabels } from "@/lib/inventory";
 
 type Channel = { id: string; name: string; type: keyof typeof channelTypeLabels; active: boolean; movementCount: number };
@@ -32,7 +33,7 @@ export function ChannelManager({ channels, canWrite }: { channels: Channel[]; ca
     router.refresh();
   }
   return <>
-    <header className="page-header"><div><div className="eyebrow">Master data</div><h1>通路主檔</h1><p>設定直營、寄賣與買斷通路，控制庫存流向。</p></div></header>
+    <PageHeader eyebrow="Master data" title="通路主檔" description="設定直營、寄賣與買斷通路，控制庫存流向。" />
     {message && <div className="form-error">{message}</div>}
     {canWrite && <details className="panel drawer"><summary><span className="btn btn-primary"><Plus size={16} />新增通路</span></summary>
       <form className="inline-form" onSubmit={submit}>
