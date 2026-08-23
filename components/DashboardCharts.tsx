@@ -10,7 +10,7 @@ type DashboardChartData = {
   slowProducts: { name: string; units: number; stock: number }[];
 };
 
-const colors = ["#18181b", "#7c3aed", "#2563eb", "#0f766e", "#d97706", "#db2777"];
+const colors = ["#18181b", "#3b82f6", "#2563eb", "#0f766e", "#d97706", "#db2777"];
 const money = (value: number) => `NT$ ${new Intl.NumberFormat("zh-TW").format(value)}`;
 const tooltipStyle = { border: "1px solid #e4e4e7", borderRadius: 8, background: "#ffffff", fontSize: 12, boxShadow: "0 8px 28px rgba(24, 24, 27, .12)" };
 const axisTick = { fontSize: 10, fill: "#71717a", fontFamily: "Inter, ui-sans-serif, sans-serif" };
@@ -27,7 +27,7 @@ export function DashboardCharts({ data, trendMode, onTrendModeChange }: { data: 
             <XAxis dataKey="date" tick={axisTick} tickFormatter={(value) => value.slice(5)} axisLine={{ stroke: "#d4d4d8" }} tickLine={false} />
             <YAxis tick={axisTick} axisLine={false} tickLine={false} tickFormatter={(value) => trendIsRevenue ? `${Math.round(value / 1000)}k` : String(value)} />
             <Tooltip contentStyle={tooltipStyle} formatter={(value) => trendIsRevenue ? money(Number(value)) : `${value} 件`} labelFormatter={(label) => `日期 ${label}`} />
-            <Line type="monotone" dataKey={trendMode} name={trendIsRevenue ? "估算銷售額" : "售出件數"} stroke="#7c3aed" strokeWidth={2} dot={{ r: 3, fill: "#7c3aed", stroke: "#ffffff", strokeWidth: 2 }} activeDot={{ r: 5, fill: "#6d28d9" }} />
+            <Line type="monotone" dataKey={trendMode} name={trendIsRevenue ? "估算銷售額" : "售出件數"} stroke="#3b82f6" strokeWidth={2} dot={{ r: 3, fill: "#3b82f6", stroke: "#ffffff", strokeWidth: 2 }} activeDot={{ r: 5, fill: "#2563eb" }} />
           </LineChart>
         </ResponsiveContainer></div>
       </div>
