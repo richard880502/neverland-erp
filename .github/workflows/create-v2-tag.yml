@@ -1,0 +1,30 @@
+name: Create v2.0.0 tag
+
+on:
+  push:
+    branches:
+      - feat/issue-3-medusa-admin-ui
+
+permissions:
+  contents: write
+
+jobs:
+  tag:
+    if: github.event.head_commit.message == 'chore(release): create v2.0.0 tag'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Create annotated v2.0.0 tag
+        run: |
+          set -euo pipefail
+          TARGET_SHA="584f8db667c6a2763f61d388222792add8d681a5"
+          if git ls-remote --exit-code --tags origin refs/tags/v2.0.0 >/dev/null 2>&1; then
+            echo "v2.0.0 already exists; refusing to move an existing release tag."
+            exit 1
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git tag -a v2.0.0 "$TARGET_SHA" -m "Neverland ERP v2.0.0 — Medusa-aligned Admin UI"
+          git push origin refs/tags/v2.0.0
