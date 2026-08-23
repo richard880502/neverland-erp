@@ -1,0 +1,137 @@
+/* Targeted follow-up fixes for the Medusa-aligned ERP theme. */
+
+:root {
+  /* Keep primary actions neutral/dark like Medusa Admin, but use blue for
+     interactive/focus states instead of the previous purple accent. */
+  --ui-bg-highlight: #eff6ff;
+  --ui-fg-interactive: #3b82f6;
+  --ui-border-interactive: #3b82f6;
+  --ui-focus: 0 0 0 3px rgba(59, 130, 246, .16);
+
+  /* Legacy aliases still referenced by a few existing components. */
+  --lime: #3b82f6;
+  --orange: #3b82f6;
+  --denim: #2563eb;
+}
+
+::selection {
+  background: #dbeafe;
+  color: #1e3a8a;
+}
+
+/* --------------------------------------------------------------------------
+   Login: reset the old two-column editorial grid so the whole auth shell is
+   centered against the viewport, not centered inside the legacy first column.
+   -------------------------------------------------------------------------- */
+
+.login-page {
+  min-height: 100dvh;
+  grid-template-columns: minmax(0, 1fr) !important;
+  grid-template-rows: minmax(0, 1fr);
+  place-items: center;
+  padding: 28px;
+  background:
+    radial-gradient(circle at 20% 10%, rgba(59, 130, 246, .045), transparent 30%),
+    var(--ui-bg-subtle);
+}
+
+.login-shell {
+  width: min(420px, calc(100vw - 40px));
+  margin: auto;
+  align-self: center;
+  justify-self: center;
+}
+
+.login-brand-lockup {
+  width: 100%;
+  margin: 0 0 18px;
+  justify-content: center;
+}
+
+/* medusa-theme.css has a broad `.login-brand-lockup span` rule. Restore the
+   brand mark's grid layout so the N stays centered inside the rounded square. */
+.login-brand-lockup .brand-mark {
+  width: 32px;
+  height: 32px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  color: var(--ui-fg-base);
+  font-size: 11px;
+  line-height: 1;
+}
+
+.login-brand-lockup > span:last-child {
+  display: grid;
+  min-width: 0;
+  gap: 1px;
+}
+
+.login-brand-lockup > span:last-child > span {
+  display: block;
+  color: var(--ui-fg-muted);
+}
+
+.login-step .badge.green {
+  background: #eff6ff;
+  color: #2563eb;
+  border-color: #bfdbfe;
+}
+
+/* --------------------------------------------------------------------------
+   Sidebar account card: reserve a fixed action column and clamp account copy.
+   This prevents long role/email strings from pushing outside the sidebar.
+   -------------------------------------------------------------------------- */
+
+.sidebar-user {
+  min-width: 0;
+  overflow: hidden;
+}
+
+.sidebar-user-card {
+  width: 100%;
+  min-width: 0;
+  grid-template-columns: 32px minmax(0, 1fr) 30px;
+}
+
+.sidebar-user-card > form {
+  width: 30px;
+  min-width: 30px;
+  max-width: 30px;
+  justify-self: end;
+  overflow: hidden;
+}
+
+.sidebar-user-meta {
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+}
+
+.sidebar-user-meta strong,
+.sidebar-user-meta span {
+  width: 100%;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sidebar-avatar {
+  background: #eff6ff;
+  border-color: #bfdbfe;
+  color: #2563eb;
+}
+
+.sync-card-icon {
+  background: #eff6ff;
+  color: #2563eb;
+}
+
+@media (max-height: 720px) {
+  .login-page {
+    place-items: start center;
+    padding-top: 32px;
+    padding-bottom: 32px;
+  }
+}
