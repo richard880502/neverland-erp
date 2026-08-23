@@ -76,7 +76,7 @@ ERP 提供 protected, stateless Streamable HTTP MCP endpoint，可讓支援 MCP 
 | ORM | Prisma 6 |
 | Database | PostgreSQL 16 |
 | Auth | Cookie Session、bcrypt、TOTP、OAuth 2.1 / MCP |
-| Images | Sharp、WebP、persistent Volume |
+| Images | Sharp、WebP、private MinIO／S3-compatible Object Storage |
 | Google | Google Sheets API、Service Account |
 | Runtime | Node.js 24、Docker |
 | Deployment | Zeabur |
