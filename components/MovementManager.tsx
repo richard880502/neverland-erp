@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Plus, RotateCcw } from "lucide-react";
+import { PageHeader } from "@/components/ui/PageHeader";
 import { channelTypeLabels, movementLabels } from "@/lib/inventory";
 import type { ChannelType, MovementType } from "@prisma/client";
 
@@ -28,7 +29,7 @@ export function MovementManager({ products, channels, movements, canWrite }: { p
     router.refresh();
   }
   return <>
-    <header className="page-header"><div><div className="eyebrow">Ledger</div><h1>庫存異動</h1><p>每次實物流動新增一筆；錯誤資料以沖銷處理。</p></div></header>
+    <PageHeader eyebrow="Ledger" title="庫存異動" description="每次實物流動新增一筆；錯誤資料以沖銷處理。" />
     {canWrite && <details className="panel drawer" open><summary><span className="btn btn-primary"><Plus size={16} />新增異動</span></summary>
       {message && <div className="form-error">{message}</div>}
       <form className="form-grid" onSubmit={submit}>
