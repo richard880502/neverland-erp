@@ -1,9 +1,9 @@
 import { PrismaClient, MovementType } from "@prisma/client";
 import bcrypt from "bcryptjs";
 import { createHash } from "crypto";
-import { mkdir } from "fs/promises";
 import path from "path";
 import sharp from "sharp";
+import { objectStorage } from "../lib/object-storage";
 
 const prisma = new PrismaClient();
 
@@ -50,9 +50,7 @@ async function main() {
     "N202511-L": "N202511.png",
     N202510: "N202510.png",
   };
-  const uploadDirectory = path.resolve(process.env.UPLOAD_DIR ?? "/tmp/stockflow-uploads");
-  const productUploadDirectory = path.join(uploadDirectory, "products");
-  await mkdir(productUploadDirectory, { recursive: true });
+  const storage = objectStorage();
 
   for (const product of products) {
     const assetName = productImageAssets[product.sku];
@@ -62,16 +60,25 @@ async function main() {
     const imageKey = `products/${imageId}.webp`;
     const thumbKey = `products/${imageId}-thumb.webp`;
 
-    await sharp(assetPath, { limitInputPixels: 40_000_000, animated: false })
+    const [image, thumbnail] = await Promise.all([
+      sharp(assetPath, { limitInputPixels: 40_000_000, animated: false })
       .rotate()
       .resize({ width: 1600, height: 1600, fit: "inside", withoutEnlargement: true })
       .webp({ quality: 84 })
-      .toFile(path.join(uploadDirectory, imageKey));
-    await sharp(assetPath, { limitInputPixels: 40_000_000, animated: false })
+      .toBuffer(),
+      sharp(assetPath, { limitInputPixels: 40_000_000, animated: false })
       .rotate()
       .resize({ width: 320, height: 320, fit: "cover", position: "centre" })
       .webp({ quality: 78 })
-      .toFile(path.join(uploadDirectory, thumbKey));
+      .toBuffer(),
+    ]);
+    try {
+      await storage.put(imageKey, image, "image/webp");
+      await storage.put(thumbKey, thumbnail, "image/webp");
+    } catch (error) {
+      await Promise.all([imageKey, thumbKey].map((key) => storage.delete(key).catch(() => undefined)));
+      throw error;
+    }
     await prisma.product.update({ where: { id: product.id }, data: { imagePath: imageKey, imageThumbPath: thumbKey } });
   }
 

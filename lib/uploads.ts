@@ -1,13 +1,8 @@
 import { randomUUID } from "crypto";
-import { mkdir, rm } from "fs/promises";
-import path from "path";
 import sharp, { type Metadata } from "sharp";
+import { objectStorage } from "@/lib/object-storage";
 
 const MAX_IMAGE_BYTES = 8 * 1024 * 1024;
-
-export function uploadRoot() {
-  return path.resolve(/* turbopackIgnore: true */ process.env.UPLOAD_DIR ?? "/tmp/stockflow-uploads");
-}
 
 export async function saveProductImage(file: File) {
   if (file.size === 0) return null;
@@ -25,26 +20,27 @@ export async function saveProductImage(file: File) {
   }
 
   const id = randomUUID();
-  const directory = path.join(uploadRoot(), "products");
   const imageKey = `products/${id}.webp`;
   const thumbKey = `products/${id}-thumb.webp`;
-  const imageFile = path.join(/* turbopackIgnore: true */ uploadRoot(), imageKey);
-  const thumbFile = path.join(/* turbopackIgnore: true */ uploadRoot(), thumbKey);
-  await mkdir(directory, { recursive: true });
+  const storage = objectStorage();
 
   try {
-    await sharp(input, { limitInputPixels: 40_000_000, animated: false })
+    const [image, thumbnail] = await Promise.all([
+      sharp(input, { limitInputPixels: 40_000_000, animated: false })
       .rotate()
       .resize({ width: 1600, height: 1600, fit: "inside", withoutEnlargement: true })
       .webp({ quality: 84 })
-      .toFile(imageFile);
-    await sharp(input, { limitInputPixels: 40_000_000, animated: false })
+      .toBuffer(),
+      sharp(input, { limitInputPixels: 40_000_000, animated: false })
       .rotate()
       .resize({ width: 320, height: 320, fit: "cover", position: "centre" })
       .webp({ quality: 78 })
-      .toFile(thumbFile);
+      .toBuffer(),
+    ]);
+    await storage.put(imageKey, image, "image/webp");
+    await storage.put(thumbKey, thumbnail, "image/webp");
   } catch {
-    await Promise.all([rm(imageFile, { force: true }), rm(thumbFile, { force: true })]);
+    await Promise.all([imageKey, thumbKey].map((key) => storage.delete(key).catch(() => undefined)));
     throw new Error("圖片處理失敗，請更換圖片後重試");
   }
 
@@ -52,5 +48,6 @@ export async function saveProductImage(file: File) {
 }
 
 export async function removeProductImages(paths: Array<string | null | undefined>) {
-  await Promise.all(paths.filter((value): value is string => Boolean(value)).map((value) => rm(path.join(/* turbopackIgnore: true */ uploadRoot(), value), { force: true })));
+  const storage = objectStorage();
+  await Promise.all(paths.filter((value): value is string => Boolean(value)).map((value) => storage.delete(value)));
 }

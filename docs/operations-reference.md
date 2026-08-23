@@ -15,14 +15,15 @@ Neverland ERP 是為品牌商品、總倉、直營與寄賣通路設計的輕量
 | 通路主檔 | Google Sheet 主檔／PostgreSQL | 日常以 Sheet → ERP 為主 |
 | 庫存異動 | PostgreSQL 不可變更帳本 | ERP Queue → Google Sheet |
 | 即時庫存 | 由 PostgreSQL 異動帳即時計算 | 不另外儲存庫存餘額 |
-| 商品圖片路徑 | PostgreSQL | 圖片檔存於持久化 Volume |
-| 商品圖片檔案 | Docker／Zeabur Volume | 不會自動同步到 Google Sheet |
+| 商品圖片路徑 | PostgreSQL | 只保存 S3 object key |
+| 商品圖片檔案 | MinIO／S3-compatible Object Storage | private bucket，不會自動同步到 Google Sheet |
 
 ```mermaid
 flowchart LR
     Browser["瀏覽器／ERP 後台"] --> App["Next.js 應用程式"]
     App --> DB["PostgreSQL\n主檔、異動帳、Queue、稽核"]
-    App --> Files["持久化 Volume\n商品圖片"]
+    App --> Storage["MinIO／S3\nprivate bucket"]
+    Browser -->|"presigned GET"| Storage
     Sheet["Google Sheet\n商品／價格／通路主檔"] -->|"預覽、比對、確認"| App
     DB -->|"Outbox Queue"| App
     App -->|"庫存異動批次寫回"| Sheet
@@ -433,13 +434,13 @@ docker compose logs -f app
 docker compose down
 ```
 
-停止並刪除 PostgreSQL 與圖片 Volume：
+停止並刪除 PostgreSQL 與 MinIO Volume：
 
 ```bash
 docker compose down -v
 ```
 
-最後一個指令會永久刪除本地資料庫與商品圖片，只能在確定有備份時使用。
+最後一個指令會永久刪除本地資料庫與 MinIO 物件，只能在確定有備份時使用。
 
 ### Docker 持久化
 
@@ -448,11 +449,11 @@ docker compose down -v
 | Volume | 內容 |
 | --- | --- |
 | `stockflow_db` | PostgreSQL 資料 |
-| `stockflow_uploads` | `/data/uploads` 商品圖片 |
+| `stockflow_minio` | MinIO private bucket 商品圖片 |
 
 容器重建不會刪除 Volume；`docker compose down -v` 才會刪除。
 
-掛載 Volume 只代表資料在容器重建後仍存在，不等於備份。仍需定期建立 PostgreSQL dump，並另外備份圖片 Volume。
+掛載 Volume 只代表資料在容器重建後仍存在，不等於備份。仍需定期建立 PostgreSQL dump，並另外備份 MinIO bucket。
 
 PostgreSQL 備份範例：
 
@@ -487,7 +488,14 @@ npm run build
 | `ADMIN_EMAIL` | 初始管理員 Email | 後續部署不會覆蓋既有帳號 |
 | `ADMIN_PASSWORD` | 初始管理員密碼 | 至少 10 字元；正式環境必須更換 |
 | `TOTP_ENCRYPTION_KEY` | 加密 TOTP 種子 | 必須為 32 bytes；設定後不可任意更換 |
-| `UPLOAD_DIR` | 商品圖片目錄 | Docker／Zeabur 建議 `/data/uploads` |
+| `S3_ENDPOINT` | ERP 連線到 MinIO／S3 的內部 endpoint | Zeabur 內使用 MinIO private hostname，例如 `http://minio:9000` |
+| `S3_PUBLIC_ENDPOINT` | 瀏覽器可連線的 object endpoint | 用於 presigned URL；不可填 private hostname |
+| `S3_BUCKET` | private bucket 名稱 | 需由 MinIO init job 或平台預先建立 |
+| `S3_ACCESS_KEY` / `S3_SECRET_KEY` | S3 server-side 憑證 | 必須使用 Zeabur Secret，不可加到 `NEXT_PUBLIC_*` |
+| `S3_REGION` | S3 region | MinIO 可用 `us-east-1` |
+| `S3_FORCE_PATH_STYLE` | path-style URL | MinIO 建議 `true` |
+| `S3_SIGNED_URL_TTL_SECONDS` | 短效 GET URL 有效秒數 | 60–3600，預設 900 |
+| `LEGACY_UPLOAD_DIR` | 舊圖片遷移來源 | 僅執行 migration 時使用，runtime 不會寫入此目錄 |
 | `GOOGLE_SHEET_ID` | 尚無後台設定時的預設 Sheet ID | 後台儲存值會優先 |
 | `GOOGLE_SERVICE_ACCOUNT_JSON` | 完整 Service Account JSON 或單行 Base64 | 建議使用機密環境變數 |
 | `GOOGLE_SERVICE_ACCOUNT_EMAIL` | 分拆式憑證 Email | 與 `GOOGLE_PRIVATE_KEY` 擇一組使用 |
@@ -563,7 +571,8 @@ openssl rand -hex 32
 - 主圖縮放至最大 1600 × 1600，不放大原圖，轉 WebP quality 84。
 - 縮圖裁切為 320 × 320，轉 WebP quality 78。
 - PostgreSQL 只保存相對路徑。
-- 實際檔案保存在 `UPLOAD_DIR/products`。
+- 實際檔案只寫入 private MinIO／S3 bucket 的 `products/`；不使用 application local filesystem。
+- 前端經過 ERP 權限驗證後取得短效 presigned GET URL，再直接向 object storage 下載；商品列表使用縮圖。
 
 Google Sheet 日常主檔同步目前不會自動下載或更新圖片。既有 Sheet 圖片使用一次性匯入腳本處理；後續新增商品可直接在 ERP 上傳。
 
@@ -604,6 +613,16 @@ npm run db:import-sheet-images
 IMPORT_IMAGES_DRY_RUN=1 npm run db:import-sheet-images
 ```
 
+### 將既有 local 圖片遷移至 MinIO
+
+先在 Zeabur 設好所有 `S3_*` 變數、建立 private bucket，並保留舊 `/data/uploads` volume。先執行 dry-run：
+
+```bash
+LEGACY_UPLOAD_DIR=/data/uploads npm run storage:migrate -- --dry-run
+```
+
+確認結果沒有 `missingLocal`、`sizeMismatch` 或 `invalidKey` 後，移除 `--dry-run` 執行正式遷移。腳本以 key 與檔案大小驗證，重跑會略過已存在且大小相同的物件；遷移完成前不會刪除舊 volume。
+
 ## Seed 注意事項
 
 容器啟動時會執行：
@@ -637,7 +656,14 @@ ADMIN_NAME=<初始管理員顯示名稱>
 ADMIN_EMAIL=<初始管理員 Email>
 ADMIN_PASSWORD=<安全的初始密碼>
 TOTP_ENCRYPTION_KEY=<固定的 32-byte 金鑰>
-UPLOAD_DIR=/data/uploads
+S3_ENDPOINT=http://<minio-private-host>:9000
+S3_PUBLIC_ENDPOINT=https://<minio-public-host>
+S3_BUCKET=neverland-erp
+S3_ACCESS_KEY=<MinIO access key>
+S3_SECRET_KEY=<MinIO secret key>
+S3_REGION=us-east-1
+S3_FORCE_PATH_STYLE=true
+S3_SIGNED_URL_TTL_SECONDS=900
 GOOGLE_SERVICE_ACCOUNT_JSON=<Service Account JSON 的單行 Base64>
 GOOGLE_SHEET_SYNC_ENABLED=false
 GOOGLE_SHEET_SYNC_TIME_ZONE=Asia/Taipei
@@ -648,7 +674,8 @@ GOOGLE_SHEET_SYNC_MINUTE=0
 部署檢查：
 
 - 建立並連接 PostgreSQL 服務。
-- 將商品圖片持久化 Volume 掛載到 `/data/uploads`。
+- 建立 MinIO service 與 persistent volume，並建立 private bucket。
+- `S3_ENDPOINT` 指向 MinIO private hostname；`S3_PUBLIC_ENDPOINT` 指向瀏覽器可連線的 HTTPS endpoint。
 - 環境變數使用 Zeabur Secret，不要提交金鑰。
 - 第一次登入後立即更換初始密碼。
 - 到同步設定測試 Google API 讀取及寫入。
@@ -712,15 +739,15 @@ ERP 只寫 A:C、E:F、N:R，不會改寫 D、G:M。
 - ERP 新增或修改商品主檔目前不會反向寫回 Google Sheet。
 - Google Sheet 的歷史庫存異動不會在日常同步中重新匯入 ERP，避免重複帳。
 - 庫存調整尚未支援寫回舊 Google Sheet。
-- 商品圖片仍是本機／Volume 檔案，不是 S3 相容物件儲存。
+- 商品圖片需要可供瀏覽器直接連線的 MinIO／S3 public endpoint；bucket 本身仍保持 private。
 - 尚未實作 Google OAuth 登入。
 - Email 登入名稱目前不可在後台修改。
-- Volume 持久化已支援，但自動異地備份仍需由 Zeabur／維運流程設定。
+- MinIO bucket 的持久化與異地備份仍需由 Zeabur／維運流程設定。
 - 完整資料匯入腳本具有破壞性，只能視為一次性遷移工具。
 
 ## 維運原則
 
-- 正式資料變更前先備份 PostgreSQL 與圖片 Volume。
+- 正式資料變更前先備份 PostgreSQL 與 MinIO bucket。
 - 不把 `.env`、Service Account JSON、私鑰、正式密碼提交到 Git。
 - 不直接修改或刪除歷史 `StockMovement`；使用沖銷。
 - 不把商品或通路的「停用」誤認為刪除。

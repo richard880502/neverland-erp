@@ -59,7 +59,11 @@ export async function DELETE(request: Request, context: { params: Promise<{ id: 
         data: { userId: auth.user.id, action: "PRODUCT_DELETED", entityType: "Product", entityId: id, metadata: { sku: product.sku }, ipAddress: clientIp(request) },
       }),
     ]);
-    await removeProductImages([product.imagePath, product.imageThumbPath]);
+    try {
+      await removeProductImages([product.imagePath, product.imageThumbPath]);
+    } catch (error) {
+      console.error("商品已刪除，但 MinIO 圖片清理失敗", error);
+    }
     return NextResponse.json({ ok: true });
   } catch (error) {
     const authError = authErrorResponse(error);
