@@ -22,7 +22,7 @@ It uses a credential separate from the ERP browser session. The access token and
    npm run db:migrate
    ```
 
-3. The authorization server supports Client ID Metadata Documents (CIMD) and retains Dynamic Client Registration at `/register` for backward compatibility. Web clients must register HTTPS callbacks. Native/CLI clients may register only HTTP loopback callbacks on `127.0.0.1`, `[::1]`, or `localhost`; every callback still requires an exact registered URI match, including port and path.
+3. The authorization server supports Client ID Metadata Documents (CIMD) and retains Dynamic Client Registration at `/register` for backward compatibility. Web clients must register HTTPS callbacks and use an exact registered redirect URI. Native/CLI clients may register only HTTP loopback callbacks on `127.0.0.1`, `[::1]`, or `localhost`; for those loopback callbacks the host, path, and query must match the registered URI, while the ephemeral port may change between authorization attempts.
 
 4. Configure edge rate limiting as a second layer for `/mcp`, `/authorize`, `/token`, and `/revoke`. The application has per-instance guardrails, but edge limits work across replicas.
 
@@ -68,7 +68,7 @@ codex mcp add neverland-erp --url https://<erp-domain>/mcp --oauth-client-regist
 codex mcp login neverland-erp
 ```
 
-The browser returns to a short-lived loopback callback after login and consent. `application_type=native`, PKCE S256, exact redirect matching, and refresh-token rotation remain mandatory.
+The browser returns to a short-lived loopback callback after login and consent. `application_type=native`, PKCE S256, loopback host/path/query matching, ephemeral loopback ports, and refresh-token rotation are supported. The authorization code still stores the exact redirect URI used for that authorization attempt, and the token exchange must send that exact same URI.
 
 ## Operational notes
 

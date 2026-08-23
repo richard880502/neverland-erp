@@ -93,14 +93,30 @@ async function clientFromMetadataDocument(clientId: string): Promise<OAuthClient
   return { name: name || url.hostname, redirectUris, applicationType };
 }
 
+function isLoopbackRedirectHost(hostname: string) {
+  return hostname === "127.0.0.1" || hostname === "[::1]" || hostname === "localhost";
+}
+
 export function validateRedirectUri(value: string, applicationType: OAuthApplicationType = "web") {
   let uri: URL;
   try { uri = new URL(value); } catch { throw new Error("redirect_uri 無效"); }
   if (uri.hash || uri.username || uri.password) throw new Error("redirect_uri 不可含 fragment 或帳密");
-  const loopbackHost = uri.hostname === "127.0.0.1" || uri.hostname === "[::1]" || uri.hostname === "localhost";
+  const loopbackHost = isLoopbackRedirectHost(uri.hostname);
   const nativeLoopback = applicationType === "native" && uri.protocol === "http:" && loopbackHost;
   if (uri.protocol !== "https:" && !nativeLoopback) throw new Error("redirect_uri 必須為 HTTPS；native client 僅可使用 HTTP loopback callback");
   return uri.toString();
+}
+
+export function redirectUriMatches(registeredValue: string, requestedValue: string, applicationType: OAuthApplicationType = "web") {
+  const registered = new URL(validateRedirectUri(registeredValue, applicationType));
+  const requested = new URL(validateRedirectUri(requestedValue, applicationType));
+  if (registered.toString() === requested.toString()) return true;
+  if (applicationType !== "native") return false;
+  if (registered.protocol !== "http:" || requested.protocol !== "http:") return false;
+  if (!isLoopbackRedirectHost(registered.hostname) || !isLoopbackRedirectHost(requested.hostname)) return false;
+  return registered.hostname === requested.hostname
+    && registered.pathname === requested.pathname
+    && registered.search === requested.search;
 }
 
 export async function getClient(clientId: string, redirectUri: string): Promise<OAuthClient> {
@@ -109,8 +125,9 @@ export async function getClient(clientId: string, redirectUri: string): Promise<
     ? { name: dynamic.clientName, redirectUris: dynamic.redirectUris, applicationType: dynamic.applicationType as OAuthApplicationType }
     : configuredClients()[clientId] ?? await clientFromMetadataDocument(clientId);
   if (!client) throw new Error("未註冊的 OAuth client");
-  if (!client.redirectUris.includes(redirectUri)) throw new Error("redirect_uri 未註冊");
-  return { name: client.name ?? clientId, redirectUris: client.redirectUris, applicationType: client.applicationType ?? "web" };
+  const applicationType = client.applicationType ?? "web";
+  if (!client.redirectUris.some((registeredUri) => redirectUriMatches(registeredUri, redirectUri, applicationType))) throw new Error("redirect_uri 未註冊");
+  return { name: client.name ?? clientId, redirectUris: client.redirectUris, applicationType };
 }
 
 export async function validateAuthorizationRequest(params: URLSearchParams, request: Request) {
