@@ -4,6 +4,7 @@
 import Link from "next/link";
 import { useMemo, useState } from "react";
 import { ArrowRight, Boxes, MapPin, Search, SlidersHorizontal } from "lucide-react";
+import { PageHeader } from "@/components/ui/PageHeader";
 
 type LocationStock = { id: string; name: string; type: string; quantity: number };
 type InventoryRow = {
@@ -99,10 +100,13 @@ export function InventoryCatalog({ rows, locations }: { rows: InventoryRow[]; lo
 
   return (
     <div className="inventory-catalog">
-      <header className="page-header inventory-heading">
-        <div><div className="eyebrow">Product-first inventory</div><h1>即時庫存</h1><p>先找商品，再查看尺寸與各據點現貨，快速判斷可以從哪裡調貨。</p></div>
-        <div className="inventory-result-count"><strong>{filtered.length}</strong><span>／ {groups.length} 款商品</span></div>
-      </header>
+      <PageHeader
+        className="inventory-heading"
+        eyebrow="Inventory"
+        title="即時庫存"
+        description="先找商品，再查看尺寸與各據點現貨，快速判斷可以從哪裡調貨。"
+        actions={<div className="inventory-result-count"><strong>{filtered.length}</strong><span>／ {groups.length} 款商品</span></div>}
+      />
 
       <section className="inventory-tools" aria-label="庫存搜尋與篩選">
         <label className="inventory-search"><Search size={18} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="搜尋商品名稱、SKU 或尺寸" aria-label="搜尋商品" /></label>
