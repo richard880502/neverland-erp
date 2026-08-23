@@ -79,8 +79,7 @@
 }
 
 /* --------------------------------------------------------------------------
-   Sidebar account card: reserve a fixed action column and clamp account copy.
-   Keep the compact avatar visually aligned with the rest of the Medusa shell.
+   Sidebar account card: explicitly reset legacy span margins and typography.
    -------------------------------------------------------------------------- */
 
 .sidebar-user {
@@ -119,20 +118,25 @@
   white-space: nowrap;
 }
 
-.sidebar-avatar {
+.sidebar-user .sidebar-avatar {
+  box-sizing: border-box;
   width: 32px;
   height: 32px;
   min-width: 32px;
   max-width: 32px;
+  margin: 0 !important;
+  padding: 0;
   display: grid;
   place-items: center;
+  align-self: center;
+  justify-self: center;
   overflow: hidden;
   white-space: nowrap;
-  padding: 0;
+  border: 1px solid #bfdbfe;
+  border-radius: 999px;
   background: #eff6ff;
-  border-color: #bfdbfe;
   color: #2563eb;
-  font-size: 11px;
+  font-size: 10px;
   font-weight: 650;
   line-height: 1;
   letter-spacing: 0;
@@ -144,6 +148,152 @@
   height: 30px;
   min-width: 30px;
   padding: 0;
+}
+
+/* --------------------------------------------------------------------------
+   Dashboard date range: remove the legacy black grid background completely and
+   present presets as one compact, stateful Medusa-style segmented control.
+   -------------------------------------------------------------------------- */
+
+.dashboard-filter-panel {
+  grid-template-columns: minmax(180px, 1.05fr) repeat(4, minmax(135px, .78fr)) minmax(286px, 1.25fr);
+}
+
+.dashboard-range-control {
+  min-width: 0;
+  min-height: 66px;
+  padding: 8px 9px;
+  display: grid;
+  align-content: center;
+  gap: 7px;
+  border: 1px solid var(--ui-border-base);
+  border-radius: var(--ui-radius-sm);
+  background: var(--ui-bg-component);
+}
+
+.dashboard-range-copy {
+  min-width: 0;
+  padding: 0 2px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.dashboard-range-copy span {
+  flex: 0 0 auto;
+  color: var(--ui-fg-muted);
+  font-size: 9px;
+  font-weight: 600;
+  line-height: 13px;
+  letter-spacing: .045em;
+}
+
+.dashboard-range-copy strong {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--ui-fg-subtle);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 9px;
+  font-weight: 550;
+  line-height: 13px;
+  font-variant-numeric: tabular-nums;
+}
+
+.dashboard-filter-panel .dashboard-presets {
+  width: 100%;
+  min-width: 0;
+  margin: 0;
+  padding: 3px;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(40px, 1fr)) 32px;
+  gap: 2px;
+  align-items: center;
+  border: 1px solid var(--ui-border-base);
+  border-radius: 7px;
+  background: var(--ui-bg-component-hover);
+  overflow: hidden;
+}
+
+.dashboard-filter-panel .dashboard-presets button {
+  appearance: none;
+  width: 100%;
+  min-width: 0;
+  height: 28px;
+  min-height: 28px;
+  margin: 0;
+  padding: 0 7px;
+  display: grid;
+  place-items: center;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--ui-fg-muted);
+  box-shadow: none;
+  cursor: pointer;
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 1;
+  letter-spacing: 0;
+  transition: background-color .12s ease, color .12s ease, box-shadow .12s ease;
+}
+
+.dashboard-filter-panel .dashboard-presets button:hover {
+  background: rgba(255, 255, 255, .72);
+  color: var(--ui-fg-base);
+}
+
+.dashboard-filter-panel .dashboard-presets button.active {
+  background: var(--ui-bg-base);
+  color: #2563eb;
+  box-shadow: 0 1px 2px rgba(24, 24, 27, .06), inset 0 0 0 1px #bfdbfe;
+}
+
+.dashboard-filter-panel .dashboard-presets .dashboard-reset {
+  padding: 0;
+  color: var(--ui-fg-muted);
+}
+
+.dashboard-filter-panel .dashboard-presets .dashboard-reset:hover {
+  color: var(--ui-fg-base);
+}
+
+.comparison-period {
+  min-height: 24px;
+  margin: 0 2px 14px;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  color: var(--ui-fg-muted);
+  font-size: 10px;
+  line-height: 15px;
+  letter-spacing: 0;
+}
+
+.comparison-period .comparison-period-label {
+  margin: 0;
+  padding: 2px 6px;
+  border: 1px solid var(--ui-border-base);
+  border-radius: 999px;
+  background: var(--ui-bg-component);
+  color: var(--ui-fg-muted);
+  font-size: 9px;
+  font-weight: 550;
+}
+
+.comparison-period strong {
+  color: var(--ui-fg-subtle);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 9px;
+  font-weight: 550;
+  font-variant-numeric: tabular-nums;
+}
+
+.comparison-period > span:last-child {
+  margin-left: auto;
+  color: var(--ui-fg-disabled);
 }
 
 /* --------------------------------------------------------------------------
@@ -215,6 +365,12 @@
   color: #2563eb;
 }
 
+@media (max-width: 1180px) {
+  .dashboard-range-control {
+    grid-column: 1 / -1;
+  }
+}
+
 @media (max-width: 980px) {
   .product-price-editor {
     grid-template-columns: repeat(3, minmax(130px, 1fr));
@@ -222,6 +378,22 @@
 
   .product-price-editor-actions {
     grid-column: 1 / -1;
+  }
+}
+
+@media (max-width: 640px) {
+  .dashboard-range-control {
+    grid-column: auto;
+  }
+
+  .comparison-period {
+    align-items: flex-start;
+    flex-wrap: wrap;
+  }
+
+  .comparison-period > span:last-child {
+    width: 100%;
+    margin-left: 0;
   }
 }
 
