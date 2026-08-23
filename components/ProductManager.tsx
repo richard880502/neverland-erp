@@ -4,6 +4,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Power, PowerOff, Plus, Trash2 } from "lucide-react";
+import { PageHeader } from "@/components/ui/PageHeader";
 
 type Product = { id: string; sku: string; name: string; size: string | null; safetyStock: number; listPrice: number | null; wholesalePrice: number | null; unitCost: number | null; description: string | null; imageThumbPath: string | null; active: boolean; movementCount: number };
 
@@ -32,7 +33,7 @@ export function ProductManager({ products, canWrite }: { products: Product[]; ca
     router.refresh();
   }
   return <>
-    <header className="page-header"><div><div className="eyebrow">Master data</div><h1>商品主檔</h1><p>每個尺寸使用獨立 SKU，確保庫存可以準確追蹤。</p></div></header>
+    <PageHeader eyebrow="Master data" title="商品主檔" description="每個尺寸使用獨立 SKU，確保庫存可以準確追蹤。" />
     {message && <div className="form-error">{message}</div>}
     {canWrite && <details className="panel drawer"><summary><span className="btn btn-primary"><Plus size={16} />新增商品</span></summary>
       <form className="form-grid" onSubmit={submit}>
