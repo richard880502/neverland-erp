@@ -2,7 +2,17 @@
 
 Neverland ERP 是為 Neverland 品牌商品、總倉、直營與寄賣通路設計的輕量 ERP / 庫存後台。系統以 PostgreSQL 的庫存異動帳作為正式資料來源，從異動即時計算各 SKU 在總倉與各通路的庫存，並提供銷售分析、商品圖片、帳號權限、Google Authenticator 雙重驗證、Google Sheet 同步，以及 Remote MCP / OAuth 整合。
 
-> Current release target: **v2.0.0**
+> Current release target: **v3.0.0**
+
+## v3.0.0 — Stateless storage and admin productivity
+
+v3.0.0 將商品圖片儲存全面改為私有 MinIO／S3-compatible Object Storage，並加入商品定價與後台操作體驗的改善。
+
+- 商品圖片上傳、讀取與刪除皆使用 MinIO；資料庫僅保存 object key，不再有 runtime 本機上傳 fallback。
+- 保留 Sharp 產生 1600px 原圖與 320px 縮圖 WebP，圖片透過短效簽名網址供已授權使用者直接讀取。
+- 提供既有商品圖片的一次性遷移工具與完整驗證流程，讓 ERP 可以維持 stateless 部署。
+- 管理員可在商品管理頁直接編輯售價，包含精簡的價格編輯介面與 API 權限控管。
+- 側欄帳號頭像針對中文 initials、帳號區塊與日期篩選樣式進行調整，提升緊湊版面的一致性。
 
 ## v2.0.0 — Medusa-aligned Admin UI
 
