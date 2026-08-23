@@ -32,7 +32,13 @@ function pageLabel(pathname: string) {
 
 function initials(name: string) {
   const value = name.trim();
-  if (!value) return "NL";
+  if (!value) return "N";
+
+  // CJK names read more cleanly as a single glyph inside the compact avatar.
+  // Latin names keep the familiar two-initial treatment.
+  const cjk = value.match(/[\u3400-\u9FFF\uF900-\uFAFF\u3040-\u30FF\uAC00-\uD7AF]/);
+  if (cjk) return cjk[0];
+
   const words = value.split(/\s+/).filter(Boolean);
   if (words.length > 1) return words.slice(0, 2).map((word) => word[0]).join("").toUpperCase();
   return value.slice(0, 2).toUpperCase();
