@@ -12,6 +12,7 @@ type DashboardDataset = {
 };
 
 type PeriodMetrics = { revenue: number; units: number; transactions: number; average: number };
+type DatePreset = "7" | "30" | "90" | "all" | null;
 
 const money = new Intl.NumberFormat("zh-TW", { style: "currency", currency: "TWD", maximumFractionDigits: 0 });
 const integer = new Intl.NumberFormat("zh-TW", { maximumFractionDigits: 0 });
@@ -20,6 +21,10 @@ function shiftDate(value: string, days: number) {
   const date = new Date(`${value}T00:00:00Z`);
   date.setUTCDate(date.getUTCDate() + days);
   return date.toISOString().slice(0, 10);
+}
+
+function compactDate(value: string) {
+  return value.replaceAll("-", ".");
 }
 
 function daySpan(start: string, end: string) {
@@ -47,6 +52,7 @@ export function DashboardExperience({ data }: { data: DashboardDataset }) {
   const defaultStart = shiftDate(data.dateBounds.max, -29) < data.dateBounds.min ? data.dateBounds.min : shiftDate(data.dateBounds.max, -29);
   const [startDate, setStartDate] = useState(defaultStart);
   const [endDate, setEndDate] = useState(data.dateBounds.max);
+  const [selectedPreset, setSelectedPreset] = useState<DatePreset>("30");
   const [channelId, setChannelId] = useState("all");
   const [productName, setProductName] = useState("all");
   const [trendMode, setTrendMode] = useState<TrendMode>("revenue");
@@ -97,18 +103,38 @@ export function DashboardExperience({ data }: { data: DashboardDataset }) {
   function applyPreset(days: number | "all") {
     setEndDate(data.dateBounds.max);
     setStartDate(days === "all" ? data.dateBounds.min : shiftDate(data.dateBounds.max, -(days - 1)) < data.dateBounds.min ? data.dateBounds.min : shiftDate(data.dateBounds.max, -(days - 1)));
+    setSelectedPreset(days === "all" ? "all" : String(days) as DatePreset);
+  }
+
+  function changeStartDate(value: string) {
+    setStartDate(value);
+    setSelectedPreset(null);
+  }
+
+  function changeEndDate(value: string) {
+    setEndDate(value);
+    setSelectedPreset(null);
   }
 
   return <>
     <section className="dashboard-filter-panel" aria-label="儀表板篩選條件">
       <div className="dashboard-filter-title"><span>GLOBAL FILTER</span><strong>分析條件</strong><small>所有銷售圖表與比較數字同步更新</small></div>
-      <label><CalendarDays size={15} /><span>開始日期</span><input type="date" min={data.dateBounds.min} max={endDate} value={startDate} onChange={(event) => setStartDate(event.target.value)} /></label>
-      <label><CalendarDays size={15} /><span>結束日期</span><input type="date" min={startDate} max={data.dateBounds.max} value={endDate} onChange={(event) => setEndDate(event.target.value)} /></label>
+      <label><CalendarDays size={15} /><span>開始日期</span><input type="date" min={data.dateBounds.min} max={endDate} value={startDate} onChange={(event) => changeStartDate(event.target.value)} /></label>
+      <label><CalendarDays size={15} /><span>結束日期</span><input type="date" min={startDate} max={data.dateBounds.max} value={endDate} onChange={(event) => changeEndDate(event.target.value)} /></label>
       <label><Store size={15} /><span>通路</span><select value={channelId} onChange={(event) => setChannelId(event.target.value)}><option value="all">全部通路</option>{data.filters.channels.map((channel) => <option key={channel.id} value={channel.id}>{channel.name}</option>)}</select></label>
       <label><PackageSearch size={15} /><span>商品</span><select value={productName} onChange={(event) => setProductName(event.target.value)}><option value="all">全部商品</option>{data.filters.products.map((product) => <option key={product} value={product}>{product}</option>)}</select></label>
-      <div className="dashboard-presets"><button onClick={() => applyPreset(7)}>7D</button><button onClick={() => applyPreset(30)}>30D</button><button onClick={() => applyPreset(90)}>90D</button><button onClick={() => applyPreset("all")}>ALL</button><button title="重設全部篩選" onClick={() => { applyPreset(30); setChannelId("all"); setProductName("all"); }}><RotateCcw size={14} /></button></div>
+      <div className="dashboard-range-control">
+        <div className="dashboard-range-copy"><span>TIME RANGE</span><strong>{compactDate(startDate)} — {compactDate(endDate)}</strong></div>
+        <div className="dashboard-presets" role="group" aria-label="快速日期範圍">
+          <button type="button" className={selectedPreset === "7" ? "active" : undefined} aria-pressed={selectedPreset === "7"} onClick={() => applyPreset(7)}>7D</button>
+          <button type="button" className={selectedPreset === "30" ? "active" : undefined} aria-pressed={selectedPreset === "30"} onClick={() => applyPreset(30)}>30D</button>
+          <button type="button" className={selectedPreset === "90" ? "active" : undefined} aria-pressed={selectedPreset === "90"} onClick={() => applyPreset(90)}>90D</button>
+          <button type="button" className={selectedPreset === "all" ? "active" : undefined} aria-pressed={selectedPreset === "all"} onClick={() => applyPreset("all")}>ALL</button>
+          <button type="button" className="dashboard-reset" title="重設全部篩選" aria-label="重設全部篩選" onClick={() => { applyPreset(30); setChannelId("all"); setProductName("all"); }}><RotateCcw size={14} /></button>
+        </div>
+      </div>
     </section>
-    <div className="comparison-period">目前期間 <strong>{startDate} — {endDate}</strong><span>比較期間 {analysis.previousStart} — {analysis.previousEnd}</span></div>
+    <div className="comparison-period"><span className="comparison-period-label">比較期間</span><strong>{compactDate(analysis.previousStart)} — {compactDate(analysis.previousEnd)}</strong><span>依目前區間自動計算前一期</span></div>
 
     <section className="stat-grid dashboard-kpis">
       <div className="stat-card stat-revenue" data-index="01"><span>估算銷售額</span><strong>{money.format(analysis.currentMetrics.revenue)}</strong><KpiDelta current={analysis.currentMetrics.revenue} previous={analysis.previousMetrics.revenue} /><small>LIST-PRICE ESTIMATE</small></div>
