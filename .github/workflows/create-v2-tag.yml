@@ -1,16 +1,16 @@
 name: Create v2.0.0 tag
 
 on:
-  push:
+  pull_request:
     branches:
-      - feat/issue-3-medusa-admin-ui
+      - main
 
 permissions:
   contents: write
 
 jobs:
   tag:
-    if: github.event.head_commit.message == 'chore(release): create v2.0.0 tag'
+    if: github.event.pull_request.head.ref == 'feat/issue-3-medusa-admin-ui'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
