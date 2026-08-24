@@ -1,5 +1,5 @@
 import { prisma } from "@/lib/prisma";
-import { deltas, isSale, sumInventory } from "@/lib/inventory";
+import { deltas, isSale, salesSign, sumInventory } from "@/lib/inventory";
 
 export async function getInventoryRows() {
   const products = await prisma.product.findMany({
@@ -62,8 +62,8 @@ export async function getDashboardData() {
       productName: sale.product.name,
       channelId: sale.channel?.id ?? null,
       channelName: sale.channel?.name ?? "未指定",
-      quantity: sale.quantity,
-      revenue: Number(sale.unitPrice ?? 0) * sale.quantity,
+      quantity: salesSign(sale.type) * sale.quantity,
+      revenue: salesSign(sale.type) * Number(sale.unitPrice ?? 0) * sale.quantity,
       countsAsTransaction: sale.quantity > 0 && !sale.reversedAt && !sale.reversalOfId,
     })),
     filters: { products: productNames, channels: channelOptions },
