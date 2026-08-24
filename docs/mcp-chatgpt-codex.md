@@ -60,7 +60,7 @@ With `inventory:write`, Staff/Admin users can use the following two-phase tools:
 - `create_purchase_return` — removes stock from the warehouse for supplier returns without deleting or editing the original receive event.
 - `create_consignment_direct_fulfillment` — deducts stock from a CONSIGNMENT source while attributing the sale to a DIRECT channel. Commit creates `CONSIGN_RETURN` and `SHIP` inside one Serializable transaction.
 
-The read tool `list_inventory_movements` recognizes `SALES_RETURN` and `PURCHASE_RETURN`. Sales summary tools calculate returns with a negative sign so quantity and revenue are net values rather than gross sales only.
+The read tool `list_inventory_movements` recognizes `SALES_RETURN` and `PURCHASE_RETURN`. `get_sales_summary` and `get_sales_by_channel` include `SALES_RETURN` with a negative sign, so returned quantity and refund amount reduce net quantity and net revenue.
 
 ## ChatGPT / Codex acceptance test
 
