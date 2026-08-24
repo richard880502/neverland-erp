@@ -254,3 +254,39 @@ export async function markBillingStatementPaid(
     return updated;
   });
 }
+
+export async function voidBillingStatement(id: string, actor: Actor) {
+  if (actor.role === "VIEWER") throw new Error("目前角色沒有作廢請款單權限");
+  return prisma.$transaction(async (tx) => {
+    const existing = await tx.billingStatement.findUnique({
+      where: { id },
+      include: { sources: { select: { movementId: true } } },
+    });
+    if (!existing) throw new Error("找不到請款單");
+    if (existing.status === "PAID") throw new Error("已收款請款單不可直接作廢");
+    if (existing.status === "VOID") throw new Error("請款單已經作廢");
+    if (existing.status !== "ISSUED") throw new Error("只有待收款請款單可以作廢");
+
+    const movementIds = existing.sources.map((source) => source.movementId);
+    await tx.billingStatementSource.deleteMany({ where: { statementId: id } });
+    const updated = await tx.billingStatement.update({
+      where: { id },
+      data: { status: "VOID" },
+    });
+    await tx.auditLog.create({
+      data: {
+        userId: actor.userId,
+        action: "BILLING_STATEMENT_VOIDED",
+        entityType: "BillingStatement",
+        entityId: id,
+        metadata: {
+          statementNo: existing.statementNo,
+          releasedSourceCount: movementIds.length,
+          movementIds,
+        },
+        ipAddress: actor.ipAddress ?? null,
+      },
+    });
+    return updated;
+  });
+}
