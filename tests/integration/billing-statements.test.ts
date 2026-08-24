@@ -21,7 +21,7 @@ test.after(async () => {
   await prisma.$disconnect();
 });
 
-test("manual billing works without stock movements, snapshots data, supports voiding, and protects paid statements", async () => {
+test("billing auto-fills by date but manual billing remains independent from stock movements", async () => {
   const user = await prisma.user.create({ data: { email, name: "Billing Integration", passwordHash: "unused", role: "ADMIN", mustChangePassword: false } });
   const product = await prisma.product.create({ data: { sku, name: "Billing Tee", size: "M", listPrice: 1000 } });
   const channel = await prisma.channel.create({ data: {
@@ -37,8 +37,9 @@ test("manual billing works without stock movements, snapshots data, supports voi
   const actor = { userId: user.id, role: user.role };
 
   assert.equal(await prisma.stockMovement.count({ where: { productId: product.id } }), 0);
-  const preview = await previewBillingStatement({ channelId: channel.id, periodStart: "2026-08-01", periodEnd: "2026-08-31", settlementRate: 0.6, taxRate: 0.05, shippingFee: 100 });
-  assert.equal(preview.sourceMovementCount, 0);
+  const emptyAutofill = await previewBillingStatement({ channelId: channel.id, periodStart: "2026-08-01", periodEnd: "2026-08-31" });
+  assert.equal(emptyAutofill.sourceMovementCount, 0);
+  assert.equal(emptyAutofill.items.length, 0);
 
   const input = {
     channelId: channel.id,
@@ -78,4 +79,20 @@ test("manual billing works without stock movements, snapshots data, supports voi
   assert.equal(Number(paid.paidAmount), 1360);
   assert.equal(paid.paymentReference, "12345");
   await assert.rejects(voidBillingStatement(replacement.id, actor), /已收款請款單不可直接作廢/);
+
+  await prisma.stockMovement.createMany({ data: [
+    { occurredAt: new Date("2026-08-10T12:00:00+08:00"), type: "CONSIGN_SOLD", quantity: 1, productId: product.id, channelId: channel.id, createdById: user.id },
+    { occurredAt: new Date("2026-08-20T12:00:00+08:00"), type: "CONSIGN_SOLD", quantity: 2, productId: product.id, channelId: channel.id, createdById: user.id },
+    { occurredAt: new Date("2026-09-01T12:00:00+08:00"), type: "CONSIGN_SOLD", quantity: 4, productId: product.id, channelId: channel.id, createdById: user.id },
+  ] });
+
+  const augustAutofill = await previewBillingStatement({ channelId: channel.id, periodStart: "2026-08-01", periodEnd: "2026-08-31" });
+  assert.equal(augustAutofill.sourceMovementCount, 2);
+  assert.equal(augustAutofill.items.length, 1);
+  assert.equal(augustAutofill.items[0].productId, product.id);
+  assert.equal(augustAutofill.items[0].quantity, 3);
+
+  const septemberAutofill = await previewBillingStatement({ channelId: channel.id, periodStart: "2026-09-01", periodEnd: "2026-09-30" });
+  assert.equal(septemberAutofill.sourceMovementCount, 1);
+  assert.equal(septemberAutofill.items[0].quantity, 4);
 });
