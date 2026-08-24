@@ -7,7 +7,7 @@ export async function POST(request: Request) {
     assertSameOrigin(request);
     const auth = await requireApiUser({ roles: ["ADMIN", "STAFF"] });
     const parsed = billingCreateSchema.safeParse(await request.json().catch(() => null));
-    if (!parsed.success) return NextResponse.json({ error: "請檢查客戶、期間與請款設定" }, { status: 400 });
+    if (!parsed.success) return NextResponse.json({ error: "請檢查客戶、請款品項、數量與結算設定" }, { status: 400 });
     const statement = await createBillingStatement(parsed.data, { userId: auth.user.id, role: auth.user.role, ipAddress: clientIp(request) });
     return NextResponse.json({ id: statement.id, statementNo: statement.statementNo }, { status: 201 });
   } catch (error) {
