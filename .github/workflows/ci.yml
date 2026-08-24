@@ -34,5 +34,6 @@ jobs:
       - run: npx prisma migrate deploy
       - run: npm test
       - run: npm run test:integration
+      - run: python3 -m py_compile scripts/render-billing-template.py
       - run: npm run lint
       - run: npm run build
