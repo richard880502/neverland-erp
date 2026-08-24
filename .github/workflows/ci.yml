@@ -35,5 +35,19 @@ jobs:
       - run: npm test
       - run: npm run test:integration
       - run: python3 -m py_compile scripts/render-billing-template.py
+      - name: Validate billing XLSX template
+        run: |
+          python3 - <<'PY'
+          import zipfile
+
+          path = "public/templates/Neverland請款單.xlsx"
+          with zipfile.ZipFile(path) as archive:
+              names = set(archive.namelist())
+              assert "[Content_Types].xml" in names, "missing XLSX content types"
+              assert "xl/workbook.xml" in names, "missing workbook.xml"
+              assert any(name.startswith("xl/drawings/") and name.endswith(".xml") for name in names), "missing billing drawing"
+              assert any(name.startswith("xl/media/") for name in names), "missing company stamp/media"
+          print("billing XLSX template is a valid archive with drawing/media")
+          PY
       - run: npm run lint
       - run: npm run build
