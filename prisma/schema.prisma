@@ -23,6 +23,8 @@ enum ChannelType {
 enum MovementType {
   RECEIVE
   SHIP
+  SALES_RETURN
+  PURCHASE_RETURN
   CONSIGN_OUT
   CONSIGN_RETURN
   CONSIGN_SOLD
@@ -170,8 +172,6 @@ model AuditLog {
   @@index([userId, createdAt])
 }
 
-/// A separately revocable grant for an AI/MCP client.  Browser sessions are
-/// intentionally not used as MCP credentials.
 model McpConnection {
   id          String   @id @default(cuid())
   userId      String
@@ -249,8 +249,6 @@ model OAuthRefreshToken {
   @@index([expiresAt])
 }
 
-/// OAuth Dynamic Client Registration records. These are public-client
-/// identifiers and exact redirect URI allowlists, never client secrets.
 model OAuthClient {
   id           String   @id @default(cuid())
   clientId     String   @unique
