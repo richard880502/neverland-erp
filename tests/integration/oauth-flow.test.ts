@@ -20,7 +20,7 @@ test.before(async () => {
 });
 
 test.after(async () => {
-  await prisma.googleSheetMovementQueue.deleteMany();
+  await prisma.googleSheetMovementQueue.deleteMany({ where: { movement: { product: { sku: "MCP-TEST-SKU" } } } });
   await prisma.stockMovement.deleteMany({ where: { product: { sku: "MCP-TEST-SKU" } } });
   await prisma.product.deleteMany({ where: { sku: "MCP-TEST-SKU" } });
   await prisma.user.deleteMany({ where: { email: { in: ["mcp-integration@example.com", "mcp-write-integration@example.com"] } } });
@@ -42,7 +42,7 @@ test("high-risk write requires a single-use preview token and preserves domain i
   const committed = await callMcpTool("create_inventory_movement", { ...command, confirmationToken: structured.confirmationToken }, auth);
   assert.equal((committed.structuredContent as { committed: boolean }).committed, true);
   assert.equal(await prisma.stockMovement.count({ where: { productId: product.id } }), 1);
-  assert.equal(await prisma.googleSheetMovementQueue.count(), 1);
+  assert.equal(await prisma.googleSheetMovementQueue.count({ where: { movement: { productId: product.id } } }), 1);
 
   await assert.rejects(
     callMcpTool("create_inventory_movement", { ...command, confirmationToken: structured.confirmationToken }, auth),

@@ -37,7 +37,10 @@ UI implementation 採用本地 design tokens / primitives 對齊 Medusa，而不
 
 - 商品 / SKU / 尺寸即時庫存。
 - 總倉、寄賣據點與可調貨位置。
-- 進貨、出貨、寄賣出貨、寄賣退回、寄賣售出、買斷、瑕疵與庫存調整。
+- 進貨、出貨、銷貨退回、進貨退出、寄賣出貨、寄賣退回、寄賣售出、買斷、瑕疵與庫存調整。
+- 商品選擇支援 SKU / 名稱 / 尺寸快速搜尋與編碼排序。
+- 寄賣代發會在同一個 Serializable transaction 中建立 `CONSIGN_RETURN` + 直營 `SHIP`，從寄賣經銷扣庫存並將營收歸入直營通路。
+- 銷貨退回會回補倉庫並扣回已售數量與營收；進貨退出會扣除總倉庫存。
 - 負庫存防護、沖銷與稽核紀錄。
 - PostgreSQL 不可變更異動帳作為正式庫存來源。
 
@@ -73,6 +76,16 @@ UI implementation 採用本地 design tokens / primitives 對齊 Medusa，而不
 ### Remote MCP / OAuth
 
 ERP 提供 protected, stateless Streamable HTTP MCP endpoint，可讓支援 MCP / OAuth 的 agent 或 assistant 在使用者權限範圍內操作 ERP。
+
+庫存寫入採兩階段 preview / confirmation，包含：
+
+- `create_inventory_movement`：一般庫存異動
+- `create_sales_return`：銷貨退回
+- `create_purchase_return`：進貨退出
+- `create_consignment_direct_fulfillment`：寄賣代發
+- `reverse_inventory_movement`：沖銷既有異動
+
+確認 commit 時仍會重新執行角色、OAuth scope、通路類型、價格與庫存驗證，並將異動加入 Google Sheet 同步 queue。
 
 完整設定與連線說明：[`docs/mcp-chatgpt-codex.md`](docs/mcp-chatgpt-codex.md)
 
