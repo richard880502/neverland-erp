@@ -4,27 +4,43 @@ import { z } from "zod";
 import { assertSameOrigin, authErrorResponse, clientIp, requireApiUser } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 
-const updateSchema = z.object({ active: z.boolean() }).strict();
+const updateSchema = z.object({
+  active: z.boolean().optional(),
+  companyName: z.string().trim().max(160).nullable().optional(),
+  taxId: z.string().trim().max(32).nullable().optional(),
+  contactName: z.string().trim().max(120).nullable().optional(),
+  contactEmail: z.string().trim().email().max(200).nullable().optional(),
+  contactPhone: z.string().trim().max(80).nullable().optional(),
+  billingAddress: z.string().trim().max(300).nullable().optional(),
+  settlementRate: z.number().min(0).max(1).nullable().optional(),
+  taxRate: z.number().min(0).max(1).nullable().optional(),
+  paymentTermsDays: z.number().int().min(0).max(365).nullable().optional(),
+}).strict().refine((value) => Object.values(value).some((item) => item !== undefined), { message: "沒有可更新欄位" });
 
 export async function PATCH(request: Request, context: { params: Promise<{ id: string }> }) {
   try {
     assertSameOrigin(request);
     const auth = await requireApiUser({ roles: ["ADMIN", "STAFF"] });
     const parsed = updateSchema.safeParse(await request.json().catch(() => null));
-    if (!parsed.success) return NextResponse.json({ error: "請提供正確的通路狀態" }, { status: 400 });
+    if (!parsed.success) return NextResponse.json({ error: "請檢查通路或請款設定欄位" }, { status: 400 });
     const { id } = await context.params;
-    const existing = await prisma.channel.findUnique({ where: { id }, select: { id: true, name: true } });
+    const existing = await prisma.channel.findUnique({ where: { id }, select: { id: true, name: true, type: true, active: true } });
     if (!existing) return NextResponse.json({ error: "找不到通路" }, { status: 404 });
+    const billingKeys = ["companyName", "taxId", "contactName", "contactEmail", "contactPhone", "billingAddress", "settlementRate", "taxRate", "paymentTermsDays"] as const;
+    if (billingKeys.some((key) => parsed.data[key] !== undefined) && !["CONSIGNMENT", "BUYOUT"].includes(existing.type)) {
+      return NextResponse.json({ error: "只有寄賣或買斷通路可設定請款資料" }, { status: 400 });
+    }
 
     const channel = await prisma.$transaction(async (tx) => {
-      const updated = await tx.channel.update({ where: { id }, data: { active: parsed.data.active } });
+      const updated = await tx.channel.update({ where: { id }, data: parsed.data });
+      const activeOnly = Object.keys(parsed.data).length === 1 && parsed.data.active !== undefined;
       await tx.auditLog.create({
         data: {
           userId: auth.user.id,
-          action: parsed.data.active ? "CHANNEL_ENABLED" : "CHANNEL_DISABLED",
+          action: activeOnly ? (parsed.data.active ? "CHANNEL_ENABLED" : "CHANNEL_DISABLED") : "CHANNEL_BILLING_PROFILE_UPDATED",
           entityType: "Channel",
           entityId: id,
-          metadata: { name: existing.name },
+          metadata: { name: existing.name, updatedFields: Object.keys(parsed.data) },
           ipAddress: clientIp(request),
         },
       });
@@ -34,7 +50,7 @@ export async function PATCH(request: Request, context: { params: Promise<{ id: s
   } catch (error) {
     const authError = authErrorResponse(error);
     if (authError) return NextResponse.json({ error: authError.error }, { status: authError.status });
-    return NextResponse.json({ error: "通路狀態無法更新" }, { status: 500 });
+    return NextResponse.json({ error: "通路設定無法更新" }, { status: 500 });
   }
 }
 
@@ -45,11 +61,11 @@ export async function DELETE(request: Request, context: { params: Promise<{ id: 
     const { id } = await context.params;
     const channel = await prisma.channel.findUnique({
       where: { id },
-      select: { id: true, name: true, _count: { select: { movements: true } } },
+      select: { id: true, name: true, _count: { select: { movements: true, billingStatements: true } } },
     });
     if (!channel) return NextResponse.json({ error: "找不到通路" }, { status: 404 });
-    if (channel._count.movements > 0) {
-      return NextResponse.json({ error: "通路已有庫存異動紀錄，請改用停用以保留帳務歷史" }, { status: 409 });
+    if (channel._count.movements > 0 || channel._count.billingStatements > 0) {
+      return NextResponse.json({ error: "通路已有庫存或請款紀錄，請改用停用以保留帳務歷史" }, { status: 409 });
     }
 
     await prisma.$transaction([

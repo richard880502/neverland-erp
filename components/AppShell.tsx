@@ -2,12 +2,13 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { BarChart3, Bot, Boxes, DatabaseZap, LogOut, PackagePlus, Route, ShieldCheck, ShoppingBag, Users } from "lucide-react";
+import { BarChart3, Bot, Boxes, DatabaseZap, LogOut, PackagePlus, ReceiptText, Route, ShieldCheck, ShoppingBag, Users } from "lucide-react";
 
 const workspaceLinks = [
   { href: "/", label: "營運儀表板", icon: BarChart3 },
   { href: "/inventory", label: "即時庫存", icon: Boxes },
   { href: "/movements", label: "庫存異動", icon: Route },
+  { href: "/billing", label: "請款管理", icon: ReceiptText },
   { href: "/products", label: "商品主檔", icon: ShoppingBag },
   { href: "/channels", label: "通路主檔", icon: PackagePlus },
 ];
@@ -33,12 +34,8 @@ function pageLabel(pathname: string) {
 function initials(name: string) {
   const value = name.trim();
   if (!value) return "N";
-
-  // CJK names read more cleanly as a single glyph inside the compact avatar.
-  // Latin names keep the familiar two-initial treatment.
   const cjk = value.match(/[\u3400-\u9FFF\uF900-\uFAFF\u3040-\u30FF\uAC00-\uD7AF]/);
   if (cjk) return cjk[0];
-
   const words = value.split(/\s+/).filter(Boolean);
   if (words.length > 1) return words.slice(0, 2).map((word) => word[0]).join("").toUpperCase();
   return value.slice(0, 2).toUpperCase();

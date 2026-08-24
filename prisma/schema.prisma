@@ -33,6 +33,18 @@ enum MovementType {
   ADJUSTMENT
 }
 
+enum BillingStatus {
+  DRAFT
+  ISSUED
+  PAID
+  VOID
+}
+
+enum BillingSourceType {
+  CONSIGNMENT
+  BUYOUT
+}
+
 model User {
   id           String          @id @default(cuid())
   email        String          @unique
@@ -48,6 +60,7 @@ model User {
   totpEnabledAt DateTime?
   totpLastUsedStep Int?
   movements    StockMovement[]
+  billingStatements BillingStatement[]
   sessions     Session[]
   auditLogs    AuditLog[]
   googleSheetSyncRuns GoogleSheetSyncRun[]
@@ -291,6 +304,7 @@ model Product {
   imageThumbPath String?
   active      Boolean         @default(true)
   movements   StockMovement[]
+  billingItems BillingStatementItem[]
   createdAt   DateTime        @default(now())
   updatedAt   DateTime        @updatedAt
 }
@@ -300,7 +314,17 @@ model Channel {
   name      String          @unique
   type      ChannelType
   active    Boolean         @default(true)
+  companyName String?
+  taxId String?
+  contactName String?
+  contactEmail String?
+  contactPhone String?
+  billingAddress String?
+  settlementRate Decimal?   @db.Decimal(6, 4)
+  taxRate Decimal?          @db.Decimal(6, 4)
+  paymentTermsDays Int?     @default(0)
   movements StockMovement[]
+  billingStatements BillingStatement[]
   createdAt DateTime        @default(now())
   updatedAt DateTime        @updatedAt
 }
@@ -324,6 +348,7 @@ model StockMovement {
   reversalOf   StockMovement?  @relation("MovementReversal", fields: [reversalOfId], references: [id])
   reversal     StockMovement?  @relation("MovementReversal")
   googleSheetQueue GoogleSheetMovementQueue?
+  billingSource BillingStatementSource?
   createdAt    DateTime        @default(now())
 
   @@index([productId, occurredAt])
@@ -349,4 +374,72 @@ model GoogleSheetMovementQueue {
   @@index([status, nextAttemptAt])
   @@index([processingToken])
   @@index([createdAt])
+}
+
+model BillingStatement {
+  id                String            @id @default(cuid())
+  statementNo       String            @unique
+  channelId         String
+  sourceType        BillingSourceType
+  periodStart       DateTime
+  periodEnd         DateTime
+  issuedAt          DateTime
+  dueDate           DateTime?
+  companyName       String
+  taxId             String?
+  contactName       String?
+  contactEmail      String?
+  contactPhone      String?
+  billingAddress    String?
+  settlementRate    Decimal           @db.Decimal(6, 4)
+  taxRate           Decimal           @db.Decimal(6, 4)
+  subtotal          Decimal           @db.Decimal(12, 2)
+  taxAmount         Decimal           @db.Decimal(12, 2)
+  shippingFee       Decimal           @default(0) @db.Decimal(12, 2)
+  totalAmount       Decimal           @db.Decimal(12, 2)
+  status            BillingStatus     @default(ISSUED)
+  paidAt            DateTime?
+  paidAmount        Decimal?          @db.Decimal(12, 2)
+  paymentMethod     String?
+  paymentReference  String?
+  note              String?
+  createdById       String
+  channel           Channel           @relation(fields: [channelId], references: [id])
+  createdBy         User              @relation(fields: [createdById], references: [id])
+  items             BillingStatementItem[]
+  sources           BillingStatementSource[]
+  createdAt         DateTime          @default(now())
+  updatedAt         DateTime          @updatedAt
+
+  @@index([channelId, periodStart, periodEnd])
+  @@index([status, issuedAt])
+}
+
+model BillingStatementItem {
+  id            String           @id @default(cuid())
+  statementId   String
+  productId     String?
+  sku           String
+  productName   String
+  size          String?
+  listPrice     Decimal          @db.Decimal(12, 2)
+  settlementPrice Decimal        @db.Decimal(12, 2)
+  quantity      Int
+  subtotal      Decimal          @db.Decimal(12, 2)
+  statement     BillingStatement @relation(fields: [statementId], references: [id], onDelete: Cascade)
+  product       Product?         @relation(fields: [productId], references: [id], onDelete: SetNull)
+
+  @@index([statementId])
+  @@index([productId])
+}
+
+model BillingStatementSource {
+  id          String           @id @default(cuid())
+  statementId String
+  movementId  String           @unique
+  statement   BillingStatement @relation(fields: [statementId], references: [id], onDelete: Cascade)
+  movement    StockMovement    @relation(fields: [movementId], references: [id])
+  createdAt   DateTime         @default(now())
+
+  @@index([statementId])
 }
