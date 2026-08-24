@@ -49,7 +49,10 @@ export async function createInventoryMovement(input: MovementInput, actor: Movem
     if (["CONSIGN_OUT", "CONSIGN_RETURN", "CONSIGN_SOLD"].includes(input.type) && channel?.type !== "CONSIGNMENT") throw new Error("寄賣事件只能選擇寄賣通路");
     const total = sumInventory(existing);
     if (["SHIP", "PURCHASE_RETURN", "CONSIGN_OUT", "BUYOUT", "DEFECT"].includes(input.type) && total.warehouse < input.quantity) throw new Error(`倉庫庫存不足，目前只有 ${total.warehouse} 件`);
-    if (input.type === "SALES_RETURN" && total.sold < input.quantity) throw new Error(`可退回的已售數量不足，目前只有 ${total.sold} 件`);
+    if (input.type === "SALES_RETURN") {
+      const soldAtChannel = existing.filter((m) => m.channelId === input.channelId).reduce((sum, m) => sum + deltas(m.type, m.quantity).sold, 0);
+      if (soldAtChannel < input.quantity) throw new Error(`${channel?.name ?? "此通路"} 可退回的已售數量不足，目前只有 ${soldAtChannel} 件`);
+    }
     if (["CONSIGN_RETURN", "CONSIGN_SOLD"].includes(input.type)) {
       const atChannel = existing.filter((m) => m.channelId === input.channelId).reduce((sum, m) => sum + deltas(m.type, m.quantity).consignment, 0);
       if (atChannel < input.quantity) throw new Error(`${channel?.name} 的寄賣庫存不足，目前只有 ${atChannel} 件`);
