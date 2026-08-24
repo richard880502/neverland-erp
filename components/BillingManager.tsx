@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { FilePlus2, Search, Store } from "lucide-react";
 import { PageHeader } from "@/components/ui/PageHeader";
@@ -73,13 +73,14 @@ export function BillingManager({
   stats: { outstanding: number; paid: number; count: number };
 }) {
   const router = useRouter();
-  const range = useMemo(localMonthRange, []);
-  const [channelId, setChannelId] = useState(channels[0]?.id ?? "");
+  const range = localMonthRange();
+  const initialChannel = channels[0] ?? null;
+  const [channelId, setChannelId] = useState(initialChannel?.id ?? "");
   const [periodStart, setPeriodStart] = useState(range.start);
   const [periodEnd, setPeriodEnd] = useState(range.end);
   const [issuedAt, setIssuedAt] = useState(range.today);
-  const [settlementPercent, setSettlementPercent] = useState("");
-  const [taxPercent, setTaxPercent] = useState("5");
+  const [settlementPercent, setSettlementPercent] = useState(initialChannel?.settlementRate == null ? "" : String(initialChannel.settlementRate * 100));
+  const [taxPercent, setTaxPercent] = useState(initialChannel?.taxRate == null ? "5" : String(initialChannel.taxRate * 100));
   const [shippingFee, setShippingFee] = useState("0");
   const [note, setNote] = useState("");
   const [preview, setPreview] = useState<Preview | null>(null);
@@ -90,20 +91,20 @@ export function BillingManager({
 
   const channel = channels.find((item) => item.id === channelId) ?? null;
 
-  useEffect(() => {
-    if (!channel) return;
-    setSettlementPercent(channel.settlementRate == null ? "" : String(channel.settlementRate * 100));
-    setTaxPercent(channel.taxRate == null ? "5" : String(channel.taxRate * 100));
-  }, [channelId]); // eslint-disable-line react-hooks/exhaustive-deps
+  function selectChannel(nextId: string) {
+    const next = channels.find((item) => item.id === nextId) ?? null;
+    setChannelId(nextId);
+    setSettlementPercent(next?.settlementRate == null ? "" : String(next.settlementRate * 100));
+    setTaxPercent(next?.taxRate == null ? "5" : String(next.taxRate * 100));
+    setPreview(null);
+    setMessage("");
+  }
 
   useEffect(() => {
     const settlement = Number(settlementPercent);
     const tax = Number(taxPercent);
     const shipping = Number(shippingFee || 0);
-    if (!channelId || !periodStart || !periodEnd || !Number.isFinite(settlement) || settlement <= 0 || !Number.isFinite(tax) || !Number.isFinite(shipping)) {
-      setPreview(null);
-      return;
-    }
+    if (!channelId || !periodStart || !periodEnd || !Number.isFinite(settlement) || settlement <= 0 || !Number.isFinite(tax) || !Number.isFinite(shipping)) return;
     const controller = new AbortController();
     const timer = setTimeout(async () => {
       setPreviewLoading(true);
@@ -176,7 +177,7 @@ export function BillingManager({
       <div className="panel billing-form-panel">
         <div className="billing-section-head"><span>01 / SETUP</span><h2>建立請款單</h2></div>
         {message && <div className="form-error">{message}</div>}
-        <div className="field"><label>客戶 / 通路</label><select className="select" value={channelId} onChange={(event) => setChannelId(event.target.value)}><option value="">選擇客戶</option>{channels.map((item) => <option key={item.id} value={item.id}>{item.name} · {item.type === "CONSIGNMENT" ? "寄賣" : "買斷"}</option>)}</select></div>
+        <div className="field"><label>客戶 / 通路</label><select className="select" value={channelId} onChange={(event) => selectChannel(event.target.value)}><option value="">選擇客戶</option>{channels.map((item) => <option key={item.id} value={item.id}>{item.name} · {item.type === "CONSIGNMENT" ? "寄賣" : "買斷"}</option>)}</select></div>
         {channel && <div className="billing-customer-card">
           <div><Store size={16} /><strong>{channel.companyName || channel.name}</strong></div>
           <dl>
@@ -188,12 +189,12 @@ export function BillingManager({
           </dl>
         </div>}
         <div className="billing-two-col">
-          <div className="field"><label>結算起日</label><input className="input" type="date" value={periodStart} onChange={(event) => setPeriodStart(event.target.value)} /></div>
-          <div className="field"><label>結算迄日</label><input className="input" type="date" value={periodEnd} onChange={(event) => setPeriodEnd(event.target.value)} /></div>
+          <div className="field"><label>結算起日</label><input className="input" type="date" value={periodStart} onChange={(event) => { setPeriodStart(event.target.value); setPreview(null); }} /></div>
+          <div className="field"><label>結算迄日</label><input className="input" type="date" value={periodEnd} onChange={(event) => { setPeriodEnd(event.target.value); setPreview(null); }} /></div>
           <div className="field"><label>請款日期</label><input className="input" type="date" value={issuedAt} onChange={(event) => setIssuedAt(event.target.value)} /></div>
-          <div className="field"><label>結算比例 (%)</label><input className="input" type="number" min="0.01" max="100" step="0.01" placeholder="請先設定，例如 60" value={settlementPercent} onChange={(event) => setSettlementPercent(event.target.value)} /></div>
-          <div className="field"><label>營業稅 (%)</label><input className="input" type="number" min="0" max="100" step="0.01" value={taxPercent} onChange={(event) => setTaxPercent(event.target.value)} /></div>
-          <div className="field"><label>運費</label><input className="input" type="number" min="0" step="1" value={shippingFee} onChange={(event) => setShippingFee(event.target.value)} /></div>
+          <div className="field"><label>結算比例 (%)</label><input className="input" type="number" min="0.01" max="100" step="0.01" placeholder="請先設定，例如 60" value={settlementPercent} onChange={(event) => { setSettlementPercent(event.target.value); setPreview(null); }} /></div>
+          <div className="field"><label>營業稅 (%)</label><input className="input" type="number" min="0" max="100" step="0.01" value={taxPercent} onChange={(event) => { setTaxPercent(event.target.value); setPreview(null); }} /></div>
+          <div className="field"><label>運費</label><input className="input" type="number" min="0" step="1" value={shippingFee} onChange={(event) => { setShippingFee(event.target.value); setPreview(null); }} /></div>
         </div>
         <div className="field"><label>備註</label><textarea className="textarea" rows={3} value={note} onChange={(event) => setNote(event.target.value)} /></div>
         {channel && channel.settlementRate == null && <p className="billing-hint">此客戶尚未設定預設結算比例；本次可直接輸入，之後建議到「通路主檔 → 請款設定」保存。</p>}
