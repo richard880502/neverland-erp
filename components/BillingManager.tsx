@@ -1,9 +1,9 @@
 "use client";
 
 import Link from "next/link";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Plus, Search, Store, Trash2 } from "lucide-react";
+import { Plus, RefreshCw, Search, Store, Trash2 } from "lucide-react";
 import { PageHeader } from "@/components/ui/PageHeader";
 
 type Channel = {
@@ -33,6 +33,11 @@ type Statement = {
   totalAmount: number;
   status: "DRAFT" | "ISSUED" | "PAID" | "VOID";
   issuedAt: string;
+};
+type AutofillResult = {
+  sourceType: "CONSIGNMENT" | "BUYOUT";
+  sourceMovementCount: number;
+  items: Array<{ productId: string; sku: string; productName: string; size: string | null; listPrice: number | null; quantity: number }>;
 };
 
 const statusLabels = { DRAFT: "草稿", ISSUED: "待收款", PAID: "已收款", VOID: "已作廢" } as const;
@@ -86,12 +91,48 @@ export function BillingManager({
   const [message, setMessage] = useState("");
   const [saving, setSaving] = useState(false);
   const [search, setSearch] = useState("");
+  const [autofillLoading, setAutofillLoading] = useState(false);
+  const [autofillMessage, setAutofillMessage] = useState("");
+  const [autofillSourceCount, setAutofillSourceCount] = useState(0);
+  const [autofillVersion, setAutofillVersion] = useState(0);
 
   const channel = channels.find((item) => item.id === channelId) ?? null;
   const productById = useMemo(() => new Map(products.map((product) => [product.id, product])), [products]);
   const settlementRate = Number(settlementPercent) / 100;
   const taxRate = Number(taxPercent) / 100;
   const shipping = Number(shippingFee || 0);
+
+  useEffect(() => {
+    if (!channelId || !periodStart || !periodEnd || periodStart > periodEnd) return;
+    const controller = new AbortController();
+    const timer = setTimeout(async () => {
+      setAutofillLoading(true);
+      setAutofillMessage("");
+      try {
+        const params = new URLSearchParams({ channelId, periodStart, periodEnd });
+        const response = await fetch(`/api/billing/preview?${params}`, { signal: controller.signal });
+        const result = await response.json() as AutofillResult & { error?: string };
+        if (!response.ok) {
+          setAutofillMessage(result.error ?? "自動帶入請款品項失敗");
+          return;
+        }
+        const nextRows: ItemRow[] = result.items.length > 0
+          ? result.items.map((item, index) => ({ id: index + 1, productId: item.productId, quantity: String(item.quantity) }))
+          : [{ id: 1, productId: "", quantity: "1" }];
+        setRows(nextRows);
+        setNextRowId(nextRows.length + 1);
+        setAutofillSourceCount(result.sourceMovementCount);
+        setAutofillMessage(result.items.length > 0
+          ? `已依 ${periodStart} ～ ${periodEnd} 自動帶入 ${result.items.length} 個 SKU；數量與品項都可以再修改。`
+          : "這個期間沒有可自動帶入的品項，你仍然可以手動新增後建立請款單。");
+      } catch (error) {
+        if ((error as Error).name !== "AbortError") setAutofillMessage("自動帶入請款品項失敗，你仍然可以手動新增。");
+      } finally {
+        if (!controller.signal.aborted) setAutofillLoading(false);
+      }
+    }, 250);
+    return () => { clearTimeout(timer); controller.abort(); };
+  }, [channelId, periodStart, periodEnd, autofillVersion]);
 
   const previewItems = useMemo(() => {
     const grouped = new Map<string, { product: Product; quantity: number }>();
@@ -120,13 +161,18 @@ export function BillingManager({
     && Number.isFinite(taxRate) && taxRate >= 0 && taxRate <= 1
     && Number.isFinite(shipping) && shipping >= 0
     && previewItems.length > 0
-    && !hasMissingPrice;
+    && !hasMissingPrice
+    && !autofillLoading;
 
   function selectChannel(nextId: string) {
     const next = channels.find((item) => item.id === nextId) ?? null;
     setChannelId(nextId);
     setSettlementPercent(next?.settlementRate == null ? "" : String(next.settlementRate * 100));
     setTaxPercent(next?.taxRate == null ? "5" : String(next.taxRate * 100));
+    setRows([{ id: 1, productId: "", quantity: "1" }]);
+    setNextRowId(2);
+    setAutofillSourceCount(0);
+    setAutofillMessage("");
     setMessage("");
   }
 
@@ -174,7 +220,7 @@ export function BillingManager({
   });
 
   return <div className="billing-page">
-    <PageHeader eyebrow="Receivables" title="請款管理" description="選擇客戶後直接加入本次請款品項；庫存異動不再是建立請款單的必要條件。" />
+    <PageHeader eyebrow="Receivables" title="請款管理" description="選客戶與日期後自動帶入對應品項與數量；預填結果可自由增刪修改，不會限制實際請款內容。" />
 
     <div className="billing-stats">
       <div><span>請款單</span><strong>{stats.count}</strong><small>STATEMENTS</small></div>
@@ -204,7 +250,8 @@ export function BillingManager({
           <div className="field"><label>運費</label><input className="input" type="number" min="0" step="1" value={shippingFee} onChange={(event) => setShippingFee(event.target.value)} /></div>
         </div>
         <div className="billing-items-editor">
-          <div className="billing-items-editor-head"><div><span>ITEMS</span><strong>請款品項</strong></div><button type="button" className="btn btn-secondary" onClick={addRow}><Plus size={14} />新增品項</button></div>
+          <div className="billing-items-editor-head"><div><span>ITEMS</span><strong>請款品項</strong></div><div className="billing-items-editor-actions"><button type="button" className="btn btn-secondary" disabled={autofillLoading || !channelId || periodStart > periodEnd} onClick={() => setAutofillVersion((value) => value + 1)}><RefreshCw size={14} />{autofillLoading ? "帶入中…" : "依日期重新帶入"}</button><button type="button" className="btn btn-secondary" onClick={addRow}><Plus size={14} />新增品項</button></div></div>
+          {autofillMessage && <p className="billing-autofill-note">{autofillMessage}</p>}
           {rows.map((row) => <div className="billing-item-row" key={row.id}>
             <div className="field"><label>商品 / SKU</label><select className="select" value={row.productId} onChange={(event) => updateRow(row.id, { productId: event.target.value })}><option value="">選擇商品</option>{products.map((product) => <option key={product.id} value={product.id}>{product.sku} · {product.name}{product.size ? ` · ${product.size}` : ""}{product.listPrice == null ? " · 未設定售價" : ""}</option>)}</select></div>
             <div className="field"><label>數量</label><input className="input" type="number" min="1" step="1" value={row.quantity} onChange={(event) => updateRow(row.id, { quantity: event.target.value })} /></div>
@@ -217,8 +264,8 @@ export function BillingManager({
 
       <div className="panel billing-preview-panel">
         <div className="billing-section-head"><span>02 / PREVIEW</span><h2>請款預覽</h2></div>
-        {previewItems.length === 0 ? <div className="billing-empty"><strong>加入本次要請款的商品</strong><span>不需要先建立寄賣售出或買斷紀錄；商品與數量加入後會直接計算。</span></div> : <>
-          <div className="billing-preview-meta"><span>{previewItems.length} 個 SKU</span><span>手動請款</span></div>
+        {autofillLoading && previewItems.length === 0 ? <div className="billing-empty"><strong>正在依日期整理品項…</strong><span>完成後仍可自由修改數量、移除或新增商品。</span></div> : previewItems.length === 0 ? <div className="billing-empty"><strong>目前沒有請款品項</strong><span>日期沒有帶到資料也沒關係，可以直接手動新增商品與數量。</span></div> : <>
+          <div className="billing-preview-meta"><span>{previewItems.length} 個 SKU</span>{autofillSourceCount > 0 ? <span>{autofillSourceCount} 筆期間紀錄自動帶入</span> : <span>手動請款</span>}<span>可自由修改</span></div>
           <div className="table-wrap billing-items"><table><thead><tr><th>SKU</th><th>品項</th><th>售價</th><th>結算價</th><th>數量</th><th>小計</th></tr></thead><tbody>{previewItems.map((item) => <tr key={item.product.id}><td className="mono">{item.product.sku}</td><td>{item.product.name}{item.product.size ? ` · ${item.product.size}` : ""}</td><td>{item.product.listPrice == null ? "未設定" : money(item.listPrice)}</td><td>{item.product.listPrice == null ? "—" : money(item.settlementPrice)}</td><td>{item.quantity}</td><td>{item.product.listPrice == null ? "—" : money(item.subtotal)}</td></tr>)}</tbody></table></div>
           {hasMissingPrice && <div className="form-error billing-preview-error">有商品尚未設定建議售價，請先補上售價。</div>}
           <div className="billing-total-box">
