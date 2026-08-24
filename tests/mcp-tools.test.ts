@@ -14,7 +14,12 @@ test("viewer discovery exposes only authorized read tools", () => {
 
 test("staff discovery intersects role permissions with OAuth scopes", () => {
   const names = listMcpTools(auth("STAFF", ["inventory:write", "sync:run"])).map((tool) => tool.name);
-  assert.deepEqual(names, ["create_inventory_movement"]);
+  assert.deepEqual(names, [
+    "create_inventory_movement",
+    "create_sales_return",
+    "create_purchase_return",
+    "create_consignment_direct_fulfillment",
+  ]);
 });
 
 test("admin discovery includes explicitly granted admin tools", () => {
@@ -28,17 +33,34 @@ test("tool execution repeats the role check server-side", async () => {
     /角色權限不足/,
   );
   await assert.rejects(
-    callMcpTool("create_inventory_movement", {}, auth("STAFF", ["inventory:read"])),
+    callMcpTool("create_sales_return", {}, auth("STAFF", ["inventory:read"])),
     /scope 不足/,
   );
 });
 
-test("high-risk tools advertise confirmation-relevant annotations", () => {
+test("inventory write tools advertise confirmation-relevant annotations", () => {
   const tools = listMcpTools(auth("ADMIN", ["inventory:write", "movements:reverse", "sync:run"]));
-  const create = tools.find((tool) => tool.name === "create_inventory_movement");
+  for (const name of ["create_inventory_movement", "create_sales_return", "create_purchase_return", "create_consignment_direct_fulfillment"]) {
+    const definition = tools.find((tool) => tool.name === name);
+    assert.deepEqual(definition?.annotations, { readOnlyHint: false, idempotentHint: false, destructiveHint: false });
+    assert.ok(definition?.inputSchema.properties?.confirmationToken);
+  }
   const reverse = tools.find((tool) => tool.name === "reverse_inventory_movement");
   const sync = tools.find((tool) => tool.name === "run_sheet_sync");
-  assert.deepEqual(create?.annotations, { readOnlyHint: false, idempotentHint: false, destructiveHint: false });
   assert.equal(reverse?.annotations.destructiveHint, true);
   assert.equal(sync?.annotations.readOnlyHint, false);
+});
+
+test("dedicated return and fulfillment tools require business-critical fields", () => {
+  const tools = listMcpTools(auth("STAFF", ["inventory:write"]));
+  assert.deepEqual(tools.find((tool) => tool.name === "create_sales_return")?.inputSchema.required, ["sku", "quantity", "channelId", "unitPrice"]);
+  assert.deepEqual(tools.find((tool) => tool.name === "create_purchase_return")?.inputSchema.required, ["sku", "quantity"]);
+  assert.deepEqual(tools.find((tool) => tool.name === "create_consignment_direct_fulfillment")?.inputSchema.required, ["sku", "sourceChannelId", "salesChannelId", "quantity", "unitPrice"]);
+});
+
+test("movement query schema includes return event types", () => {
+  const movementList = listMcpTools(auth("STAFF", ["movements:read"])).find((tool) => tool.name === "list_inventory_movements");
+  const typeSchema = movementList?.inputSchema.properties?.type as { enum?: string[] } | undefined;
+  assert.ok(typeSchema?.enum?.includes("SALES_RETURN"));
+  assert.ok(typeSchema?.enum?.includes("PURCHASE_RETURN"));
 });
