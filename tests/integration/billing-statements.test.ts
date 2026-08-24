@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { prisma } from "../../lib/prisma";
 import { createInventoryMovement } from "../../lib/services/movements";
-import { createBillingStatement, markBillingStatementPaid, previewBillingStatement } from "../../lib/services/billing";
+import { createBillingStatement, markBillingStatementPaid, previewBillingStatement, voidBillingStatement } from "../../lib/services/billing";
 
 const email = "billing-integration@example.com";
 const sku = "BILLING-INTEGRATION-SKU";
@@ -23,7 +23,7 @@ test.after(async () => {
   await prisma.$disconnect();
 });
 
-test("billing statement snapshots customer/item data and prevents duplicate billing", async () => {
+test("billing statement snapshots data, blocks duplicates, releases sources when voided, and protects paid statements", async () => {
   const user = await prisma.user.create({ data: { email, name: "Billing Integration", passwordHash: "unused", role: "ADMIN", mustChangePassword: false } });
   const product = await prisma.product.create({ data: { sku, name: "Billing Tee", size: "M", listPrice: 1000 } });
   const channel = await prisma.channel.create({ data: {
@@ -67,9 +67,23 @@ test("billing statement snapshots customer/item data and prevents duplicate bill
   assert.equal(after.alreadyBilledCount, 1);
   await assert.rejects(createBillingStatement({ ...input, issuedAt: "2026-08-24", note: null }, actor), /已經請款/);
 
-  await markBillingStatementPaid(statement.id, { paidAt: "2026-08-25", paidAmount: 1360, paymentMethod: "銀行轉帳", paymentReference: "12345" }, actor);
-  const paid = await prisma.billingStatement.findUniqueOrThrow({ where: { id: statement.id } });
+  await voidBillingStatement(statement.id, actor);
+  const voided = await prisma.billingStatement.findUniqueOrThrow({ where: { id: statement.id }, include: { sources: true } });
+  assert.equal(voided.status, "VOID");
+  assert.equal(voided.sources.length, 0);
+
+  const released = await previewBillingStatement(input);
+  assert.equal(released.sourceMovementCount, 1);
+  assert.equal(released.alreadyBilledCount, 0);
+
+  const replacement = await createBillingStatement({ ...input, issuedAt: "2026-08-24", note: "replacement" }, actor);
+  assert.notEqual(replacement.id, statement.id);
+  assert.equal(Number(replacement.totalAmount), 1360);
+
+  await markBillingStatementPaid(replacement.id, { paidAt: "2026-08-25", paidAmount: 1360, paymentMethod: "銀行轉帳", paymentReference: "12345" }, actor);
+  const paid = await prisma.billingStatement.findUniqueOrThrow({ where: { id: replacement.id } });
   assert.equal(paid.status, "PAID");
   assert.equal(Number(paid.paidAmount), 1360);
   assert.equal(paid.paymentReference, "12345");
+  await assert.rejects(voidBillingStatement(replacement.id, actor), /已收款請款單不可直接作廢/);
 });
