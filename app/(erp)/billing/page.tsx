@@ -7,8 +7,9 @@ function date(value: Date) {
 }
 
 export default async function BillingPage() {
-  const [channels, statements, user] = await Promise.all([
+  const [channels, products, statements, user] = await Promise.all([
     prisma.channel.findMany({ where: { active: true, type: { in: ["CONSIGNMENT", "BUYOUT"] } }, orderBy: { name: "asc" } }),
+    prisma.product.findMany({ where: { active: true }, orderBy: { sku: "asc" }, select: { id: true, sku: true, name: true, size: true, listPrice: true } }),
     prisma.billingStatement.findMany({ include: { channel: true }, orderBy: [{ issuedAt: "desc" }, { createdAt: "desc" }], take: 200 }),
     getCurrentUser(),
   ]);
@@ -22,6 +23,7 @@ export default async function BillingPage() {
   return <BillingManager
     canWrite={user?.role !== "VIEWER"}
     stats={stats}
+    products={products.map((product) => ({ ...product, listPrice: product.listPrice == null ? null : Number(product.listPrice) }))}
     channels={channels.map((channel) => ({
       id: channel.id,
       name: channel.name,
