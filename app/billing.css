@@ -68,6 +68,8 @@
 .billing-items-editor-head > div { display: grid; gap: 3px; }
 .billing-items-editor-head span { color: var(--orange); font-size: 8px; font-weight: 800; letter-spacing: .18em; }
 .billing-items-editor-head strong { font-size: 15px; }
+.billing-items-editor-head > .billing-items-editor-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 7px; }
+.billing-autofill-note { margin: -2px 0 8px; padding: 9px 10px; border: 1px solid var(--line); background: #f7f6f1; color: var(--muted); font-size: 10px; line-height: 1.55; }
 .billing-item-row { display: grid; grid-template-columns: minmax(0, 1fr) 100px 42px; gap: 8px; align-items: end; padding: 10px 0; border-bottom: 1px solid var(--line); }
 .billing-item-row .field { margin: 0; }
 .billing-remove-item { width: 42px; height: 46px; padding: 0; }
@@ -84,5 +86,7 @@
   .billing-search { min-width: 0; width: 100%; }
   .billing-actions-stack { align-items: stretch; }
   .billing-actions-stack .header-actions { flex-wrap: wrap; }
+  .billing-items-editor-head { align-items: stretch; flex-direction: column; }
+  .billing-items-editor-head > .billing-items-editor-actions { justify-content: flex-start; }
   .billing-item-row { grid-template-columns: minmax(0, 1fr) 82px 42px; }
 }
