@@ -8,10 +8,7 @@ export const billingPreviewSchema = z.object({
   channelId: z.string().min(1),
   periodStart: z.string().regex(datePattern),
   periodEnd: z.string().regex(datePattern),
-  settlementRate: z.coerce.number().min(0).max(1),
-  taxRate: z.coerce.number().min(0).max(1),
-  shippingFee: z.coerce.number().min(0).max(1_000_000).default(0),
-}).refine((value) => value.periodStart <= value.periodEnd, { message: "結算起日不可晚於迄日" });
+}).refine((value) => value.periodStart <= value.periodEnd, { message: "請款期間起日不可晚於迄日" });
 
 const billingItemSchema = z.object({
   productId: z.string().min(1),
@@ -28,7 +25,7 @@ export const billingCreateSchema = z.object({
   shippingFee: z.coerce.number().min(0).max(1_000_000).default(0),
   note: z.string().trim().max(1000).optional().nullable(),
   items: z.array(billingItemSchema).min(1).max(200),
-}).refine((value) => value.periodStart <= value.periodEnd, { message: "結算起日不可晚於迄日" });
+}).refine((value) => value.periodStart <= value.periodEnd, { message: "請款期間起日不可晚於迄日" });
 
 export const markBillingPaidSchema = z.object({
   paidAt: z.string().regex(datePattern),
@@ -74,71 +71,39 @@ async function buildPreview(db: Db, input: BillingPreviewInput) {
       reversedAt: null,
       reversalOfId: null,
     },
-    include: { product: true, billingSource: { select: { statementId: true } } },
+    include: { product: true },
     orderBy: [{ product: { sku: "asc" } }, { occurredAt: "asc" }],
   });
 
-  const available = movements.filter((movement) => !movement.billingSource);
   const grouped = new Map<string, {
     productId: string;
     sku: string;
     productName: string;
     size: string | null;
-    listPrice: number;
+    listPrice: number | null;
     quantity: number;
-    movementIds: string[];
   }>();
 
-  for (const movement of available) {
-    const rawPrice = movement.product.listPrice ?? movement.unitPrice;
-    if (rawPrice === null) throw new Error(`商品 ${movement.product.sku} 尚未設定建議售價`);
-    const listPrice = Number(rawPrice);
+  for (const movement of movements) {
     const existing = grouped.get(movement.productId);
     if (existing) {
       existing.quantity += movement.quantity;
-      existing.movementIds.push(movement.id);
     } else {
       grouped.set(movement.productId, {
         productId: movement.productId,
         sku: movement.product.sku,
         productName: movement.product.name,
         size: movement.product.size,
-        listPrice,
+        listPrice: movement.product.listPrice === null ? null : Number(movement.product.listPrice),
         quantity: movement.quantity,
-        movementIds: [movement.id],
       });
     }
   }
 
-  const items = [...grouped.values()].sort((a, b) => a.sku.localeCompare(b.sku)).map((item) => {
-    const settlementPrice = roundMoney(item.listPrice * input.settlementRate);
-    return { ...item, settlementPrice, subtotal: roundMoney(settlementPrice * item.quantity) };
-  });
-  const subtotal = roundMoney(items.reduce((sum, item) => sum + item.subtotal, 0));
-  const taxAmount = roundMoney(subtotal * input.taxRate);
-  const totalAmount = roundMoney(subtotal + taxAmount + input.shippingFee);
-
   return {
-    channel: {
-      id: channel.id,
-      name: channel.name,
-      type: channel.type,
-      companyName: channel.companyName ?? channel.name,
-      taxId: channel.taxId,
-      contactName: channel.contactName,
-      contactEmail: channel.contactEmail,
-      contactPhone: channel.contactPhone,
-      billingAddress: channel.billingAddress,
-      paymentTermsDays: channel.paymentTermsDays ?? 0,
-    },
     sourceType: source.sourceType,
-    items,
-    sourceMovementCount: available.length,
-    alreadyBilledCount: movements.length - available.length,
-    subtotal,
-    taxAmount,
-    shippingFee: roundMoney(input.shippingFee),
-    totalAmount,
+    sourceMovementCount: movements.length,
+    items: [...grouped.values()].sort((a, b) => a.sku.localeCompare(b.sku, "zh-Hant", { numeric: true })),
   };
 }
 
@@ -236,7 +201,7 @@ export async function createBillingStatement(input: BillingCreateInput, actor: A
             action: "BILLING_STATEMENT_CREATED",
             entityType: "BillingStatement",
             entityId: statement.id,
-            metadata: { statementNo, channelId: input.channelId, totalAmount, entryMode: "MANUAL", itemCount: items.length },
+            metadata: { statementNo, channelId: input.channelId, totalAmount, entryMode: "MANUAL_OR_AUTOFILL", itemCount: items.length },
             ipAddress: actor.ipAddress ?? null,
           },
         });
