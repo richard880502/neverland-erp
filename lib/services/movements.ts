@@ -28,8 +28,26 @@ export type MovementInput = z.infer<typeof movementInputSchema>;
 export type ConsignmentDirectFulfillmentInput = z.infer<typeof consignmentDirectFulfillmentSchema>;
 export type MovementActor = { userId: string; role: UserRole; ipAddress?: string | null; source?: "WEB" | "MCP"; connectionId?: string; clientId?: string };
 
+const SERIALIZABLE_RETRY_LIMIT = 4;
+
 function assertCanWrite(actor: MovementActor) {
   if (actor.role !== "ADMIN" && actor.role !== "STAFF") throw new Error("FORBIDDEN");
+}
+
+function isRetryableSerializableError(error: unknown) {
+  return typeof error === "object" && error !== null && "code" in error && (error as { code?: unknown }).code === "P2034";
+}
+
+async function serializableTransaction<T>(work: (tx: Prisma.TransactionClient) => Promise<T>): Promise<T> {
+  for (let attempt = 1; attempt <= SERIALIZABLE_RETRY_LIMIT; attempt += 1) {
+    try {
+      return await prisma.$transaction(work, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
+    } catch (error) {
+      if (!isRetryableSerializableError(error) || attempt === SERIALIZABLE_RETRY_LIMIT) throw error;
+      await new Promise((resolve) => setTimeout(resolve, 10 * (2 ** (attempt - 1))));
+    }
+  }
+  throw new Error("庫存交易重試失敗");
 }
 
 export async function createInventoryMovement(input: MovementInput, actor: MovementActor) {
@@ -38,7 +56,7 @@ export async function createInventoryMovement(input: MovementInput, actor: Movem
   if (requiresChannel && !input.channelId) throw new Error("此事件必須選擇通路");
   if (isSale(input.type) && (input.unitPrice === "" || input.unitPrice == null)) throw new Error("銷售事件請填入銷售單價，才能正確分析營收");
 
-  return prisma.$transaction(async (tx) => {
+  return serializableTransaction(async (tx) => {
     const [product, channel, existing] = await Promise.all([
       tx.product.findUnique({ where: { id: input.productId } }),
       input.channelId ? tx.channel.findUnique({ where: { id: input.channelId } }) : null,
@@ -66,14 +84,14 @@ export async function createInventoryMovement(input: MovementInput, actor: Movem
     await tx.auditLog.create({ data: { userId: actor.userId, action: "MOVEMENT_CREATED", entityType: "StockMovement", entityId: created.id,
       metadata: { type: created.type, quantity: created.quantity, productId: created.productId, source: actor.source ?? "WEB", connectionId: actor.connectionId, clientId: actor.clientId }, ipAddress: actor.ipAddress ?? null } });
     return created;
-  }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
+  });
 }
 
 export async function createConsignmentDirectFulfillment(input: ConsignmentDirectFulfillmentInput, actor: MovementActor) {
   assertCanWrite(actor);
   if (input.sourceChannelId === input.salesChannelId) throw new Error("寄賣來源與銷售通路不可相同");
 
-  return prisma.$transaction(async (tx) => {
+  return serializableTransaction(async (tx) => {
     const [product, sourceChannel, salesChannel, existing] = await Promise.all([
       tx.product.findUnique({ where: { id: input.productId } }),
       tx.channel.findUnique({ where: { id: input.sourceChannelId } }),
@@ -107,12 +125,12 @@ export async function createConsignmentDirectFulfillment(input: ConsignmentDirec
       ipAddress: actor.ipAddress ?? null,
     } });
     return { returned, shipped };
-  }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
+  });
 }
 
 export async function reverseInventoryMovement(id: string, actor: MovementActor) {
   assertCanWrite(actor);
-  return prisma.$transaction(async (tx) => {
+  return serializableTransaction(async (tx) => {
     const original = await tx.stockMovement.findUnique({ where: { id }, include: { reversal: true, channel: true } });
     if (!original) throw new Error("找不到這筆異動");
     if (original.reversal || original.reversedAt || original.reversalOfId) throw new Error("這筆異動已沖銷或不可再次沖銷");
@@ -133,5 +151,5 @@ export async function reverseInventoryMovement(id: string, actor: MovementActor)
     await tx.auditLog.create({ data: { userId: actor.userId, action: "MOVEMENT_REVERSED", entityType: "StockMovement", entityId: original.id,
       metadata: { type: original.type, quantity: original.quantity, source: actor.source ?? "WEB", connectionId: actor.connectionId, clientId: actor.clientId }, ipAddress: actor.ipAddress ?? null } });
     return reversal;
-  }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
+  });
 }
