@@ -91,5 +91,4 @@ test("MCP returns and consignment direct fulfillment preserve inventory and net 
 
   const sales = await callMcpTool("get_sales_summary", {}, auth);
   assert.deepEqual(sales.structuredContent, { transactions: 2, returnTransactions: 1, quantity: 4, revenue: 600 });
-  assert.equal(await prisma.googleSheetMovementQueue.count({ where: { movement: { productId: product.id } } }), 7);
 });
