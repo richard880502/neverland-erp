@@ -13,10 +13,22 @@ export const billingPreviewSchema = z.object({
   shippingFee: z.coerce.number().min(0).max(1_000_000).default(0),
 }).refine((value) => value.periodStart <= value.periodEnd, { message: "結算起日不可晚於迄日" });
 
-export const billingCreateSchema = billingPreviewSchema.and(z.object({
+const billingItemSchema = z.object({
+  productId: z.string().min(1),
+  quantity: z.coerce.number().int().min(1).max(1_000_000),
+});
+
+export const billingCreateSchema = z.object({
+  channelId: z.string().min(1),
+  periodStart: z.string().regex(datePattern),
+  periodEnd: z.string().regex(datePattern),
   issuedAt: z.string().regex(datePattern),
+  settlementRate: z.coerce.number().gt(0).max(1),
+  taxRate: z.coerce.number().min(0).max(1),
+  shippingFee: z.coerce.number().min(0).max(1_000_000).default(0),
   note: z.string().trim().max(1000).optional().nullable(),
-}));
+  items: z.array(billingItemSchema).min(1).max(200),
+}).refine((value) => value.periodStart <= value.periodEnd, { message: "結算起日不可晚於迄日" });
 
 export const markBillingPaidSchema = z.object({
   paidAt: z.string().regex(datePattern),
@@ -151,63 +163,80 @@ export async function createBillingStatement(input: BillingCreateInput, actor: A
   for (let attempt = 1; attempt <= 4; attempt += 1) {
     try {
       return await prisma.$transaction(async (tx) => {
-        const preview = await buildPreview(tx, input);
-        if (preview.sourceMovementCount === 0 || preview.items.length === 0) {
-          throw new Error(preview.alreadyBilledCount > 0 ? "此期間的銷售紀錄都已經請款" : "此期間沒有可請款的銷售紀錄");
-        }
+        const channel = await tx.channel.findUnique({ where: { id: input.channelId } });
+        if (!channel || !channel.active) throw new Error("找不到可用的客戶通路");
+        const source = sourceForChannel(channel.type);
+
+        const quantities = new Map<string, number>();
+        for (const item of input.items) quantities.set(item.productId, (quantities.get(item.productId) ?? 0) + item.quantity);
+        const productIds = [...quantities.keys()];
+        const products = await tx.product.findMany({ where: { id: { in: productIds }, active: true } });
+        if (products.length !== productIds.length) throw new Error("請款品項包含不存在或已停用的商品");
+
+        const items = products
+          .map((product) => {
+            if (product.listPrice === null) throw new Error(`商品 ${product.sku} 尚未設定建議售價`);
+            const listPrice = Number(product.listPrice);
+            const settlementPrice = roundMoney(listPrice * input.settlementRate);
+            const quantity = quantities.get(product.id) ?? 0;
+            return {
+              productId: product.id,
+              sku: product.sku,
+              productName: product.name,
+              size: product.size,
+              listPrice,
+              settlementPrice,
+              quantity,
+              subtotal: roundMoney(settlementPrice * quantity),
+            };
+          })
+          .sort((a, b) => a.sku.localeCompare(b.sku, "zh-Hant", { numeric: true }));
+
+        const subtotal = roundMoney(items.reduce((sum, item) => sum + item.subtotal, 0));
+        const taxAmount = roundMoney(subtotal * input.taxRate);
+        const shippingFee = roundMoney(input.shippingFee);
+        const totalAmount = roundMoney(subtotal + taxAmount + shippingFee);
         const statementNo = await nextStatementNo(tx, input.issuedAt);
         const issuedAt = startOfTaipeiDate(input.issuedAt);
         const dueDate = new Date(issuedAt);
-        dueDate.setDate(dueDate.getDate() + preview.channel.paymentTermsDays);
+        dueDate.setDate(dueDate.getDate() + (channel.paymentTermsDays ?? 0));
+
         const statement = await tx.billingStatement.create({
           data: {
             statementNo,
             channelId: input.channelId,
-            sourceType: preview.sourceType,
+            sourceType: source.sourceType,
             periodStart: startOfTaipeiDate(input.periodStart),
             periodEnd: endOfTaipeiDate(input.periodEnd),
             issuedAt,
             dueDate,
-            companyName: preview.channel.companyName,
-            taxId: preview.channel.taxId,
-            contactName: preview.channel.contactName,
-            contactEmail: preview.channel.contactEmail,
-            contactPhone: preview.channel.contactPhone,
-            billingAddress: preview.channel.billingAddress,
+            companyName: channel.companyName ?? channel.name,
+            taxId: channel.taxId,
+            contactName: channel.contactName,
+            contactEmail: channel.contactEmail,
+            contactPhone: channel.contactPhone,
+            billingAddress: channel.billingAddress,
             settlementRate: input.settlementRate,
             taxRate: input.taxRate,
-            subtotal: preview.subtotal,
-            taxAmount: preview.taxAmount,
-            shippingFee: preview.shippingFee,
-            totalAmount: preview.totalAmount,
+            subtotal,
+            taxAmount,
+            shippingFee,
+            totalAmount,
             status: "ISSUED",
             note: input.note || null,
             createdById: actor.userId,
-            items: {
-              create: preview.items.map((item) => ({
-                productId: item.productId,
-                sku: item.sku,
-                productName: item.productName,
-                size: item.size,
-                listPrice: item.listPrice,
-                settlementPrice: item.settlementPrice,
-                quantity: item.quantity,
-                subtotal: item.subtotal,
-              })),
-            },
-            sources: {
-              create: preview.items.flatMap((item) => item.movementIds.map((movementId) => ({ movementId }))),
-            },
+            items: { create: items },
           },
           include: { items: true, channel: true },
         });
+
         await tx.auditLog.create({
           data: {
             userId: actor.userId,
             action: "BILLING_STATEMENT_CREATED",
             entityType: "BillingStatement",
             entityId: statement.id,
-            metadata: { statementNo, channelId: input.channelId, totalAmount: preview.totalAmount, sourceMovementCount: preview.sourceMovementCount },
+            metadata: { statementNo, channelId: input.channelId, totalAmount, entryMode: "MANUAL", itemCount: items.length },
             ipAddress: actor.ipAddress ?? null,
           },
         });
@@ -268,22 +297,15 @@ export async function voidBillingStatement(id: string, actor: Actor) {
     if (existing.status !== "ISSUED") throw new Error("只有待收款請款單可以作廢");
 
     const movementIds = existing.sources.map((source) => source.movementId);
-    await tx.billingStatementSource.deleteMany({ where: { statementId: id } });
-    const updated = await tx.billingStatement.update({
-      where: { id },
-      data: { status: "VOID" },
-    });
+    if (movementIds.length > 0) await tx.billingStatementSource.deleteMany({ where: { statementId: id } });
+    const updated = await tx.billingStatement.update({ where: { id }, data: { status: "VOID" } });
     await tx.auditLog.create({
       data: {
         userId: actor.userId,
         action: "BILLING_STATEMENT_VOIDED",
         entityType: "BillingStatement",
         entityId: id,
-        metadata: {
-          statementNo: existing.statementNo,
-          releasedSourceCount: movementIds.length,
-          movementIds,
-        },
+        metadata: { statementNo: existing.statementNo, releasedSourceCount: movementIds.length, movementIds },
         ipAddress: actor.ipAddress ?? null,
       },
     });
