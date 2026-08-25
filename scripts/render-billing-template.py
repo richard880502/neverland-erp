@@ -15,6 +15,7 @@ BASE_ITEM_START = 13  # 1-based Excel row
 BASE_ITEM_END = 27    # supplied template has 15 item rows
 BASE_PAYMENT_ROW = 29
 BASE_PRINT_END = 37
+STAMP_ANCHOR_CELL = "E36"
 XLSX_FILTER = "Calc MS Excel 2007 XML"
 PDF_FILTER = "calc_pdf_Export"
 
@@ -103,6 +104,34 @@ def cell_address(sheet, col: int, row: int):
     return sheet.getCellByPosition(col, row).CellAddress
 
 
+def normalize_company_stamp(sheet) -> None:
+    """Restore the seal to the anchor used by the supplied Neverland workbook.
+
+    Some spreadsheet round-trips convert the original E36 one-cell anchor into
+    a two-cell anchor with a vertical offset. Before touching item rows, pin the
+    graphic back to the top-left of E36. Calc will then move the cell-anchored
+    seal together with the footer when item rows are inserted above it.
+    """
+    draw_page = sheet.getDrawPage()
+    graphics = []
+    for index in range(draw_page.getCount()):
+        shape = draw_page.getByIndex(index)
+        if getattr(shape, "ShapeType", "") == "com.sun.star.drawing.GraphicObjectShape":
+            graphics.append(shape)
+    if not graphics:
+        raise RuntimeError("請款單模板缺少公司印章圖片")
+
+    # The supplied form contains one seal. If the template later gains other
+    # images, choose the square graphic closest to the seal's original size.
+    stamp = min(
+        graphics,
+        key=lambda shape: abs(int(shape.Size.Width) - 2670) + abs(int(shape.Size.Height) - 2670),
+    )
+    anchor = sheet.getCellRangeByName(STAMP_ANCHOR_CELL)
+    stamp.Anchor = anchor
+    stamp.Position = anchor.Position
+
+
 def copy_item_template_rows(sheet, extra_rows: int) -> None:
     if extra_rows <= 0:
         return
@@ -133,6 +162,11 @@ def clear_item_rows(sheet, item_end_row: int) -> None:
 
 
 def populate_sheet(sheet, payload: dict) -> int:
+    # Normalize the original seal position before any row insertion. This is
+    # intentionally done on every render so a template saved by another Office
+    # engine cannot reintroduce a stale drawing offset.
+    normalize_company_stamp(sheet)
+
     items = payload.get("items") or []
     capacity = BASE_ITEM_END - BASE_ITEM_START + 1
     extra_rows = max(0, len(items) - capacity)
