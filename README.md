@@ -58,16 +58,6 @@ UI implementation 採用本地 design tokens / primitives 對齊 Medusa，而不
 - 負庫存防護、沖銷與稽核紀錄。
 - PostgreSQL 不可變更異動帳作為正式庫存來源。
 
-### Billing / Accounts receivable
-
-- 寄賣與買斷通路請款單建立、明細快照與應收總額計算。
-- 依日期區間自動帶入請款建議品項，也支援完全手動建立。
-- 客戶公司資料、統編、聯絡資訊、結算折數、稅率與付款條件可由通路主檔自動帶入。
-- 支援商品小計、營業稅、運費與請款總額計算。
-- 支援標記已收款與請款單作廢，保留 audit history。
-- `Google 試算表` 可直接複製既有請款公版並開啟對應 `BL-...` 頁籤線上修改。
-- XLSX / PDF 直接匯出保留為 fallback。
-
 ### Dashboard
 
 - 日期、通路與商品全域篩選。
@@ -75,6 +65,17 @@ UI implementation 採用本地 design tokens / primitives 對齊 Medusa，而不
 - 通路占比、熱銷與滯銷排行。
 - KPI 與前一期比較。
 - 即時庫存與低庫存 SKU。
+
+### Billing / 請款管理
+
+- 寄賣與買斷通路請款單。
+- 依日期區間自動帶入建議商品與數量，也支援完全手動請款。
+- 自動計算經銷價、未稅小計、營業稅、運費與應收總額。
+- 請款單建立後保存不可變更的客戶與商品價格快照。
+- 支援收款登記與作廢稽核流程。
+- 可一鍵從既有 `Neverland請款單` 的 `範本` 頁籤建立對應 Google Sheet 頁籤並直接線上編輯。
+- Google Sheet 是文件與人工編輯層；PostgreSQL 仍為正式請款資料來源。
+- XLSX / PDF 為 fallback 匯出格式。
 
 ### Product / Channel master data
 
@@ -96,7 +97,6 @@ UI implementation 採用本地 design tokens / primitives 對齊 Medusa，而不
 - 每日排程同步。
 - Inventory Outbox Queue 寫回 Google Sheet。
 - 重試、防重複、同步歷史與錯誤狀態。
-- 請款流程另沿用既有 `Neverland請款單` Google Sheet 公版；ERP Service Account 必須具備該試算表編輯權限。
 
 ### Remote MCP / OAuth
 
@@ -126,7 +126,7 @@ ERP 提供 protected, stateless Streamable HTTP MCP endpoint，可讓支援 MCP 
 | Auth | Cookie Session、bcrypt、TOTP、OAuth 2.1 / MCP |
 | Images | Sharp、WebP、private MinIO／S3-compatible Object Storage |
 | Google | Google Sheets API、Service Account |
-| Document export | Google Sheets、LibreOffice UNO (XLSX/PDF fallback) |
+| Document export | Google Sheets（主要）、LibreOffice UNO XLSX / PDF（fallback） |
 | Runtime | Node.js 24、Docker |
 | Deployment | Zeabur |
 
@@ -166,12 +166,12 @@ npm run build
 
 ## Data ownership principles
 
-- PostgreSQL 是 ERP 的正式帳本；Google Sheet 是主檔來源、相容的異動檢視表，以及請款文件的線上排版 / 編輯層。
-- BillingStatement / BillingStatementItem 是請款建立當下的正式 ERP 快照；Google Sheet 手動修改不會反向改寫既有請款快照。
+- PostgreSQL 是 ERP 的正式帳本；Google Sheet 用於主檔同步、庫存相容檢視與請款文件線上編輯。
 - 庫存不是可直接覆寫的單一數字，而是所有有效 Stock Movement 加總後的結果。
 - 歷史異動不直接修改或刪除，錯誤資料透過沖銷處理。
 - 已有歷史關聯的商品與通路不能任意刪除。
 - Google Sheet 同步使用唯一鍵、內容雜湊與同步基準做衝突判斷，不是整表覆蓋。
+- BillingStatement / BillingStatementItem 保存建立請款當下的正式快照；Google Sheet 的人工排版或文字調整不會回寫並覆蓋 ERP 帳本。
 
 ## CI
 
@@ -181,7 +181,7 @@ GitHub Actions 會在 push / pull request 執行：
 2. `npx prisma migrate deploy`
 3. `npm test`
 4. `npm run test:integration`
-5. Billing XLSX template validation / LibreOffice UNO smoke test
+5. XLSX template / LibreOffice billing renderer smoke test
 6. `npm run lint`
 7. `npm run build`
 
