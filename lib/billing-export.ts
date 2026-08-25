@@ -49,35 +49,26 @@ async function statementPayload(id: string) {
   };
 }
 
-async function renderXlsx(id: string, directory: string) {
+async function renderDocument(id: string, directory: string, format: "xlsx" | "pdf") {
   const payload = await statementPayload(id);
   const dataPath = path.join(directory, "billing.json");
-  const outputPath = path.join(directory, `${safeName(payload.statementNo)}.xlsx`);
+  const outputPath = path.join(directory, `${safeName(payload.statementNo)}.${format}`);
   const templatePath = path.join(process.cwd(), "public", "templates", "Neverland請款單.xlsx");
   const scriptPath = path.join(process.cwd(), "scripts", "render-billing-template.py");
   await writeFile(dataPath, JSON.stringify(payload), "utf8");
-  await execFileAsync("python3", [scriptPath, "--template", templatePath, "--data", dataPath, "--output", outputPath], { timeout: 20_000 });
+  await execFileAsync(
+    "python3",
+    [scriptPath, "--template", templatePath, "--data", dataPath, "--output", outputPath, "--format", format],
+    { timeout: format === "pdf" ? 60_000 : 45_000 },
+  );
   return { payload, outputPath };
 }
 
 export async function exportBillingStatement(id: string, format: "xlsx" | "pdf") {
   const directory = await mkdtemp(path.join(tmpdir(), "neverland-billing-"));
   try {
-    const { payload, outputPath } = await renderXlsx(id, directory);
-    let finalPath = outputPath;
-    if (format === "pdf") {
-      await execFileAsync("soffice", [
-        "--headless",
-        `-env:UserInstallation=file://${path.join(directory, "lo-profile")}`,
-        "--convert-to",
-        "pdf",
-        "--outdir",
-        directory,
-        outputPath,
-      ], { timeout: 45_000 });
-      finalPath = outputPath.replace(/\.xlsx$/i, ".pdf");
-    }
-    const content = await readFile(finalPath);
+    const { payload, outputPath } = await renderDocument(id, directory, format);
+    const content = await readFile(outputPath);
     const customer = safeName(payload.companyName || payload.channelName);
     return {
       content,
@@ -85,7 +76,7 @@ export async function exportBillingStatement(id: string, format: "xlsx" | "pdf")
     };
   } catch (error) {
     const code = (error as NodeJS.ErrnoException)?.code;
-    if (code === "ENOENT") throw new Error("伺服器尚未安裝請款匯出元件（Python / LibreOffice）");
+    if (code === "ENOENT") throw new Error("伺服器尚未安裝請款匯出元件（Python / LibreOffice UNO）");
     throw error;
   } finally {
     await rm(directory, { recursive: true, force: true }).catch(() => undefined);
