@@ -68,7 +68,6 @@ async function writeMovementsToGoogleSheet(spreadsheetId: string, timeZone: stri
     return !existingRow;
   });
   if (!pending.length) return results;
-  for (const entry of pending) if (entry.movement.type === "ADJUSTMENT") throw new Error(`異動 ${entry.movementId} 是庫存調整，原試算表尚未支援此事件`);
 
   const startRow = aValues.length + 1;
   const endRow = startRow + pending.length - 1;
