@@ -1,7 +1,5 @@
-import { PrismaClient } from "@prisma/client";
-import { createHash, randomBytes } from "crypto";
-
-const prisma = new PrismaClient();
+import { prisma } from "../lib/prisma";
+import { createApiKey } from "../lib/api-key";
 
 function parseLabel(): string {
   const args = process.argv.slice(2);
@@ -15,10 +13,7 @@ function parseLabel(): string {
 
 async function main() {
   const label = parseLabel();
-  const key = randomBytes(32).toString("hex");
-  const keyHash = createHash("sha256").update(key).digest("hex");
-
-  const apiKey = await prisma.apiKey.create({ data: { keyHash, label } });
+  const apiKey = await createApiKey(label);
 
   console.log("已建立新的 API Key：");
   console.log(`  id:    ${apiKey.id}`);
@@ -26,7 +21,7 @@ async function main() {
   console.log("");
   console.log("以下是明文金鑰，僅顯示這一次，請立即安全保存：");
   console.log("");
-  console.log(key);
+  console.log(apiKey.plaintext);
   console.log("");
   console.log("此金鑰不會再顯示，若遺失請重新建立一把新的 key。");
 }

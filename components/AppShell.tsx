@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { BarChart3, Bot, Boxes, DatabaseZap, LogOut, PackagePlus, ReceiptText, Route, ShieldCheck, ShoppingBag, Users } from "lucide-react";
+import { BarChart3, Bot, Boxes, DatabaseZap, KeyRound, LogOut, PackagePlus, ReceiptText, Route, ShieldCheck, ShoppingBag, Users } from "lucide-react";
 
 const workspaceLinks = [
   { href: "/", label: "營運儀表板", icon: BarChart3 },
@@ -27,6 +27,7 @@ function pageLabel(pathname: string) {
     { href: "/users", label: "使用者控管" },
     { href: "/settings/sync", label: "Google Sheet 同步" },
     { href: "/settings/mcp", label: "AI Assistants / MCP" },
+    { href: "/settings/api-keys", label: "API Key 管理" },
   ];
   return allLinks.find((item) => activeFor(pathname, item.href))?.label ?? "Operations";
 }
@@ -68,6 +69,7 @@ export function AppShell({ user, children }: { user: { name: string; email: stri
             {user.role === "ADMIN" && <Link className={activeFor(pathname, "/users") ? "active" : undefined} href="/users" aria-current={activeFor(pathname, "/users") ? "page" : undefined}><Users size={16} strokeWidth={1.8} />使用者控管</Link>}
             {user.role === "ADMIN" && <Link className={activeFor(pathname, "/settings/sync") ? "active" : undefined} href="/settings/sync" aria-current={activeFor(pathname, "/settings/sync") ? "page" : undefined}><DatabaseZap size={16} strokeWidth={1.8} />Google Sheet 同步</Link>}
             <Link className={activeFor(pathname, "/settings/mcp") ? "active" : undefined} href="/settings/mcp" aria-current={activeFor(pathname, "/settings/mcp") ? "page" : undefined}><Bot size={16} strokeWidth={1.8} />AI Assistants / MCP</Link>
+            {user.role === "ADMIN" && <Link className={activeFor(pathname, "/settings/api-keys") ? "active" : undefined} href="/settings/api-keys" aria-current={activeFor(pathname, "/settings/api-keys") ? "page" : undefined}><KeyRound size={16} strokeWidth={1.8} />API Key 管理</Link>}
           </div>
         </nav>
 
