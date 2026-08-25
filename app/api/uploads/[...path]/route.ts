@@ -1,24 +1,20 @@
-import path from "path";
-import { readFile } from "fs/promises";
 import { NextResponse } from "next/server";
 import { authErrorResponse, requireApiUser } from "@/lib/auth";
-import { uploadRoot } from "@/lib/uploads";
+import { isProductImageKey, objectStorage, signedReadUrlTtl } from "@/lib/object-storage";
 
 export async function GET(_request: Request, context: { params: Promise<{ path: string[] }> }) {
   try {
     await requireApiUser();
     const key = (await context.params).path.join("/");
-    if (!/^products\/[a-f0-9-]+(?:-thumb)?\.webp$/.test(key)) {
+    if (!isProductImageKey(key)) {
       return NextResponse.json({ error: "檔案路徑無效" }, { status: 400 });
     }
-    const root = uploadRoot();
-    const filePath = path.resolve(/* turbopackIgnore: true */ root, key);
-    if (!filePath.startsWith(`${root}${path.sep}`)) return NextResponse.json({ error: "檔案路徑無效" }, { status: 400 });
-    const bytes = await readFile(filePath);
-    return new Response(bytes, {
+    const storage = objectStorage();
+    const url = await storage.getSignedReadUrl(key);
+    return NextResponse.redirect(url, {
+      status: 302,
       headers: {
-        "content-type": "image/webp",
-        "cache-control": "private, max-age=86400",
+        "cache-control": `private, max-age=${Math.max(0, signedReadUrlTtl() - 60)}`,
         "x-content-type-options": "nosniff",
       },
     });

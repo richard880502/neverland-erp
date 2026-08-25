@@ -1,8 +1,9 @@
 import { Prisma, PrismaClient } from "@prisma/client";
 import { createHash } from "crypto";
-import { copyFile, mkdir, readFile, rm } from "fs/promises";
+import { readFile } from "fs/promises";
 import path from "path";
 import sharp from "sharp";
+import { objectStorage } from "../lib/object-storage";
 
 const prisma = new PrismaClient();
 
@@ -37,9 +38,7 @@ async function main() {
   const admin = await prisma.user.findFirst({ where: { role: "ADMIN", active: true }, orderBy: { createdAt: "asc" } });
   if (!admin) throw new Error("找不到有效的系統管理員，已中止圖片匯入");
 
-  const uploadRoot = path.resolve(process.env.UPLOAD_DIR ?? "/tmp/stockflow-uploads");
-  const outputDirectory = path.join(uploadRoot, "products");
-  await mkdir(outputDirectory, { recursive: true });
+  const storage = objectStorage();
 
   const previousProducts = await prisma.product.findMany({
     where: { sku: { in: allSkus } },
@@ -49,24 +48,26 @@ async function main() {
   const newPaths = new Set<string>();
   const updates: Array<{ skus: string[]; imagePath: string; imageThumbPath: string }> = [];
 
-  for (const row of manifest) {
-    const source = path.join(sourceDirectory, row.file!);
-    const imageId = createHash("sha256").update(`neverland-sheet:${row.skus.join(",")}`).digest("hex").slice(0, 32);
-    const imagePath = `products/${imageId}.webp`;
-    const imageThumbPath = `products/${imageId}-thumb.webp`;
-    const fullOutput = path.join(uploadRoot, imagePath);
-    const thumbOutput = path.join(uploadRoot, imageThumbPath);
-
-    await copyFile(source, fullOutput);
-    await sharp(source, { limitInputPixels: 40_000_000, animated: false })
-      .rotate()
-      .resize({ width: 320, height: 320, fit: "cover", position: "centre" })
-      .webp({ quality: 78 })
-      .toFile(thumbOutput);
-
-    newPaths.add(imagePath);
-    newPaths.add(imageThumbPath);
-    updates.push({ skus: row.skus, imagePath, imageThumbPath });
+  try {
+    for (const row of manifest) {
+      const source = path.join(sourceDirectory, row.file!);
+      const imageId = createHash("sha256").update(`neverland-sheet:${row.skus.join(",")}`).digest("hex").slice(0, 32);
+      const imagePath = `products/${imageId}.webp`;
+      const imageThumbPath = `products/${imageId}-thumb.webp`;
+      const input = await readFile(source);
+      const [full, thumbnail] = await Promise.all([
+        sharp(input, { limitInputPixels: 40_000_000, animated: false }).rotate().resize({ width: 1600, height: 1600, fit: "inside", withoutEnlargement: true }).webp({ quality: 84 }).toBuffer(),
+        sharp(input, { limitInputPixels: 40_000_000, animated: false }).rotate().resize({ width: 320, height: 320, fit: "cover", position: "centre" }).webp({ quality: 78 }).toBuffer(),
+      ]);
+      newPaths.add(imagePath);
+      newPaths.add(imageThumbPath);
+      await storage.put(imagePath, full, "image/webp");
+      await storage.put(imageThumbPath, thumbnail, "image/webp");
+      updates.push({ skus: row.skus, imagePath, imageThumbPath });
+    }
+  } catch (error) {
+    await Promise.all([...newPaths].map((key) => storage.delete(key).catch(() => undefined)));
+    throw error;
   }
 
   await prisma.$transaction(async (tx) => {
@@ -88,7 +89,7 @@ async function main() {
     });
   }, { timeout: 120_000, maxWait: 20_000 });
 
-  await Promise.all([...previousPaths].filter((oldPath) => !newPaths.has(oldPath)).map((oldPath) => rm(path.join(uploadRoot, oldPath), { force: true })));
+  await Promise.all([...previousPaths].filter((oldPath) => !newPaths.has(oldPath)).map((oldPath) => storage.delete(oldPath)));
 
   const [linkedProducts, uniqueImagePaths] = await Promise.all([
     prisma.product.count({ where: { sku: { in: allSkus }, imagePath: { not: null }, imageThumbPath: { not: null } } }),

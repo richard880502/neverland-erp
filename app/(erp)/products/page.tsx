@@ -10,7 +10,7 @@ export default async function ProductsPage() {
     }),
     getCurrentUser(),
   ]);
-  return <ProductManager canWrite={user?.role !== "VIEWER"} products={products.map(({ _count, ...p }) => ({
+  return <ProductManager canWrite={user?.role !== "VIEWER"} canEditPricing={user?.role === "ADMIN"} products={products.map(({ _count, ...p }) => ({
     ...p,
     listPrice: p.listPrice ? Number(p.listPrice) : null,
     wholesalePrice: p.wholesalePrice ? Number(p.wholesalePrice) : null,

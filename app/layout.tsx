@@ -1,5 +1,7 @@
 import type { Metadata } from "next";
 import "./globals.css";
+import "./medusa-theme.css";
+import "./medusa-fixes.css";
 
 export const metadata: Metadata = {
   title: "Neverland Operations",

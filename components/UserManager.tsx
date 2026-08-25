@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Check, KeyRound, LogOut, Pencil, Plus, UserCheck, UserX, X } from "lucide-react";
+import { PageHeader } from "@/components/ui/PageHeader";
 import type { UserRole } from "@prisma/client";
 
 const roleLabels: Record<UserRole, string> = { ADMIN: "管理員", STAFF: "庫存人員", VIEWER: "檢視者" };
@@ -60,7 +61,7 @@ export function UserManager({ currentUserId, users, auditLogs }: { currentUserId
   }
 
   return <>
-    <header className="page-header"><div><div className="eyebrow">Access control</div><h1>使用者控管</h1><p>管理帳號、角色、登入狀態與安全事件。</p></div><div className="header-actions"><span className="badge green">{users.filter((u) => u.active).length} 位啟用</span></div></header>
+    <PageHeader eyebrow="Access control" title="使用者控管" description="管理帳號、角色、登入狀態與安全事件。" actions={<span className="badge green">{users.filter((u) => u.active).length} 位啟用</span>} />
     {error && <div className="form-error">{error}</div>}
     {temporaryPassword && <div className="temporary-password"><div><strong>臨時密碼只顯示這一次</strong><span>{temporaryPassword.email}</span></div><code>{temporaryPassword.password}</code><p>請安全地交給使用者；首次登入後系統會強制變更。</p></div>}
     <details className="panel drawer"><summary><span className="btn btn-primary"><Plus size={16} />新增使用者</span></summary>
