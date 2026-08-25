@@ -1,6 +1,6 @@
 import { PrismaClient, MovementType } from "@prisma/client";
 import bcrypt from "bcryptjs";
-import { createHash } from "crypto";
+import { createHash, randomBytes } from "crypto";
 import { mkdir } from "fs/promises";
 import path from "path";
 import sharp from "sharp";
@@ -25,6 +25,20 @@ async function main() {
   }
 
   if (!admin) throw new Error("找不到有效的管理員，請檢查使用者資料");
+
+  const medusaSyncEmail = "medusa-sync@internal.neverland";
+  await prisma.user.upsert({
+    where: { email: medusaSyncEmail },
+    update: {},
+    create: {
+      email: medusaSyncEmail,
+      name: "Medusa 自動同步",
+      passwordHash: await bcrypt.hash(randomBytes(32).toString("hex"), 12),
+      role: "STAFF",
+      active: true,
+      mustChangePassword: false,
+    },
+  });
 
   const productRows = [
     ["N202512-M", "Family More Tee", "M", 3, 880],

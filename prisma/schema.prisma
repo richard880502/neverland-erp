@@ -221,6 +221,16 @@ model StockMovement {
   @@index([type, occurredAt])
 }
 
+model ApiKey {
+  id         String    @id @default(cuid())
+  keyHash    String    @unique
+  label      String
+  active     Boolean   @default(true)
+  createdAt  DateTime  @default(now())
+  lastUsedAt DateTime?
+  revokedAt  DateTime?
+}
+
 model GoogleSheetMovementQueue {
   id              String        @id @default(cuid())
   movementId      String        @unique

@@ -11,7 +11,8 @@
     "db:migrate": "prisma migrate deploy",
     "db:seed": "tsx prisma/seed.ts",
     "db:import-sheet": "tsx prisma/import-google-sheet.ts",
-    "db:import-sheet-images": "tsx prisma/import-google-sheet-images.ts"
+    "db:import-sheet-images": "tsx prisma/import-google-sheet-images.ts",
+    "create-api-key": "tsx scripts/create-api-key.ts"
   },
   "dependencies": {
     "@prisma/client": "6.19.3",
