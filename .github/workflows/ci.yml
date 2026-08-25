@@ -111,8 +111,15 @@ jobs:
               sheet = archive.read("xl/worksheets/sheet1.xml").decode("utf-8")
               assert any(name.startswith("xl/media/") for name in names), "company stamp disappeared after UNO render"
               assert "B28:E28" in sheet, "dynamic item row was not copied/merged"
-              assert re.search(r"<xdr:from>.*?<xdr:row>34</xdr:row>", drawing, re.S), "company stamp did not move with inserted item row"
-          print("LibreOffice renderer preserved the stamp and shifted it with the footer")
+              # The original Neverland workbook anchors the seal at E36. The
+              # 16-item test inserts one row above the footer, so the rendered
+              # seal must move to E37 with zero cell offset.
+              assert re.search(
+                  r"<xdr:from>\s*<xdr:col>4</xdr:col>\s*<xdr:colOff>0</xdr:colOff>\s*<xdr:row>36</xdr:row>\s*<xdr:rowOff>0</xdr:rowOff>",
+                  drawing,
+                  re.S,
+              ), "company stamp was not normalized to E36 before footer shift"
+          print("LibreOffice renderer normalized the stamp and shifted it with the footer")
           PY
       - run: npm run lint
       - run: npm run build
