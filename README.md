@@ -1,8 +1,22 @@
 # Neverland ERP
 
-Neverland ERP 是為 Neverland 品牌商品、總倉、直營與寄賣通路設計的輕量 ERP / 庫存後台。系統以 PostgreSQL 的庫存異動帳作為正式資料來源，從異動即時計算各 SKU 在總倉與各通路的庫存，並提供銷售分析、商品圖片、帳號權限、Google Authenticator 雙重驗證、Google Sheet 同步，以及 Remote MCP / OAuth 整合。
+Neverland ERP 是為 Neverland 品牌商品、總倉、直營與寄賣通路設計的輕量 ERP / 庫存後台。系統以 PostgreSQL 的庫存異動帳作為正式資料來源，從異動即時計算各 SKU 在總倉與各通路的庫存，並提供銷售分析、商品圖片、帳號權限、Google Authenticator 雙重驗證、Google Sheet 同步、請款管理，以及 Remote MCP / OAuth 整合。
 
-> Current release target: **v3.0.0**
+> Current release target: **v3.0.2**
+
+## v3.0.2 — Billing statements and Google Sheets workflow
+
+v3.0.2 新增經銷 / 寄賣請款流程，讓 ERP 直接產生請款快照、計算應收金額，並沿用既有 `Neverland請款單` Google Sheet 公版進行線上編輯。
+
+- 新增 `BillingStatement` / `BillingStatementItem` 請款快照，保存客戶資料、商品、數量、建議售價、經銷價、稅率、運費與總額。
+- 選擇客戶與日期區間後，可依庫存異動自動帶入建議品項與數量；使用者仍可自由增刪品項、修改數量或完全手動建立請款單。
+- 寄賣通路依 `CONSIGN_SOLD` 建議請款，買斷通路依 `BUYOUT` 建議請款；日期只作為自動帶入便利功能，不限制人工請款。
+- 請款單編號依請款日期自動產生，例如 `BL-202608-001`、`BL-202609-001`，每月流水號重新起算。
+- 請款詳情新增 `Google 試算表` 按鈕：ERP 會在既有 `Neverland請款單` 試算表中複製 `範本` 頁籤，命名為對應 `BL-...`，填入 ERP 請款資料後直接開啟該頁籤。
+- 已存在的 `BL-...` 頁籤只會重新開啟，不會再次覆蓋，保留財務人員在線上手動調整的內容。
+- 商品超過公版原本 15 列時，由 Google Sheets 在付款區塊上方動態插入商品列，讓 Google 原生排版引擎處理 Footer、印章與版面位置。
+- PostgreSQL 仍是請款資料 source of truth；Google Sheet 僅作為正式文件、排版與人工編輯層。
+- XLSX / PDF 直接匯出仍保留為 fallback，目前由 LibreOffice UNO 處理；後續排版一致性追蹤於 [#15](https://github.com/richard880502/neverland-erp/issues/15)。
 
 ## v3.0.0 — Stateless storage and admin productivity
 
@@ -44,6 +58,16 @@ UI implementation 採用本地 design tokens / primitives 對齊 Medusa，而不
 - 負庫存防護、沖銷與稽核紀錄。
 - PostgreSQL 不可變更異動帳作為正式庫存來源。
 
+### Billing / Accounts receivable
+
+- 寄賣與買斷通路請款單建立、明細快照與應收總額計算。
+- 依日期區間自動帶入請款建議品項，也支援完全手動建立。
+- 客戶公司資料、統編、聯絡資訊、結算折數、稅率與付款條件可由通路主檔自動帶入。
+- 支援商品小計、營業稅、運費與請款總額計算。
+- 支援標記已收款與請款單作廢，保留 audit history。
+- `Google 試算表` 可直接複製既有請款公版並開啟對應 `BL-...` 頁籤線上修改。
+- XLSX / PDF 直接匯出保留為 fallback。
+
 ### Dashboard
 
 - 日期、通路與商品全域篩選。
@@ -72,6 +96,7 @@ UI implementation 採用本地 design tokens / primitives 對齊 Medusa，而不
 - 每日排程同步。
 - Inventory Outbox Queue 寫回 Google Sheet。
 - 重試、防重複、同步歷史與錯誤狀態。
+- 請款流程另沿用既有 `Neverland請款單` Google Sheet 公版；ERP Service Account 必須具備該試算表編輯權限。
 
 ### Remote MCP / OAuth
 
@@ -101,6 +126,7 @@ ERP 提供 protected, stateless Streamable HTTP MCP endpoint，可讓支援 MCP 
 | Auth | Cookie Session、bcrypt、TOTP、OAuth 2.1 / MCP |
 | Images | Sharp、WebP、private MinIO／S3-compatible Object Storage |
 | Google | Google Sheets API、Service Account |
+| Document export | Google Sheets、LibreOffice UNO (XLSX/PDF fallback) |
 | Runtime | Node.js 24、Docker |
 | Deployment | Zeabur |
 
@@ -140,7 +166,8 @@ npm run build
 
 ## Data ownership principles
 
-- PostgreSQL 是 ERP 的正式帳本；Google Sheet 是主檔來源與相容的異動檢視表。
+- PostgreSQL 是 ERP 的正式帳本；Google Sheet 是主檔來源、相容的異動檢視表，以及請款文件的線上排版 / 編輯層。
+- BillingStatement / BillingStatementItem 是請款建立當下的正式 ERP 快照；Google Sheet 手動修改不會反向改寫既有請款快照。
 - 庫存不是可直接覆寫的單一數字，而是所有有效 Stock Movement 加總後的結果。
 - 歷史異動不直接修改或刪除，錯誤資料透過沖銷處理。
 - 已有歷史關聯的商品與通路不能任意刪除。
@@ -154,7 +181,8 @@ GitHub Actions 會在 push / pull request 執行：
 2. `npx prisma migrate deploy`
 3. `npm test`
 4. `npm run test:integration`
-5. `npm run lint`
-6. `npm run build`
+5. Billing XLSX template validation / LibreOffice UNO smoke test
+6. `npm run lint`
+7. `npm run build`
 
 只有 CI 全部通過後才應合併到 `main`。
