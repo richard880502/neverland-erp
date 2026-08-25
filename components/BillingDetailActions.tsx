@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { Ban, Download, FileSpreadsheet, WalletCards } from "lucide-react";
+import { Ban, Download, ExternalLink, FileSpreadsheet, WalletCards } from "lucide-react";
 
 function today() {
   const date = new Date();
@@ -20,6 +20,33 @@ export function BillingDetailActions({ id, totalAmount, status, canWrite }: { id
   const [message, setMessage] = useState("");
   const [loading, setLoading] = useState(false);
   const [voiding, setVoiding] = useState(false);
+  const [sheetOpening, setSheetOpening] = useState(false);
+
+  async function openGoogleSheet() {
+    const popup = window.open("about:blank", "_blank");
+    setSheetOpening(true);
+    setMessage("");
+    try {
+      const response = await fetch(`/api/billing/${id}/google-sheet`, { method: "POST" });
+      const result = await response.json();
+      if (!response.ok) {
+        popup?.close();
+        setMessage(result.error ?? "Google 請款單建立失敗");
+        return;
+      }
+      if (popup) {
+        popup.opener = null;
+        popup.location.href = result.url;
+      } else {
+        window.location.assign(result.url);
+      }
+    } catch {
+      popup?.close();
+      setMessage("Google 請款單建立失敗");
+    } finally {
+      setSheetOpening(false);
+    }
+  }
 
   async function markPaid() {
     setLoading(true); setMessage("");
@@ -40,6 +67,7 @@ export function BillingDetailActions({ id, totalAmount, status, canWrite }: { id
 
   return <div className="billing-actions-stack">
     <div className="header-actions">
+      {canWrite && <button className="btn btn-primary" disabled={sheetOpening} onClick={openGoogleSheet}><ExternalLink size={15} />{sheetOpening ? "建立中…" : "Google 試算表"}</button>}
       <a className="btn btn-secondary" href={`/api/billing/${id}/export/xlsx`}><FileSpreadsheet size={15} />匯出 XLSX</a>
       <a className="btn btn-secondary" href={`/api/billing/${id}/export/pdf`}><Download size={15} />匯出 PDF</a>
       {canWrite && status === "ISSUED" && <button className="btn btn-danger" disabled={voiding} onClick={voidStatement}><Ban size={15} />{voiding ? "作廢中…" : "作廢請款單"}</button>}
