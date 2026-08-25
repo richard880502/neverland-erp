@@ -34,5 +34,92 @@ jobs:
       - run: npx prisma migrate deploy
       - run: npm test
       - run: npm run test:integration
+      - run: python3 -m py_compile scripts/render-billing-template.py
+      - name: Validate billing XLSX template
+        run: |
+          python3 - <<'PY'
+          import zipfile
+
+          path = "public/templates/Neverland請款單.xlsx"
+          with zipfile.ZipFile(path) as archive:
+              names = set(archive.namelist())
+              assert "[Content_Types].xml" in names, "missing XLSX content types"
+              assert "xl/workbook.xml" in names, "missing workbook.xml"
+              assert any(name.startswith("xl/drawings/") and name.endswith(".xml") for name in names), "missing billing drawing"
+              assert any(name.startswith("xl/media/") for name in names), "missing company stamp/media"
+          print("billing XLSX template is a valid archive with drawing/media")
+          PY
+      - name: Install LibreOffice UNO smoke-test dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends libreoffice-calc python3-uno fonts-noto-cjk fonts-liberation
+      - name: Smoke-test LibreOffice billing renderer
+        run: |
+          python3 - <<'PY'
+          import json
+
+          payload = {
+              "statementNo": "BL-CI-001",
+              "channelName": "CI channel",
+              "sourceType": "CONSIGNMENT",
+              "periodStart": "2026-08-01",
+              "periodEnd": "2026-08-31",
+              "issuedAt": "2026-08-25",
+              "companyName": "CI customer",
+              "taxId": "12345678",
+              "contactName": "CI",
+              "contactEmail": "ci@example.com",
+              "contactPhone": "0900000000",
+              "billingAddress": "CI address",
+              "settlementRate": 0.6,
+              "taxRate": 0.05,
+              "shippingFee": 100,
+              "items": [
+                  {
+                      "sku": f"SKU-{index:03d}",
+                      "productName": f"Product {index}",
+                      "size": "M",
+                      "listPrice": 1000 + index,
+                      "settlementPrice": 600 + index,
+                      "quantity": 1,
+                      "subtotal": 600 + index,
+                  }
+                  for index in range(1, 17)
+              ],
+          }
+          with open("/tmp/billing-ci.json", "w", encoding="utf-8") as handle:
+              json.dump(payload, handle, ensure_ascii=False)
+          PY
+          python3 scripts/render-billing-template.py \
+            --template public/templates/Neverland請款單.xlsx \
+            --data /tmp/billing-ci.json \
+            --output /tmp/BL-CI-001.pdf \
+            --format pdf
+          python3 - <<'PY'
+          import re
+          import zipfile
+          from pathlib import Path
+
+          xlsx = Path("/tmp/BL-CI-001.xlsx")
+          pdf = Path("/tmp/BL-CI-001.pdf")
+          assert xlsx.is_file() and xlsx.stat().st_size > 0, "filled XLSX was not created"
+          assert pdf.is_file() and pdf.read_bytes().startswith(b"%PDF-"), "PDF was not created"
+          with zipfile.ZipFile(xlsx) as archive:
+              names = set(archive.namelist())
+              drawing_name = next(name for name in names if name.startswith("xl/drawings/drawing") and name.endswith(".xml"))
+              drawing = archive.read(drawing_name).decode("utf-8")
+              sheet = archive.read("xl/worksheets/sheet1.xml").decode("utf-8")
+              assert any(name.startswith("xl/media/") for name in names), "company stamp disappeared after UNO render"
+              assert "B28:E28" in sheet, "dynamic item row was not copied/merged"
+              # The original Neverland workbook anchors the seal at E36. The
+              # 16-item test inserts one row above the footer, so the rendered
+              # seal must move to E37 with zero cell offset.
+              assert re.search(
+                  r"<xdr:from>\s*<xdr:col>4</xdr:col>\s*<xdr:colOff>0</xdr:colOff>\s*<xdr:row>36</xdr:row>\s*<xdr:rowOff>0</xdr:rowOff>",
+                  drawing,
+                  re.S,
+              ), "company stamp was not normalized to E36 before footer shift"
+          print("LibreOffice renderer normalized the stamp and shifted it with the footer")
+          PY
       - run: npm run lint
       - run: npm run build

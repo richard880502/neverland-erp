@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Plus, RotateCcw, Search } from "lucide-react";
+import { Minus, RotateCcw, Search } from "lucide-react";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { channelTypeLabels, movementLabels } from "@/lib/inventory";
 import type { ChannelType, MovementType } from "@prisma/client";
@@ -89,7 +89,7 @@ export function MovementManager({ products, channels, movements, canWrite }: { p
 
   return <>
     <PageHeader eyebrow="Ledger" title="庫存異動" description="每次實物流動新增一筆；退貨與退出使用正式事件，錯誤資料才以沖銷處理。" />
-    {canWrite && <details className="panel drawer" open><summary><span className="btn btn-primary"><Plus size={16} />新增異動</span></summary>
+    {canWrite && <details className="panel drawer" open><summary><span className="btn btn-primary"><Minus size={16} />新增異動</span></summary>
       {message && <div className="form-error">{message}</div>}
       <form className="form-grid" onSubmit={submit}>
         <div className="field"><label htmlFor="movement-date">日期</label><input className="input" id="movement-date" name="occurredAt" type="date" defaultValue={today} required /></div>
@@ -104,7 +104,7 @@ export function MovementManager({ products, channels, movements, canWrite }: { p
       </form>
     </details>}
 
-    {canWrite && <details className="panel drawer"><summary><span className="btn"><Plus size={16} />寄賣代發</span></summary>
+    {canWrite && <details className="panel drawer"><summary><span className="btn btn-primary"><Minus size={16} />寄賣代發</span></summary>
       {fulfillmentMessage && <div className="form-error">{fulfillmentMessage}</div>}
       <form className="form-grid" onSubmit={submitFulfillment}>
         <div className="field"><label htmlFor="fulfillment-date">日期</label><input className="input" id="fulfillment-date" name="occurredAt" type="date" defaultValue={today} required /></div>
