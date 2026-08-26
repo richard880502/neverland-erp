@@ -5,7 +5,7 @@ import { takeRateLimit } from "@/lib/mcp/rate-limit";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
-const highRisk = new Set(["inventory:write", "movements:reverse", "sync:run"]);
+const highRisk = new Set(["inventory:write", "movements:reverse", "sync:run", "billing:write"]);
 const scopeLabels: Record<string, { title: string; detail: string }> = {
   "dashboard:read": { title: "查看營運摘要", detail: "讀取庫存、低庫存與銷售概況。" },
   "products:read": { title: "讀取商品資料", detail: "搜尋並查看商品、SKU、尺寸與價格資料。" },
@@ -14,9 +14,11 @@ const scopeLabels: Record<string, { title: string; detail: string }> = {
   "movements:read": { title: "讀取庫存異動", detail: "查詢入庫、出貨、寄賣與調整紀錄。" },
   "sales:read": { title: "讀取銷售資料", detail: "查看指定期間及各通路的銷售摘要。" },
   "sync:read": { title: "查看同步狀態", detail: "查看 Google Sheet 連線與同步工作狀態。" },
+  "billing:read": { title: "讀取請款資料", detail: "查看、搜尋與預覽請款單及應收金額。" },
   "inventory:write": { title: "建立庫存異動", detail: "可新增入庫、出貨、寄賣及庫存調整紀錄。" },
   "movements:reverse": { title: "沖銷庫存異動", detail: "可建立反向紀錄，影響目前庫存數量。" },
   "sync:run": { title: "執行資料同步", detail: "可立即啟動 Google Sheet 同步及佇列處理。" },
+  "billing:write": { title: "建立與管理請款", detail: "可建立正式請款單、作廢請款單並建立 Google 試算表請款頁籤；操作前仍需再次確認。" },
   "offline_access": { title: "維持連線", detail: "允許 ChatGPT 以 refresh token 安全續期，不必頻繁重新登入。" },
 };
 
