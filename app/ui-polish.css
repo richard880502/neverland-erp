@@ -1,0 +1,114 @@
+/* Targeted UI polish requested for dashboard, billing and Google Sheet sync. */
+
+/* --------------------------------------------------------------------------
+   Operations dashboard: make the filter heading a quiet section label instead
+   of a visually dominant black card.
+   -------------------------------------------------------------------------- */
+
+.dashboard-filter-panel .dashboard-filter-title {
+  align-self: stretch;
+  min-height: 66px;
+  padding: 9px 11px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  border: 1px solid var(--ui-border-base);
+  border-radius: var(--ui-radius-sm);
+  background: var(--ui-bg-component);
+  color: var(--ui-fg-base);
+  box-shadow: none;
+}
+
+.dashboard-filter-panel .dashboard-filter-title > span {
+  display: block;
+  margin: 0 0 3px;
+  color: #2563eb;
+  font-size: 9px;
+  font-weight: 650;
+  line-height: 13px;
+  letter-spacing: .08em;
+}
+
+.dashboard-filter-panel .dashboard-filter-title strong {
+  margin: 0;
+  color: var(--ui-fg-base);
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 19px;
+}
+
+.dashboard-filter-panel .dashboard-filter-title small {
+  margin: 2px 0 0;
+  color: var(--ui-fg-muted);
+  font-size: 10px;
+  line-height: 15px;
+}
+
+/* --------------------------------------------------------------------------
+   Billing: the global `.panel + .panel` spacing rule is intended for vertically
+   stacked panels. These two panels are grid siblings, so remove that inherited
+   top margin and let the grid stretch both cards to the same row height.
+   -------------------------------------------------------------------------- */
+
+.billing-create-grid {
+  align-items: stretch;
+}
+
+.billing-create-grid > .panel {
+  height: 100%;
+  margin-top: 0;
+}
+
+.billing-preview-panel {
+  display: flex;
+  flex-direction: column;
+}
+
+.billing-preview-panel .billing-empty {
+  flex: 1 1 auto;
+  min-height: 320px;
+}
+
+/* --------------------------------------------------------------------------
+   Google Sheet sync: preserve the original card content layout. Only normalize
+   the grid boxes themselves: no inherited sibling top margin, equal row height,
+   and identical outer dimensions.
+   -------------------------------------------------------------------------- */
+
+.sync-config-grid {
+  align-items: stretch;
+}
+
+.sync-config-grid > .panel {
+  box-sizing: border-box;
+  height: 100%;
+  min-height: 190px;
+  margin-top: 0;
+}
+
+/* The legacy sync action secondary button was designed for a dark card and
+   therefore kept white text on a transparent background. The Medusa theme uses
+   a white card, which makes “馬上同步全部” effectively disappear until hover.
+   Keep it consistent with the other primary admin actions instead. */
+.sync-action-card .btn-secondary {
+  background: var(--ui-bg-interactive);
+  border-color: var(--ui-bg-interactive);
+  color: #fff;
+}
+
+.sync-action-card .btn-secondary:hover {
+  background: var(--ui-bg-interactive-hover);
+  border-color: var(--ui-bg-interactive-hover);
+  color: #fff;
+}
+
+@media (max-width: 1100px) {
+  .billing-create-grid > .panel,
+  .sync-config-grid > .panel {
+    height: auto;
+  }
+
+  .billing-preview-panel .billing-empty {
+    min-height: 300px;
+  }
+}
