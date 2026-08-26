@@ -9,6 +9,26 @@ import {
   listBillingMcpTools,
 } from "@/lib/mcp/billing-tools";
 
+type McpToolResult = {
+  content: Array<{ type: string; text: string }>;
+  structuredContent?: unknown;
+  [key: string]: unknown;
+};
+
+export function normalizeMcpToolResult(name: string, result: McpToolResult) {
+  const structuredContent = result.structuredContent;
+  if (structuredContent !== null && typeof structuredContent === "object" && !Array.isArray(structuredContent)) {
+    return result;
+  }
+
+  return {
+    ...result,
+    structuredContent: Array.isArray(structuredContent)
+      ? { [name === "list_billing_statements" ? "statements" : "items"]: structuredContent }
+      : { value: structuredContent ?? null },
+  };
+}
+
 export function listMcpTools(auth?: McpAuth) {
   return [
     ...listCoreMcpTools(auth),
@@ -17,6 +37,8 @@ export function listMcpTools(auth?: McpAuth) {
 }
 
 export async function callMcpTool(name: string, input: unknown, auth: McpAuth) {
-  if (hasBillingMcpTool(name)) return callBillingMcpTool(name, input, auth);
-  return callCoreMcpTool(name, input, auth);
+  const result = hasBillingMcpTool(name)
+    ? await callBillingMcpTool(name, input, auth)
+    : await callCoreMcpTool(name, input, auth);
+  return normalizeMcpToolResult(name, result);
 }
