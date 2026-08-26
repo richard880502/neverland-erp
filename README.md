@@ -102,7 +102,7 @@ UI implementation 採用本地 design tokens / primitives 對齊 Medusa，而不
 
 ERP 提供 protected, stateless Streamable HTTP MCP endpoint，可讓支援 MCP / OAuth 的 agent 或 assistant 在使用者權限範圍內操作 ERP。
 
-庫存寫入採兩階段 preview / confirmation，包含：
+庫存與請款寫入都採兩階段 preview / confirmation。庫存工具包含：
 
 - `create_inventory_movement`：一般庫存異動
 - `create_sales_return`：銷貨退回
@@ -110,7 +110,15 @@ ERP 提供 protected, stateless Streamable HTTP MCP endpoint，可讓支援 MCP 
 - `create_consignment_direct_fulfillment`：寄賣代發
 - `reverse_inventory_movement`：沖銷既有異動
 
-確認 commit 時仍會重新執行角色、OAuth scope、通路類型、價格與庫存驗證，並將異動加入 Google Sheet 同步 queue。
+請款 MCP 另提供 `billing:read` / `billing:write` 分離權限：
+
+- `list_billing_statements` / `get_billing_statement`：查詢正式請款快照
+- `preview_billing_statement`：依通路與日期區間預覽建議品項、經銷價、稅與總額
+- `create_billing_statement`：確認後建立正式 `BL-YYYYMM-xxx` 請款單
+- `void_billing_statement`：確認後作廢待收款請款單
+- `create_billing_google_sheet`：確認後建立或開啟對應 Google Sheet 頁籤，既有頁籤不覆寫
+
+正式寫入在 commit 時仍會重新執行 ERP 角色、OAuth scope 與 domain validation；Billing 的 confirmation snapshot 也會綁定當下通路與商品價格狀態，避免預覽後主檔變更卻沿用舊確認。
 
 完整設定與連線說明：[`docs/mcp-chatgpt-codex.md`](docs/mcp-chatgpt-codex.md)
 
