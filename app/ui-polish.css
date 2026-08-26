@@ -45,9 +45,9 @@
 }
 
 /* --------------------------------------------------------------------------
-   Billing: setup and preview are peer panels, so they should always stretch to
-   the same row height. The empty preview occupies the remaining space and stays
-   vertically centered instead of making the right card look shorter.
+   Billing: the global `.panel + .panel` spacing rule is intended for vertically
+   stacked panels. These two panels are grid siblings, so remove that inherited
+   top margin and let the grid stretch both cards to the same row height.
    -------------------------------------------------------------------------- */
 
 .billing-create-grid {
@@ -56,6 +56,7 @@
 
 .billing-create-grid > .panel {
   height: 100%;
+  margin-top: 0;
 }
 
 .billing-preview-panel {
@@ -69,9 +70,9 @@
 }
 
 /* --------------------------------------------------------------------------
-   Google Sheet sync: normalize the three summary/control cards into one shared
-   vertical rhythm. Cards stretch equally and their footer/status/action area is
-   anchored to the bottom.
+   Google Sheet sync: preserve the original card content layout. Only normalize
+   the grid boxes themselves: no inherited sibling top margin, equal row height,
+   and identical outer dimensions.
    -------------------------------------------------------------------------- */
 
 .sync-config-grid {
@@ -79,57 +80,10 @@
 }
 
 .sync-config-grid > .panel {
+  box-sizing: border-box;
   height: 100%;
-  min-height: 230px;
-}
-
-.sync-config-card,
-.sync-action-card {
-  display: flex;
-  flex-direction: column;
-}
-
-.sync-config-card .sync-card-icon {
-  flex: 0 0 auto;
-  margin-bottom: 20px;
-}
-
-.sync-config-card > span,
-.sync-action-card > div > span {
-  display: block;
-  margin-bottom: 8px;
-}
-
-.sync-config-card > strong,
-.sync-action-card > div > strong {
-  display: block;
-  margin-bottom: 8px;
-}
-
-.sync-config-card > small,
-.sync-action-card > div > small {
-  display: block;
-  line-height: 1.55;
-}
-
-.sync-config-card > em {
-  margin-top: auto;
-  padding-top: 20px;
-  align-self: flex-start;
-  font-style: normal;
-}
-
-.sync-action-card > div {
-  display: grid;
-  gap: 0;
-}
-
-.sync-action-card > button:first-of-type {
-  margin-top: auto;
-}
-
-.sync-action-card > button + button {
-  margin-top: 8px;
+  min-height: 190px;
+  margin-top: 0;
 }
 
 @media (max-width: 1100px) {
