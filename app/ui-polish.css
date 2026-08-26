@@ -1,0 +1,144 @@
+/* Targeted UI polish requested for dashboard, billing and Google Sheet sync. */
+
+/* --------------------------------------------------------------------------
+   Operations dashboard: make the filter heading a quiet section label instead
+   of a visually dominant black card.
+   -------------------------------------------------------------------------- */
+
+.dashboard-filter-panel .dashboard-filter-title {
+  align-self: stretch;
+  min-height: 66px;
+  padding: 9px 11px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  border: 1px solid var(--ui-border-base);
+  border-radius: var(--ui-radius-sm);
+  background: var(--ui-bg-component);
+  color: var(--ui-fg-base);
+  box-shadow: none;
+}
+
+.dashboard-filter-panel .dashboard-filter-title > span {
+  display: block;
+  margin: 0 0 3px;
+  color: #2563eb;
+  font-size: 9px;
+  font-weight: 650;
+  line-height: 13px;
+  letter-spacing: .08em;
+}
+
+.dashboard-filter-panel .dashboard-filter-title strong {
+  margin: 0;
+  color: var(--ui-fg-base);
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 19px;
+}
+
+.dashboard-filter-panel .dashboard-filter-title small {
+  margin: 2px 0 0;
+  color: var(--ui-fg-muted);
+  font-size: 10px;
+  line-height: 15px;
+}
+
+/* --------------------------------------------------------------------------
+   Billing: setup and preview are peer panels, so they should always stretch to
+   the same row height. The empty preview occupies the remaining space and stays
+   vertically centered instead of making the right card look shorter.
+   -------------------------------------------------------------------------- */
+
+.billing-create-grid {
+  align-items: stretch;
+}
+
+.billing-create-grid > .panel {
+  height: 100%;
+}
+
+.billing-preview-panel {
+  display: flex;
+  flex-direction: column;
+}
+
+.billing-preview-panel .billing-empty {
+  flex: 1 1 auto;
+  min-height: 320px;
+}
+
+/* --------------------------------------------------------------------------
+   Google Sheet sync: normalize the three summary/control cards into one shared
+   vertical rhythm. Cards stretch equally and their footer/status/action area is
+   anchored to the bottom.
+   -------------------------------------------------------------------------- */
+
+.sync-config-grid {
+  align-items: stretch;
+}
+
+.sync-config-grid > .panel {
+  height: 100%;
+  min-height: 230px;
+}
+
+.sync-config-card,
+.sync-action-card {
+  display: flex;
+  flex-direction: column;
+}
+
+.sync-config-card .sync-card-icon {
+  flex: 0 0 auto;
+  margin-bottom: 20px;
+}
+
+.sync-config-card > span,
+.sync-action-card > div > span {
+  display: block;
+  margin-bottom: 8px;
+}
+
+.sync-config-card > strong,
+.sync-action-card > div > strong {
+  display: block;
+  margin-bottom: 8px;
+}
+
+.sync-config-card > small,
+.sync-action-card > div > small {
+  display: block;
+  line-height: 1.55;
+}
+
+.sync-config-card > em {
+  margin-top: auto;
+  padding-top: 20px;
+  align-self: flex-start;
+  font-style: normal;
+}
+
+.sync-action-card > div {
+  display: grid;
+  gap: 0;
+}
+
+.sync-action-card > button:first-of-type {
+  margin-top: auto;
+}
+
+.sync-action-card > button + button {
+  margin-top: 8px;
+}
+
+@media (max-width: 1100px) {
+  .billing-create-grid > .panel,
+  .sync-config-grid > .panel {
+    height: auto;
+  }
+
+  .billing-preview-panel .billing-empty {
+    min-height: 300px;
+  }
+}
