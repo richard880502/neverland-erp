@@ -86,6 +86,22 @@
   margin-top: 0;
 }
 
+/* The legacy sync action secondary button was designed for a dark card and
+   therefore kept white text on a transparent background. The Medusa theme uses
+   a white card, which makes “馬上同步全部” effectively disappear until hover.
+   Keep it consistent with the other primary admin actions instead. */
+.sync-action-card .btn-secondary {
+  background: var(--ui-bg-interactive);
+  border-color: var(--ui-bg-interactive);
+  color: #fff;
+}
+
+.sync-action-card .btn-secondary:hover {
+  background: var(--ui-bg-interactive-hover);
+  border-color: var(--ui-bg-interactive-hover);
+  color: #fff;
+}
+
 @media (max-width: 1100px) {
   .billing-create-grid > .panel,
   .sync-config-grid > .panel {
