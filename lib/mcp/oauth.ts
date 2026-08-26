@@ -5,11 +5,11 @@ import type { UserRole } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 
 export const MCP_SCOPES = [
-  "dashboard:read", "products:read", "channels:read", "inventory:read", "movements:read", "sales:read", "sync:read",
-  "inventory:write", "movements:reverse", "sync:run", "offline_access",
+  "dashboard:read", "products:read", "channels:read", "inventory:read", "movements:read", "sales:read", "sync:read", "billing:read",
+  "inventory:write", "movements:reverse", "sync:run", "billing:write", "offline_access",
 ] as const;
 export type McpScope = (typeof MCP_SCOPES)[number];
-export const DEFAULT_MCP_SCOPES: McpScope[] = ["dashboard:read", "products:read", "channels:read", "inventory:read", "movements:read", "sales:read", "sync:read", "offline_access"];
+export const DEFAULT_MCP_SCOPES: McpScope[] = ["dashboard:read", "products:read", "channels:read", "inventory:read", "movements:read", "sales:read", "sync:read", "billing:read", "offline_access"];
 const ACCESS_TOKEN_MINUTES = 15;
 const REFRESH_TOKEN_DAYS = 30;
 const CODE_MINUTES = 5;

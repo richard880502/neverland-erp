@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { authenticateMcpAccessToken, baseUrl, requireHttpsInProduction, type McpAuth } from "@/lib/mcp/oauth";
-import { callMcpTool, listMcpTools } from "@/lib/mcp/tools";
+import { callMcpTool, listMcpTools } from "@/lib/mcp/registry";
 import { takeRateLimit } from "@/lib/mcp/rate-limit";
 
 export const runtime = "nodejs";
@@ -32,7 +32,7 @@ export async function handleAuthenticatedMcpRequest(request: Request, auth: McpA
     const requestedVersion = typeof rpc.params?.protocolVersion === "string" ? rpc.params.protocolVersion : null;
     const protocolVersion = requestedVersion && SUPPORTED_PROTOCOL_VERSIONS.has(requestedVersion) ? requestedVersion : PROTOCOL_VERSION;
     console.info("mcp_initialized", { protocolVersion, userId: auth.userId, connectionId: auth.connectionId });
-    return response(rpc.id, { protocolVersion, capabilities: { tools: { listChanged: false } }, serverInfo: { name: "Neverland ERP", version: "1.0.0" }, instructions: "Neverland ERP MCP。所有庫存寫入與沖銷均需取得使用者確認。" });
+    return response(rpc.id, { protocolVersion, capabilities: { tools: { listChanged: false } }, serverInfo: { name: "Neverland ERP", version: "1.0.0" }, instructions: "Neverland ERP MCP。所有庫存、請款建立/作廢與外部文件寫入均需取得使用者確認。" });
   }
   if (rpc.method === "tools/list") return response(rpc.id, { tools: listMcpTools(auth) });
   if (rpc.method === "tools/call") {

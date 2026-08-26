@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import type { McpAuth } from "../lib/mcp/oauth";
-import { callMcpTool, listMcpTools } from "../lib/mcp/tools";
+import { callMcpTool, listMcpTools } from "../lib/mcp/registry";
 
 function auth(role: McpAuth["role"], scopes: McpAuth["scopes"]): McpAuth {
   return { userId: "user", role, scopes, connectionId: "connection", clientId: "client" };
@@ -27,6 +27,22 @@ test("admin discovery includes explicitly granted admin tools", () => {
   assert.deepEqual(names, ["run_sheet_sync"]);
 });
 
+test("billing discovery separates read and write scopes", () => {
+  const viewerNames = listMcpTools(auth("VIEWER", ["billing:read", "billing:write"])).map((tool) => tool.name);
+  assert.deepEqual(viewerNames, [
+    "list_billing_statements",
+    "get_billing_statement",
+    "preview_billing_statement",
+  ]);
+
+  const staffNames = listMcpTools(auth("STAFF", ["billing:write"])).map((tool) => tool.name);
+  assert.deepEqual(staffNames, [
+    "create_billing_statement",
+    "void_billing_statement",
+    "create_billing_google_sheet",
+  ]);
+});
+
 test("tool execution repeats the role check server-side", async () => {
   await assert.rejects(
     callMcpTool("create_inventory_movement", {}, auth("VIEWER", ["inventory:write"])),
@@ -34,6 +50,14 @@ test("tool execution repeats the role check server-side", async () => {
   );
   await assert.rejects(
     callMcpTool("create_sales_return", {}, auth("STAFF", ["inventory:read"])),
+    /scope 不足/,
+  );
+  await assert.rejects(
+    callMcpTool("create_billing_statement", {}, auth("VIEWER", ["billing:write"])),
+    /角色權限不足/,
+  );
+  await assert.rejects(
+    callMcpTool("create_billing_statement", {}, auth("STAFF", ["billing:read"])),
     /scope 不足/,
   );
 });
@@ -49,6 +73,20 @@ test("inventory write tools advertise confirmation-relevant annotations", () => 
   const sync = tools.find((tool) => tool.name === "run_sheet_sync");
   assert.equal(reverse?.annotations.destructiveHint, true);
   assert.equal(sync?.annotations.readOnlyHint, false);
+});
+
+test("billing write tools require confirmation and advertise risk correctly", () => {
+  const tools = listMcpTools(auth("ADMIN", ["billing:write"]));
+  const create = tools.find((tool) => tool.name === "create_billing_statement");
+  const voidTool = tools.find((tool) => tool.name === "void_billing_statement");
+  const googleSheet = tools.find((tool) => tool.name === "create_billing_google_sheet");
+
+  assert.ok(create?.inputSchema.properties?.confirmationToken);
+  assert.deepEqual(create?.annotations, { readOnlyHint: false, idempotentHint: false, destructiveHint: false });
+  assert.ok(voidTool?.inputSchema.properties?.confirmationToken);
+  assert.equal(voidTool?.annotations.destructiveHint, true);
+  assert.ok(googleSheet?.inputSchema.properties?.confirmationToken);
+  assert.deepEqual(googleSheet?.annotations, { readOnlyHint: false, idempotentHint: true, destructiveHint: false });
 });
 
 test("dedicated return and fulfillment tools require business-critical fields", () => {

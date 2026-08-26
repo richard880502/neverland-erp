@@ -1,11 +1,12 @@
 import { NextResponse } from "next/server";
 import { assertSameOrigin, getAuthContext } from "@/lib/auth";
 import { baseUrl, issueAuthorizationCode, validateAuthorizationRequest } from "@/lib/mcp/oauth";
+import { consentScopeOptions, selectedConsentScopes } from "@/lib/mcp/authorization-scopes";
 import { takeRateLimit } from "@/lib/mcp/rate-limit";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
-const highRisk = new Set(["inventory:write", "movements:reverse", "sync:run"]);
+const highRisk = new Set(["inventory:write", "movements:reverse", "sync:run", "billing:write"]);
 const scopeLabels: Record<string, { title: string; detail: string }> = {
   "dashboard:read": { title: "查看營運摘要", detail: "讀取庫存、低庫存與銷售概況。" },
   "products:read": { title: "讀取商品資料", detail: "搜尋並查看商品、SKU、尺寸與價格資料。" },
@@ -14,9 +15,11 @@ const scopeLabels: Record<string, { title: string; detail: string }> = {
   "movements:read": { title: "讀取庫存異動", detail: "查詢入庫、出貨、寄賣與調整紀錄。" },
   "sales:read": { title: "讀取銷售資料", detail: "查看指定期間及各通路的銷售摘要。" },
   "sync:read": { title: "查看同步狀態", detail: "查看 Google Sheet 連線與同步工作狀態。" },
+  "billing:read": { title: "讀取請款資料", detail: "查看、搜尋與預覽請款單及應收金額。" },
   "inventory:write": { title: "建立庫存異動", detail: "可新增入庫、出貨、寄賣及庫存調整紀錄。" },
   "movements:reverse": { title: "沖銷庫存異動", detail: "可建立反向紀錄，影響目前庫存數量。" },
   "sync:run": { title: "執行資料同步", detail: "可立即啟動 Google Sheet 同步及佇列處理。" },
+  "billing:write": { title: "建立與管理請款", detail: "可建立正式請款單、作廢請款單並建立 Google 試算表請款頁籤；操作前仍需再次確認。" },
   "offline_access": { title: "維持連線", detail: "允許 ChatGPT 以 refresh token 安全續期，不必頻繁重新登入。" },
 };
 
@@ -33,10 +36,12 @@ function page(title: string, content: string, status = 200) {
 
 function queryFromForm(form: FormData) {
   const query = new URLSearchParams();
-  for (const key of ["response_type", "client_id", "redirect_uri", "state", "code_challenge", "code_challenge_method", "scope", "resource"]) {
+  for (const key of ["response_type", "client_id", "redirect_uri", "state", "code_challenge", "code_challenge_method", "resource"]) {
     const value = form.get(key);
     if (typeof value === "string") query.set(key, value);
   }
+  const requestedScope = form.get("requested_scope");
+  if (typeof requestedScope === "string" && requestedScope) query.set("scope", requestedScope);
   return query;
 }
 
@@ -48,11 +53,11 @@ export async function GET(request: Request) {
     if (!auth) return NextResponse.redirect(new URL(`/login?returnTo=${encodeURIComponent(`${new URL(request.url).pathname}${new URL(request.url).search}`)}`, baseUrl(request)));
     if (auth.user.mustChangePassword) return page("需要變更密碼", "<h1>請先變更密碼</h1><p>為保護 MCP connection，請先在 ERP 變更初始密碼。</p>", 403);
     const authorization = await validateAuthorizationRequest(new URL(request.url).searchParams, request);
-    const options = authorization.requestedScopes.map((scope) => {
+    const options = consentScopeOptions(authorization.requestedScopes).map(({ scope, requested }) => {
       const label = scopeLabels[scope] ?? { title: scope, detail: "允許 AI Assistant 使用此項功能。" };
-      return `<label class="scope"><input type="checkbox" name="scope" value="${escapeHtml(scope)}" ${highRisk.has(scope) ? "" : "checked"}><span><span class="scope-name">${escapeHtml(label.title)}</span><span class="scope-detail">${escapeHtml(label.detail)}</span></span>${highRisk.has(scope) ? '<span class="risk">需明確授權</span>' : ""}</label>`;
+      return `<label class="scope"><input type="checkbox" name="scope" value="${escapeHtml(scope)}" ${requested && !highRisk.has(scope) ? "checked" : ""}><span><span class="scope-name">${escapeHtml(label.title)}</span><span class="scope-detail">${escapeHtml(label.detail)}</span></span>${highRisk.has(scope) ? '<span class="risk">需明確授權</span>' : ""}</label>`;
     }).join("");
-    const hidden = [...new URL(request.url).searchParams.entries()].map(([key, value]) => `<input type="hidden" name="${escapeHtml(key)}" value="${escapeHtml(value)}">`).join("");
+    const hidden = [...new URL(request.url).searchParams.entries()].map(([key, value]) => `<input type="hidden" name="${escapeHtml(key === "scope" ? "requested_scope" : key)}" value="${escapeHtml(value)}">`).join("");
     return page("授權 Neverland ERP MCP", `<div class="card-head"><div><span class="eyebrow">MCP ACCESS REQUEST</span><h1>授權 ${escapeHtml(authorization.clientName)}</h1></div><span class="secure-badge">安全連線</span></div><p class="intro">這個 AI Assistant 想要連線 Neverland ERP，請確認它可以使用的功能。</p><p class="account">將以 <b>${escapeHtml(auth.user.name || auth.user.email)}</b>（${escapeHtml(auth.user.role)}）建立獨立、可撤銷的連線。</p><form method="post" action="/authorize">${hidden}<div class="permissions-title"><strong>選擇允許的權限</strong><span>高風險操作預設不勾選</span></div><section class="scopes">${options}</section><div class="security"><b>i</b><span>實際權限仍受你的 ERP 角色限制；勾選項目不會提高原本帳號權限。</span></div><div class="actions"><button class="secondary" type="submit" name="decision" value="deny">拒絕</button><button class="primary" type="submit" name="decision" value="allow">允許並連線</button></div></form>`);
   } catch (cause) {
     return page("無效授權請求", `<h1>無效的授權請求</h1><p>${escapeHtml(cause instanceof Error ? cause.message : "請重新從 MCP client 發起連線")}</p>`, 400);
@@ -75,8 +80,7 @@ export async function POST(request: Request) {
       denied.searchParams.set("iss", baseUrl(request));
       return NextResponse.redirect(denied, 303);
     }
-    const selected = form.getAll("scope").filter((scope): scope is string => typeof scope === "string");
-    const scopes = authorization.requestedScopes.filter((scope) => selected.includes(scope));
+    const scopes = selectedConsentScopes(form.getAll("scope"));
     if (!scopes.length) return page("請選擇權限", "<h1>請選擇至少一項授權範圍</h1><p>請返回上一頁選擇需要的 read scope。</p>", 400);
     const code = await issueAuthorizationCode({ userId: auth.user.id, clientId: authorization.clientId, clientName: authorization.clientName, redirectUri: authorization.redirectUri, codeChallenge: authorization.codeChallenge, scopes, userAgent: request.headers.get("user-agent")?.slice(0, 500) ?? null });
     const redirect = new URL(authorization.redirectUri);
