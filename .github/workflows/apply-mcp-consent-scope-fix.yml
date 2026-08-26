@@ -1,0 +1,70 @@
+name: Apply MCP consent scope fix
+
+on:
+  push:
+    branches:
+      - feat/mcp-billing-statements
+    paths:
+      - .github/workflows/apply-mcp-consent-scope-fix.yml
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feat/mcp-billing-statements
+          fetch-depth: 0
+
+      - name: Patch authorization consent flow
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path('app/authorize/route.ts')
+          text = path.read_text()
+
+          replacements = [
+            (
+              'import { baseUrl, issueAuthorizationCode, validateAuthorizationRequest } from "@/lib/mcp/oauth";\n',
+              'import { baseUrl, issueAuthorizationCode, validateAuthorizationRequest } from "@/lib/mcp/oauth";\nimport { consentScopeOptions, selectedConsentScopes } from "@/lib/mcp/authorization-scopes";\n',
+            ),
+            (
+              '''function queryFromForm(form: FormData) {\n  const query = new URLSearchParams();\n  for (const key of ["response_type", "client_id", "redirect_uri", "state", "code_challenge", "code_challenge_method", "scope", "resource"]) {\n    const value = form.get(key);\n    if (typeof value === "string") query.set(key, value);\n  }\n  return query;\n}\n''',
+              '''function queryFromForm(form: FormData) {\n  const query = new URLSearchParams();\n  for (const key of ["response_type", "client_id", "redirect_uri", "state", "code_challenge", "code_challenge_method", "resource"]) {\n    const value = form.get(key);\n    if (typeof value === "string") query.set(key, value);\n  }\n  const requestedScope = form.get("requested_scope");\n  if (typeof requestedScope === "string" && requestedScope) query.set("scope", requestedScope);\n  return query;\n}\n''',
+            ),
+            (
+              '    const options = authorization.requestedScopes.map((scope) => {\n',
+              '    const options = consentScopeOptions(authorization.requestedScopes).map(({ scope, requested }) => {\n',
+            ),
+            (
+              '      return `<label class="scope"><input type="checkbox" name="scope" value="${escapeHtml(scope)}" ${highRisk.has(scope) ? "" : "checked"}><span><span class="scope-name">${escapeHtml(label.title)}</span><span class="scope-detail">${escapeHtml(label.detail)}</span></span>${highRisk.has(scope) ? \'<span class="risk">需明確授權</span>\' : ""}</label>`;\n',
+              '      return `<label class="scope"><input type="checkbox" name="scope" value="${escapeHtml(scope)}" ${requested && !highRisk.has(scope) ? "checked" : ""}><span><span class="scope-name">${escapeHtml(label.title)}</span><span class="scope-detail">${escapeHtml(label.detail)}</span></span>${highRisk.has(scope) ? \'<span class="risk">需明確授權</span>\' : ""}</label>`;\n',
+            ),
+            (
+              '    const hidden = [...new URL(request.url).searchParams.entries()].map(([key, value]) => `<input type="hidden" name="${escapeHtml(key)}" value="${escapeHtml(value)}">`).join("");\n',
+              '    const hidden = [...new URL(request.url).searchParams.entries()].map(([key, value]) => `<input type="hidden" name="${escapeHtml(key === "scope" ? "requested_scope" : key)}" value="${escapeHtml(value)}">`).join("");\n',
+            ),
+            (
+              '''    const selected = form.getAll("scope").filter((scope): scope is string => typeof scope === "string");\n    const scopes = authorization.requestedScopes.filter((scope) => selected.includes(scope));\n''',
+              '''    const scopes = selectedConsentScopes(form.getAll("scope"));\n''',
+            ),
+          ]
+
+          for old, new in replacements:
+            if old not in text:
+              raise SystemExit(f'authorization patch target not found:\n{old}')
+            text = text.replace(old, new, 1)
+
+          path.write_text(text)
+          PY
+
+          git diff --check
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add app/authorize/route.ts
+          git commit -m "fix: expose all MCP consent scopes"
+          git push origin HEAD:feat/mcp-billing-statements
