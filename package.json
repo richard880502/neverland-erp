@@ -7,7 +7,7 @@
     "build": "prisma generate && next build",
     "start": "next start",
     "lint": "eslint .",
-    "test": "tsx --test tests/mcp-oauth.test.ts tests/mcp-protocol.test.ts tests/mcp-tools.test.ts tests/oauth-metadata.test.ts tests/object-storage.test.ts",
+    "test": "tsx --test tests/mcp-oauth.test.ts tests/mcp-protocol.test.ts tests/mcp-tools.test.ts tests/mcp-structured-content.test.ts tests/oauth-metadata.test.ts tests/object-storage.test.ts",
     "test:integration": "tsx --test tests/integration/**/*.test.ts",
     "db:push": "prisma db push",
     "db:migrate": "prisma migrate deploy",
