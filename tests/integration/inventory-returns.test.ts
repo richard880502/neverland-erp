@@ -12,6 +12,8 @@ const directName = "MCP Returns Direct";
 const otherDirectName = "MCP Returns Other Direct";
 const consignmentName = "MCP Returns Consignment";
 const clientId = "returns-integration";
+const occurredAt = new Date("2040-01-15T12:00:00.000Z");
+const salesDay = "2040-01-15";
 
 async function cleanup() {
   await prisma.googleSheetMovementQueue.deleteMany({ where: { movement: { product: { sku } } } });
@@ -49,11 +51,11 @@ test("MCP returns and consignment direct fulfillment preserve inventory and net 
   ]);
   const actor = { userId: user.id, role: user.role };
 
-  await createInventoryMovement({ type: "RECEIVE", productId: product.id, quantity: 10 }, actor);
-  await createInventoryMovement({ type: "SHIP", productId: product.id, channelId: direct.id, quantity: 3, unitPrice: 100 }, actor);
-  await createInventoryMovement({ type: "CONSIGN_OUT", productId: product.id, channelId: consignment.id, quantity: 4 }, actor);
+  await createInventoryMovement({ type: "RECEIVE", productId: product.id, quantity: 10, occurredAt }, actor);
+  await createInventoryMovement({ type: "SHIP", productId: product.id, channelId: direct.id, quantity: 3, unitPrice: 100, occurredAt }, actor);
+  await createInventoryMovement({ type: "CONSIGN_OUT", productId: product.id, channelId: consignment.id, quantity: 4, occurredAt }, actor);
 
-  const wrongChannelCommand = { sku, quantity: 1, channelId: otherDirect.id, unitPrice: 100 };
+  const wrongChannelCommand = { sku, quantity: 1, channelId: otherDirect.id, unitPrice: 100, occurredAt };
   const wrongPrepared = await callMcpTool("create_sales_return", wrongChannelCommand, auth);
   const wrongToken = (wrongPrepared.structuredContent as { confirmationToken: string }).confirmationToken;
   await assert.rejects(
@@ -61,10 +63,10 @@ test("MCP returns and consignment direct fulfillment preserve inventory and net 
     /可退回的已售數量不足/,
   );
 
-  const salesReturn = await commitTool("create_sales_return", { sku, quantity: 1, channelId: direct.id, unitPrice: 100, referenceNo: "RETURN-1" }, auth);
+  const salesReturn = await commitTool("create_sales_return", { sku, quantity: 1, channelId: direct.id, unitPrice: 100, referenceNo: "RETURN-1", occurredAt }, auth);
   assert.equal((salesReturn.structuredContent as { committed: boolean }).committed, true);
 
-  const purchaseReturn = await commitTool("create_purchase_return", { sku, quantity: 2, referenceNo: "SUPPLIER-RETURN-1" }, auth);
+  const purchaseReturn = await commitTool("create_purchase_return", { sku, quantity: 2, referenceNo: "SUPPLIER-RETURN-1", occurredAt }, auth);
   assert.equal((purchaseReturn.structuredContent as { committed: boolean }).committed, true);
 
   const fulfillment = await commitTool("create_consignment_direct_fulfillment", {
@@ -74,6 +76,7 @@ test("MCP returns and consignment direct fulfillment preserve inventory and net 
     quantity: 2,
     unitPrice: 200,
     referenceNo: "DIRECT-FULFILL-1",
+    occurredAt,
   }, auth);
   const fulfillmentResult = fulfillment.structuredContent as { committed: boolean; sourceMovement: { type: string }; salesMovement: { type: string } };
   assert.equal(fulfillmentResult.committed, true);
@@ -89,6 +92,6 @@ test("MCP returns and consignment direct fulfillment preserve inventory and net 
     .reduce((sum, movement) => sum + (movement.type === "CONSIGN_OUT" ? movement.quantity : movement.type === "CONSIGN_RETURN" || movement.type === "CONSIGN_SOLD" ? -movement.quantity : 0), 0);
   assert.equal(atConsignment, 2);
 
-  const sales = await callMcpTool("get_sales_summary", {}, auth);
+  const sales = await callMcpTool("get_sales_summary", { from: salesDay, to: salesDay }, auth);
   assert.deepEqual(sales.structuredContent, { transactions: 2, returnTransactions: 1, quantity: 4, revenue: 600 });
 });
