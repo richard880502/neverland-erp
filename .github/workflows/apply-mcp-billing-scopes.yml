@@ -1,0 +1,69 @@
+name: Apply billing MCP scopes
+
+on:
+  push:
+    branches:
+      - feat/mcp-billing-statements
+    paths:
+      - .github/workflows/apply-mcp-billing-scopes.yml
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feat/mcp-billing-statements
+          fetch-depth: 0
+
+      - name: Add billing OAuth scopes and consent labels
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          oauth = Path('lib/mcp/oauth.ts')
+          text = oauth.read_text()
+          old = '''export const MCP_SCOPES = [
+            "dashboard:read", "products:read", "channels:read", "inventory:read", "movements:read", "sales:read", "sync:read",
+            "inventory:write", "movements:reverse", "sync:run", "offline_access",
+          ] as const;
+          export type McpScope = (typeof MCP_SCOPES)[number];
+          export const DEFAULT_MCP_SCOPES: McpScope[] = ["dashboard:read", "products:read", "channels:read", "inventory:read", "movements:read", "sales:read", "sync:read", "offline_access"];'''
+          new = '''export const MCP_SCOPES = [
+            "dashboard:read", "products:read", "channels:read", "inventory:read", "movements:read", "sales:read", "sync:read", "billing:read",
+            "inventory:write", "movements:reverse", "sync:run", "billing:write", "offline_access",
+          ] as const;
+          export type McpScope = (typeof MCP_SCOPES)[number];
+          export const DEFAULT_MCP_SCOPES: McpScope[] = ["dashboard:read", "products:read", "channels:read", "inventory:read", "movements:read", "sales:read", "sync:read", "billing:read", "offline_access"];'''
+          if old not in text:
+              raise SystemExit('oauth scope block not found')
+          oauth.write_text(text.replace(old, new))
+
+          authorize = Path('app/authorize/route.ts')
+          text = authorize.read_text()
+          old_risk = 'const highRisk = new Set(["inventory:write", "movements:reverse", "sync:run"]);'
+          new_risk = 'const highRisk = new Set(["inventory:write", "movements:reverse", "sync:run", "billing:write"]);'
+          if old_risk not in text:
+              raise SystemExit('authorize highRisk block not found')
+          text = text.replace(old_risk, new_risk)
+          old_label = '  "sync:read": { title: "查看同步狀態", detail: "查看 Google Sheet 連線與同步工作狀態。" },\n'
+          new_label = old_label + '  "billing:read": { title: "讀取請款資料", detail: "查看、搜尋與預覽請款單及應收金額。" },\n'
+          if old_label not in text:
+              raise SystemExit('authorize read label insertion point not found')
+          text = text.replace(old_label, new_label, 1)
+          old_write = '  "sync:run": { title: "執行資料同步", detail: "可立即啟動 Google Sheet 同步及佇列處理。" },\n'
+          new_write = old_write + '  "billing:write": { title: "建立與管理請款", detail: "可建立正式請款單、作廢請款單並建立 Google 試算表請款頁籤；操作前仍需再次確認。" },\n'
+          if old_write not in text:
+              raise SystemExit('authorize write label insertion point not found')
+          authorize.write_text(text.replace(old_write, new_write, 1))
+          PY
+
+          git diff --check
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add lib/mcp/oauth.ts app/authorize/route.ts
+          git commit -m "feat: add billing MCP OAuth scopes"
+          git push origin HEAD:feat/mcp-billing-statements
