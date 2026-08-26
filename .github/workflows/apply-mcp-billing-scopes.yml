@@ -1,4 +1,4 @@
-name: Apply billing MCP scopes
+name: Apply billing MCP README patch
 
 on:
   push:
@@ -19,51 +19,47 @@ jobs:
           ref: feat/mcp-billing-statements
           fetch-depth: 0
 
-      - name: Add billing OAuth scopes and consent labels
+      - name: Document billing MCP in README
         run: |
           python3 - <<'PY'
           from pathlib import Path
 
-          oauth = Path('lib/mcp/oauth.ts')
-          text = oauth.read_text()
-          old = '''export const MCP_SCOPES = [
-            "dashboard:read", "products:read", "channels:read", "inventory:read", "movements:read", "sales:read", "sync:read",
-            "inventory:write", "movements:reverse", "sync:run", "offline_access",
-          ] as const;
-          export type McpScope = (typeof MCP_SCOPES)[number];
-          export const DEFAULT_MCP_SCOPES: McpScope[] = ["dashboard:read", "products:read", "channels:read", "inventory:read", "movements:read", "sales:read", "sync:read", "offline_access"];'''
-          new = '''export const MCP_SCOPES = [
-            "dashboard:read", "products:read", "channels:read", "inventory:read", "movements:read", "sales:read", "sync:read", "billing:read",
-            "inventory:write", "movements:reverse", "sync:run", "billing:write", "offline_access",
-          ] as const;
-          export type McpScope = (typeof MCP_SCOPES)[number];
-          export const DEFAULT_MCP_SCOPES: McpScope[] = ["dashboard:read", "products:read", "channels:read", "inventory:read", "movements:read", "sales:read", "sync:read", "billing:read", "offline_access"];'''
-          if old not in text:
-              raise SystemExit('oauth scope block not found')
-          oauth.write_text(text.replace(old, new))
+          readme = Path('README.md')
+          text = readme.read_text()
+          old = '''庫存寫入採兩階段 preview / confirmation，包含：
 
-          authorize = Path('app/authorize/route.ts')
-          text = authorize.read_text()
-          old_risk = 'const highRisk = new Set(["inventory:write", "movements:reverse", "sync:run"]);'
-          new_risk = 'const highRisk = new Set(["inventory:write", "movements:reverse", "sync:run", "billing:write"]);'
-          if old_risk not in text:
-              raise SystemExit('authorize highRisk block not found')
-          text = text.replace(old_risk, new_risk)
-          old_label = '  "sync:read": { title: "查看同步狀態", detail: "查看 Google Sheet 連線與同步工作狀態。" },\n'
-          new_label = old_label + '  "billing:read": { title: "讀取請款資料", detail: "查看、搜尋與預覽請款單及應收金額。" },\n'
-          if old_label not in text:
-              raise SystemExit('authorize read label insertion point not found')
-          text = text.replace(old_label, new_label, 1)
-          old_write = '  "sync:run": { title: "執行資料同步", detail: "可立即啟動 Google Sheet 同步及佇列處理。" },\n'
-          new_write = old_write + '  "billing:write": { title: "建立與管理請款", detail: "可建立正式請款單、作廢請款單並建立 Google 試算表請款頁籤；操作前仍需再次確認。" },\n'
-          if old_write not in text:
-              raise SystemExit('authorize write label insertion point not found')
-          authorize.write_text(text.replace(old_write, new_write, 1))
+- `create_inventory_movement`：一般庫存異動
+- `create_sales_return`：銷貨退回
+- `create_purchase_return`：進貨退出
+- `create_consignment_direct_fulfillment`：寄賣代發
+- `reverse_inventory_movement`：沖銷既有異動
+
+確認 commit 時仍會重新執行角色、OAuth scope、通路類型、價格與庫存驗證，並將異動加入 Google Sheet 同步 queue。'''
+          new = '''庫存與請款寫入都採兩階段 preview / confirmation。庫存工具包含：
+
+- `create_inventory_movement`：一般庫存異動
+- `create_sales_return`：銷貨退回
+- `create_purchase_return`：進貨退出
+- `create_consignment_direct_fulfillment`：寄賣代發
+- `reverse_inventory_movement`：沖銷既有異動
+
+請款 MCP 另提供 `billing:read` / `billing:write` 分離權限：
+
+- `list_billing_statements` / `get_billing_statement`：查詢正式請款快照
+- `preview_billing_statement`：依通路與日期區間預覽建議品項、經銷價、稅與總額
+- `create_billing_statement`：確認後建立正式 `BL-YYYYMM-xxx` 請款單
+- `void_billing_statement`：確認後作廢待收款請款單
+- `create_billing_google_sheet`：確認後建立或開啟對應 Google Sheet 頁籤，既有頁籤不覆寫
+
+正式寫入在 commit 時仍會重新執行 ERP 角色、OAuth scope 與 domain validation；Billing 的 confirmation snapshot 也會綁定當下通路與商品價格狀態，避免預覽後主檔變更卻沿用舊確認。'''
+          if old not in text:
+              raise SystemExit('README MCP section not found')
+          readme.write_text(text.replace(old, new, 1))
           PY
 
           git diff --check
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add lib/mcp/oauth.ts app/authorize/route.ts
-          git commit -m "feat: add billing MCP OAuth scopes"
+          git add README.md
+          git commit -m "docs: add billing MCP tools to README"
           git push origin HEAD:feat/mcp-billing-statements
