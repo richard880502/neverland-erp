@@ -3,142 +3,149 @@
 ## Goal
 Build a lightweight finance/cashflow module inside the existing ERP without mixing finance states with product, order, inventory, or purchasing states.
 
+## V1 implementation status
+
+Implemented on `feature/finance-module`:
+
+- Finance workspace at `/finance`.
+- Monthly income, expense, cash-flow, and receivable KPIs.
+- Manual income/expense entry with category, counterparty, note, and optional product relation.
+- Product revenue ranking by month from finance transaction items.
+- Finance categories with explicit INCOME / EXPENSE direction.
+- Independent payment, reconciliation, and invoice statuses.
+- Transaction list/create/update API with existing ERP authentication and audit logging.
+- Legacy `.xlsx` preview parser for `115年收支明細`.
+- Import buckets: READY / REVIEW / REJECTED.
+- Persisted import batch and import rows before commit.
+- Confirmed import by server-side `batchId`; browser-submitted normalized rows are not trusted at commit time.
+- Legacy sheet + row idempotency protection.
+- Exact unique product-name + size matching to existing ERP products when importing historical rows.
+- Finance models registered through Prisma multi-file schema plus deployable migration.
+
+Not included in V1 accounting scope yet:
+
+- Double-entry bookkeeping / general ledger.
+- Automatic bank reconciliation.
+- Detailed invoice attachment workflow and historical invoice-sheet matching.
+- Full receivable/payable sub-ledgers.
+- Medusa / Shopee live synchronization.
+- MCP finance tools.
+
+These are follow-up capabilities and should build on the FinanceTransaction foundation rather than change product lifecycle state.
+
 ## Domain boundaries
 
 - Commerce owns product/order lifecycle.
 - Inventory owns stock and stock movement.
 - Purchasing owns suppliers and purchase orders.
-- Finance owns transactions, invoices, receivables/payables, reconciliation, and reporting.
+- Finance owns money movement, invoice/payment/reconciliation state, and reporting.
 - Finance may reference products/orders/vendors but must not mutate their domain status directly.
 
 ## Core entities
 
-### Transaction
-- id
-- transaction_date
-- direction: income | expense
-- category_id
-- counterparty_id (optional)
+### FinanceTransaction
+- occurredAt
+- direction: INCOME | EXPENSE
+- categoryId
+- counterparty
 - amount
-- currency
-- payment_account_id (optional)
-- payment_status: unpaid | partially_paid | paid | refunded
-- reconciliation_status: unmatched | matched | reconciled
-- source_type: manual | medusa | shopee | bank_csv | excel_import | other
-- source_id (optional)
-- product_id/order_id/purchase_order_id (optional references)
-- project_id (optional)
+- channelId (optional reference id)
+- source: MANUAL | EXCEL | BILLING | SHOPEE | BANK | OTHER
+- sourceRef
+- paymentStatus
+- reconciliationStatus
+- invoiceStatus
+- legacySheet / legacyRow
 - note
-- created_by
-- created_at / updated_at
+- createdById
+
+### FinanceTransactionItem
+A transaction may contain zero or more product lines. This is what enables monthly product revenue analysis without putting product state inside Finance.
+
+```text
+FinanceTransaction
+  -> FinanceTransactionItem
+       -> productId (optional existing ERP product reference)
+```
+
+Historical/imported rows may preserve product name/size even when a unique ERP product cannot be matched.
 
 ### FinanceCategory
-Hierarchical category tree for consistent classification.
+Hierarchical category structure with a fixed income/expense direction.
 
-### Invoice
-- transaction_id
-- invoice_number
-- issued_at
-- gross_amount
-- net_amount
-- tax_amount
-- status: missing | received | voided | allowance
-- attachment_url (optional)
+Initial categories:
+- 商品銷售
+- 經銷收入
+- 商品成本 / 製作費
+- 行銷 / 宣傳
+- 物流 / 運費
+- 行政 / 雜支
 
-### Receivable / Payable
-- linked transaction/order/purchase order
-- due_date
-- amount_due
-- amount_paid
-- status
+### FinanceInvoice
+Transaction-linked invoice metadata and status. V1 creates the schema/status boundary; detailed attachment and historical invoice matching remain follow-up work.
 
-### Reconciliation
-Links imported bank/platform settlement records to ERP finance transactions.
+### FinanceImportBatch / FinanceImportRow
+Import previews are persisted before any transaction is created.
 
-## Frontend V1
-
-1. Finance Dashboard
-2. Transactions
-3. Transaction Create/Edit Drawer
-4. Receivables & Payables
-5. Reconciliation
-6. Category Settings
-7. Import Center (Excel/CSV)
+- Batch records filename, summary, creator, and completion state.
+- Rows preserve source sheet + row number, raw values, normalized values, status, and reason.
+- Commit accepts a batch id and re-reads READY rows on the server.
+- `(legacySheet, legacyRow)` prevents duplicate historical transactions.
 
 ## Excel migration strategy
 
-Current spreadsheet is treated as a legacy source, not as the target data model.
-
-Pipeline:
+The existing spreadsheet is a legacy source, not the target data model.
 
 ```text
-Excel / CSV
-   -> source parser
-   -> normalized import row
-   -> mapping layer
-   -> validation
-   -> preview/dry-run
-   -> approved import
-   -> Finance domain entities
+.xlsx
+  -> parse-finance-xlsx.py
+  -> normalized rows
+  -> READY / REVIEW / REJECTED
+  -> persisted FinanceImportBatch
+  -> user confirms READY rows
+  -> server reloads batch
+  -> product/category mapping
+  -> FinanceTransaction + FinanceTransactionItem
 ```
 
-### Import requirements
-- Preserve source sheet + row number for traceability.
-- Normalize income vs expense.
-- Normalize category names and aliases.
-- Parse invoice number/status separately from free text.
-- Match existing ERP products/vendors/orders when possible.
-- Do not auto-create ambiguous relations silently.
-- Produce three result buckets: ready, needs_review, rejected.
-- Import must be idempotent using source fingerprint/import batch id.
+Current parser focuses on `115年收支明細` and recognizes the existing mixed income/expense structure. `發票明細` is intentionally not auto-linked yet because invoice matching needs stricter rules than date/amount guessing.
 
 ## State isolation
 
 Do not use one generic shared `status` across domains.
 
 Examples:
-- Product: product_status
-- Order: order_status / payment_status / fulfillment_status
-- Finance: payment_status / reconciliation_status / invoice_status
+- Product: product lifecycle / active state
+- Order/Billing: their own payment and document states
+- Finance: paymentStatus / reconciliationStatus / invoiceStatus
 
-A purchase order may be `received` while its related payable remains `unpaid`; both states are valid simultaneously.
+A product can remain active while a related Finance transaction is pending, refunded, or reconciled. Finance only references the product.
 
-## Suggested implementation phases
+## API V1
 
-### Phase 1 - foundation
-- schema and migrations
-- finance categories
-- transaction CRUD
-- transaction list + drawer
-- import batch schema
+- `GET /api/finance/transactions`
+- `POST /api/finance/transactions`
+- `PATCH /api/finance/transactions/:id`
+- `POST /api/finance/import/preview`
+- `POST /api/finance/import/commit`
 
-### Phase 2 - migration
-- legacy Excel parser
-- mapping rules
-- dry-run preview
-- manual review flow
-- first historical import
+Writes require existing ERP ADMIN/STAFF authorization and use the ERP audit log pattern.
 
-### Phase 3 - operations
-- receivables/payables
-- invoice attachments
-- reconciliation
-- dashboard aggregates
+## Follow-up roadmap
 
-### Phase 4 - integrations
-- Medusa order events
-- Shopee CSV/API
-- bank CSV
-- MCP finance tools
+### V1.1
+- Review/edit UI for REVIEW import rows.
+- Invoice detail create/edit and attachment storage.
+- Expense-by-category visualization.
+- Transaction drawer with item/invoice history.
 
-## MCP candidates
-- finance.transactions.list
-- finance.transactions.create
-- finance.transactions.update
-- finance.invoices.create
-- finance.receivables.list
-- finance.payables.list
-- finance.reconcile
-- finance.import.preview
-- finance.import.commit
-- finance.report.summary
+### V1.2
+- Receivable/payable due dates and aging.
+- Bank/platform CSV import and reconciliation suggestions.
+- Link BillingStatement paid events into FinanceTransaction.
+
+### V2 integrations
+- Medusa order/refund events.
+- Shopee settlement import/API.
+- Bank feeds where available.
+- MCP tools such as `finance.transactions.list`, `finance.transactions.create`, `finance.import.preview`, `finance.reconcile`, and `finance.report.summary`.
