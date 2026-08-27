@@ -10,7 +10,7 @@ type Category = { id: string; code: string; name: string; direction: "INCOME" | 
 type Product = { id: string; sku: string; name: string; size: string | null };
 type Dashboard = { income: number; expense: number; cashFlow: number; receivable: number; topProducts: Array<{ productId: string | null; productName: string; revenue: number; quantity: number }>; topCategories: Array<{ name: string; amount: number }> };
 type ImportRow = { sheetName: string; rowNumber: number; status: "READY" | "REVIEW" | "REJECTED"; reason: string | null; normalized: { occurredAt: string | null; direction: "INCOME" | "EXPENSE" | null; amount: number | null; categoryCode: string | null; counterparty?: string | null; note?: string | null; items: Array<{ productName: string; size?: string | null; quantity: number; lineAmount: number }> } };
-type ImportPreview = { summary: { total: number; READY: number; REVIEW: number; REJECTED: number }; rows: ImportRow[] };
+type ImportPreview = { batchId: string; summary: { total: number; READY: number; REVIEW: number; REJECTED: number }; rows: ImportRow[] };
 
 const paymentLabels: Record<string, string> = { PENDING: "待付款/收款", PARTIAL: "部分完成", PAID: "已付款/入帳", REFUNDED: "已退款", VOID: "已作廢" };
 const reconcileLabels: Record<string, string> = { UNMATCHED: "未對帳", MATCHED: "已配對", RECONCILED: "已對帳" };
@@ -66,13 +66,13 @@ export function FinanceManager({ month, canWrite, transactions, categories, prod
   }
 
   async function commitImport() {
-    if (!readyRows.length) return;
+    if (!preview?.batchId || !readyRows.length) return;
     setImportLoading(true); setImportMessage("");
-    const response = await fetch("/api/finance/import/commit", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ rows: readyRows }) });
+    const response = await fetch("/api/finance/import/commit", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ batchId: preview.batchId }) });
     const result = await response.json();
     setImportLoading(false);
     if (!response.ok && response.status !== 207) return setImportMessage(result.error ?? "匯入失敗");
-    setImportMessage(`已匯入 ${result.imported} 筆，略過 ${result.skipped} 筆${result.errors?.length ? `，${result.errors.length} 筆失敗` : ""}。`);
+    setImportMessage(`已匯入 ${result.imported} 筆，略過 ${result.skipped} 筆${result.productLinks ? `，成功關聯 ${result.productLinks} 個商品明細` : ""}${result.errors?.length ? `，${result.errors.length} 筆失敗` : ""}。`);
     router.refresh();
   }
 
