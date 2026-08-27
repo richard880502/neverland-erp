@@ -32,7 +32,6 @@ CREATE TABLE "FinanceImportBatch" (
   CONSTRAINT "FinanceImportBatch_pkey" PRIMARY KEY ("id")
 );
 CREATE INDEX "FinanceImportBatch_createdAt_idx" ON "FinanceImportBatch"("createdAt");
-ALTER TABLE "FinanceImportBatch" ADD CONSTRAINT "FinanceImportBatch_createdById_fkey" FOREIGN KEY ("createdById") REFERENCES "User"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 CREATE TABLE "FinanceTransaction" (
   "id" TEXT NOT NULL,
@@ -63,9 +62,7 @@ CREATE INDEX "FinanceTransaction_paymentStatus_idx" ON "FinanceTransaction"("pay
 CREATE INDEX "FinanceTransaction_reconciliationStatus_idx" ON "FinanceTransaction"("reconciliationStatus");
 CREATE UNIQUE INDEX "FinanceTransaction_legacySheet_legacyRow_key" ON "FinanceTransaction"("legacySheet", "legacyRow");
 ALTER TABLE "FinanceTransaction" ADD CONSTRAINT "FinanceTransaction_categoryId_fkey" FOREIGN KEY ("categoryId") REFERENCES "FinanceCategory"("id") ON DELETE SET NULL ON UPDATE CASCADE;
-ALTER TABLE "FinanceTransaction" ADD CONSTRAINT "FinanceTransaction_channelId_fkey" FOREIGN KEY ("channelId") REFERENCES "Channel"("id") ON DELETE SET NULL ON UPDATE CASCADE;
 ALTER TABLE "FinanceTransaction" ADD CONSTRAINT "FinanceTransaction_importBatchId_fkey" FOREIGN KEY ("importBatchId") REFERENCES "FinanceImportBatch"("id") ON DELETE SET NULL ON UPDATE CASCADE;
-ALTER TABLE "FinanceTransaction" ADD CONSTRAINT "FinanceTransaction_createdById_fkey" FOREIGN KEY ("createdById") REFERENCES "User"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 CREATE TABLE "FinanceTransactionItem" (
   "id" TEXT NOT NULL,
@@ -83,7 +80,6 @@ CREATE TABLE "FinanceTransactionItem" (
 CREATE INDEX "FinanceTransactionItem_transactionId_idx" ON "FinanceTransactionItem"("transactionId");
 CREATE INDEX "FinanceTransactionItem_productId_idx" ON "FinanceTransactionItem"("productId");
 ALTER TABLE "FinanceTransactionItem" ADD CONSTRAINT "FinanceTransactionItem_transactionId_fkey" FOREIGN KEY ("transactionId") REFERENCES "FinanceTransaction"("id") ON DELETE CASCADE ON UPDATE CASCADE;
-ALTER TABLE "FinanceTransactionItem" ADD CONSTRAINT "FinanceTransactionItem_productId_fkey" FOREIGN KEY ("productId") REFERENCES "Product"("id") ON DELETE SET NULL ON UPDATE CASCADE;
 
 CREATE TABLE "FinanceInvoice" (
   "id" TEXT NOT NULL,
