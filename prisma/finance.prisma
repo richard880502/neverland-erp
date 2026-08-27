@@ -1,0 +1,159 @@
+enum FinanceDirection {
+  INCOME
+  EXPENSE
+}
+
+enum FinancePaymentStatus {
+  PENDING
+  PARTIAL
+  PAID
+  REFUNDED
+  VOID
+}
+
+enum FinanceReconciliationStatus {
+  UNMATCHED
+  MATCHED
+  RECONCILED
+}
+
+enum FinanceInvoiceStatus {
+  MISSING
+  RECEIVED
+  VOIDED
+  CREDITED
+}
+
+enum FinanceSource {
+  MANUAL
+  EXCEL
+  BILLING
+  SHOPEE
+  BANK
+  OTHER
+}
+
+enum FinanceImportRowStatus {
+  READY
+  REVIEW
+  REJECTED
+  IMPORTED
+}
+
+model FinanceCategory {
+  id           String               @id
+  code         String               @unique
+  name         String
+  direction    FinanceDirection
+  parentId     String?
+  active       Boolean              @default(true)
+  parent       FinanceCategory?     @relation("FinanceCategoryTree", fields: [parentId], references: [id], onDelete: SetNull)
+  children     FinanceCategory[]    @relation("FinanceCategoryTree")
+  transactions FinanceTransaction[]
+  createdAt    DateTime             @default(now())
+  updatedAt    DateTime             @updatedAt
+
+  @@index([direction, active])
+}
+
+model FinanceImportBatch {
+  id          String               @id
+  filename    String
+  source      FinanceSource        @default(EXCEL)
+  status      String               @default("PREVIEW")
+  summary     Json?
+  createdById String
+  completedAt DateTime?
+  rows        FinanceImportRow[]
+  transactions FinanceTransaction[]
+  createdAt   DateTime             @default(now())
+
+  @@index([createdAt])
+}
+
+model FinanceTransaction {
+  id                     String                      @id
+  occurredAt             DateTime
+  direction              FinanceDirection
+  amount                 Decimal                     @db.Decimal(14, 2)
+  categoryId             String?
+  counterparty           String?
+  channelId              String?
+  source                 FinanceSource               @default(MANUAL)
+  sourceRef              String?
+  paymentStatus          FinancePaymentStatus        @default(PAID)
+  reconciliationStatus   FinanceReconciliationStatus @default(UNMATCHED)
+  invoiceStatus          FinanceInvoiceStatus        @default(MISSING)
+  note                   String?
+  legacySheet            String?
+  legacyRow              Int?
+  importBatchId          String?
+  createdById            String
+  category               FinanceCategory?            @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  importBatch            FinanceImportBatch?         @relation(fields: [importBatchId], references: [id], onDelete: SetNull)
+  items                  FinanceTransactionItem[]
+  invoices               FinanceInvoice[]
+  importRows             FinanceImportRow[]
+  createdAt              DateTime                    @default(now())
+  updatedAt              DateTime                    @updatedAt
+
+  @@unique([legacySheet, legacyRow])
+  @@index([occurredAt, direction])
+  @@index([categoryId, occurredAt])
+  @@index([channelId, occurredAt])
+  @@index([paymentStatus])
+  @@index([reconciliationStatus])
+}
+
+model FinanceTransactionItem {
+  id            String             @id
+  transactionId String
+  productId     String?
+  sku           String?
+  productName   String
+  size          String?
+  quantity      Int                @default(1)
+  unitAmount    Decimal?           @db.Decimal(14, 2)
+  lineAmount    Decimal            @db.Decimal(14, 2)
+  transaction   FinanceTransaction @relation(fields: [transactionId], references: [id], onDelete: Cascade)
+  createdAt     DateTime           @default(now())
+
+  @@index([transactionId])
+  @@index([productId])
+}
+
+model FinanceInvoice {
+  id            String               @id
+  transactionId String
+  invoiceNo     String?
+  status        FinanceInvoiceStatus @default(RECEIVED)
+  grossAmount   Decimal?             @db.Decimal(14, 2)
+  netAmount     Decimal?             @db.Decimal(14, 2)
+  taxAmount     Decimal?             @db.Decimal(14, 2)
+  issuedAt      DateTime?
+  note          String?
+  transaction   FinanceTransaction   @relation(fields: [transactionId], references: [id], onDelete: Cascade)
+  createdAt     DateTime             @default(now())
+  updatedAt     DateTime             @updatedAt
+
+  @@index([transactionId])
+  @@index([invoiceNo])
+}
+
+model FinanceImportRow {
+  id            String                 @id
+  batchId       String
+  sheetName     String
+  rowNumber     Int
+  status        FinanceImportRowStatus
+  raw           Json
+  normalized    Json?
+  reason        String?
+  transactionId String?
+  batch         FinanceImportBatch     @relation(fields: [batchId], references: [id], onDelete: Cascade)
+  transaction   FinanceTransaction?    @relation(fields: [transactionId], references: [id], onDelete: SetNull)
+  createdAt     DateTime               @default(now())
+
+  @@unique([batchId, sheetName, rowNumber])
+  @@index([batchId, status])
+}
