@@ -1,9 +1,10 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Minus, RotateCcw, Search } from "lucide-react";
 import { PageHeader } from "@/components/ui/PageHeader";
+import { MovementBatchEntry } from "@/components/MovementBatchEntry";
 import { channelTypeLabels, movementLabels } from "@/lib/inventory";
 import type { ChannelType, MovementType } from "@prisma/client";
 
@@ -16,7 +17,7 @@ function productLabel(product: Product) {
   return `${product.sku} · ${product.name}${product.size ? ` · ${product.size}` : ""}`;
 }
 
-function ProductPicker({ products, name = "productId", required = true }: { products: Product[]; name?: string; required?: boolean }) {
+function ProductPicker({ products, name = "productId", required = true, resetToken = 0 }: { products: Product[]; name?: string; required?: boolean; resetToken?: number }) {
   const [query, setQuery] = useState("");
   const [selectedId, setSelectedId] = useState("");
   const [sort, setSort] = useState<ProductSort>("sku");
@@ -24,6 +25,11 @@ function ProductPicker({ products, name = "productId", required = true }: { prod
     ? a.sku.localeCompare(b.sku, "zh-Hant", { numeric: true })
     : a.name.localeCompare(b.name, "zh-Hant") || (a.size ?? "").localeCompare(b.size ?? "", "zh-Hant")), [products, sort]);
   const listId = `product-options-${name}`;
+
+  useEffect(() => {
+    setQuery("");
+    setSelectedId("");
+  }, [resetToken]);
 
   function choose(value: string) {
     setQuery(value);
@@ -51,32 +57,77 @@ function ProductPicker({ products, name = "productId", required = true }: { prod
   </div>;
 }
 
+function setFormValue(form: HTMLFormElement, name: string, value: string) {
+  const control = form.elements.namedItem(name);
+  if (control instanceof HTMLInputElement || control instanceof HTMLSelectElement) control.value = value;
+}
+
 export function MovementManager({ products, channels, movements, canWrite }: { products: Product[]; channels: Channel[]; movements: Movement[]; canWrite: boolean }) {
   const router = useRouter();
   const [message, setMessage] = useState("");
   const [fulfillmentMessage, setFulfillmentMessage] = useState("");
   const [loading, setLoading] = useState(false);
   const [fulfillmentLoading, setFulfillmentLoading] = useState(false);
+  const [movementResetToken, setMovementResetToken] = useState(0);
+  const [fulfillmentResetToken, setFulfillmentResetToken] = useState(0);
   const today = new Date().toLocaleDateString("en-CA");
   const consignmentChannels = channels.filter((channel) => channel.type === "CONSIGNMENT");
   const directChannels = channels.filter((channel) => channel.type === "DIRECT");
 
   async function submit(event: React.FormEvent<HTMLFormElement>) {
-    event.preventDefault(); setMessage(""); setLoading(true); const formElement = event.currentTarget; const form = new FormData(formElement);
+    event.preventDefault();
+    setMessage("");
+    setLoading(true);
+    const formElement = event.currentTarget;
+    const form = new FormData(formElement);
     if (!form.get("productId")) { setLoading(false); return setMessage("請從搜尋候選中選擇有效商品，或輸入完整 SKU"); }
+    const sticky = {
+      occurredAt: String(form.get("occurredAt") || today),
+      type: String(form.get("type") || "RECEIVE"),
+      channelId: String(form.get("channelId") || ""),
+      referenceNo: String(form.get("referenceNo") || ""),
+    };
     const response = await fetch("/api/movements", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(Object.fromEntries(form)) });
-    const result = await response.json(); setLoading(false);
+    const result = await response.json();
+    setLoading(false);
     if (!response.ok) return setMessage(result.error ?? "新增異動失敗");
-    formElement.reset(); router.refresh();
+    formElement.reset();
+    setFormValue(formElement, "occurredAt", sticky.occurredAt);
+    setFormValue(formElement, "type", sticky.type);
+    setFormValue(formElement, "channelId", sticky.channelId);
+    setFormValue(formElement, "referenceNo", sticky.referenceNo);
+    setFormValue(formElement, "quantity", "1");
+    setMovementResetToken((value) => value + 1);
+    setMessage("已記錄；日期、事件、通路與單號已保留，商品與數量已清空，可直接輸入下一筆。");
+    router.refresh();
   }
 
   async function submitFulfillment(event: React.FormEvent<HTMLFormElement>) {
-    event.preventDefault(); setFulfillmentMessage(""); setFulfillmentLoading(true); const formElement = event.currentTarget; const form = new FormData(formElement);
+    event.preventDefault();
+    setFulfillmentMessage("");
+    setFulfillmentLoading(true);
+    const formElement = event.currentTarget;
+    const form = new FormData(formElement);
     if (!form.get("productId")) { setFulfillmentLoading(false); return setFulfillmentMessage("請從搜尋候選中選擇有效商品，或輸入完整 SKU"); }
+    const sticky = {
+      occurredAt: String(form.get("occurredAt") || today),
+      sourceChannelId: String(form.get("sourceChannelId") || ""),
+      salesChannelId: String(form.get("salesChannelId") || ""),
+      referenceNo: String(form.get("referenceNo") || ""),
+    };
     const response = await fetch("/api/movements/consignment-direct-fulfillment", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(Object.fromEntries(form)) });
-    const result = await response.json(); setFulfillmentLoading(false);
+    const result = await response.json();
+    setFulfillmentLoading(false);
     if (!response.ok) return setFulfillmentMessage(result.error ?? "寄賣代發失敗");
-    formElement.reset(); router.refresh();
+    formElement.reset();
+    setFormValue(formElement, "occurredAt", sticky.occurredAt);
+    setFormValue(formElement, "sourceChannelId", sticky.sourceChannelId);
+    setFormValue(formElement, "salesChannelId", sticky.salesChannelId);
+    setFormValue(formElement, "referenceNo", sticky.referenceNo);
+    setFormValue(formElement, "quantity", "1");
+    setFulfillmentResetToken((value) => value + 1);
+    setFulfillmentMessage("已記錄；日期、寄賣來源、銷售歸屬與單號已保留，可直接輸入下一筆。");
+    router.refresh();
   }
 
   async function reverse(id: string) {
@@ -88,34 +139,37 @@ export function MovementManager({ products, channels, movements, canWrite }: { p
   }
 
   return <>
-    <PageHeader eyebrow="Ledger" title="庫存異動" description="每次實物流動新增一筆；退貨與退出使用正式事件，錯誤資料才以沖銷處理。" />
-    {canWrite && <details className="panel drawer" open><summary><span className="btn btn-primary"><Minus size={16} />新增異動</span></summary>
-      {message && <div className="form-error">{message}</div>}
+    <PageHeader eyebrow="Ledger" title="庫存異動" description="每次實物流動新增一筆；月結或大量經銷資料可使用批次登錄，退貨與退出使用正式事件，錯誤資料才以沖銷處理。" />
+
+    {canWrite && <MovementBatchEntry products={products} channels={channels} />}
+
+    {canWrite && <details className="panel drawer"><summary><span className="btn btn-primary"><Minus size={16} />新增單筆異動</span></summary>
+      {message && <div className="form-error" style={{ background: "#fff8df", color: "#786b3d", borderColor: "#d3bd69" }}>{message}</div>}
       <form className="form-grid" onSubmit={submit}>
         <div className="field"><label htmlFor="movement-date">日期</label><input className="input" id="movement-date" name="occurredAt" type="date" defaultValue={today} required /></div>
         <div className="field"><label htmlFor="movement-type">事件</label><select className="select" id="movement-type" name="type" defaultValue="RECEIVE">{Object.entries(movementLabels).map(([value, label]) => <option value={value} key={value}>{label}</option>)}</select></div>
-        <ProductPicker products={products} />
+        <ProductPicker products={products} resetToken={movementResetToken} />
         <div className="field"><label htmlFor="movement-channel">通路（進貨／進貨退出可不選）</label><select className="select" id="movement-channel" name="channelId"><option value="">不指定</option>{channels.map((c) => <option value={c.id} key={c.id}>{c.name} · {channelTypeLabels[c.type]}</option>)}</select></div>
         <div className="field"><label htmlFor="movement-quantity">數量</label><input className="input" id="movement-quantity" name="quantity" type="number" min="1" defaultValue="1" required /></div>
         <div className="field"><label htmlFor="movement-price">成交單價（出貨／銷貨退回）</label><input className="input" id="movement-price" name="unitPrice" type="number" min="0" step="1" /></div>
-        <div className="field"><label htmlFor="movement-reference">單號</label><input className="input" id="movement-reference" name="referenceNo" placeholder="選填" /></div>
-        <div className="field"><label htmlFor="movement-note">備註</label><input className="input" id="movement-note" name="note" placeholder="選填" /></div>
-        <div className="wide"><button className="btn btn-primary" disabled={loading}>{loading ? "記錄中…" : "記錄異動"}</button> <span className="helper">銷貨退回會回補倉庫並扣回已售；進貨退出會直接扣倉庫。</span></div>
+        <div className="field"><label htmlFor="movement-reference">單號</label><input className="input" id="movement-reference" name="referenceNo" placeholder="選填；連續輸入時會保留" /></div>
+        <div className="field"><label htmlFor="movement-note">備註</label><input className="input" id="movement-note" name="note" placeholder="選填；每筆儲存後會清空" /></div>
+        <div className="wide"><button className="btn btn-primary" disabled={loading}>{loading ? "記錄中…" : "記錄異動"}</button> <span className="helper">儲存後會保留日期、事件、通路與單號，只清掉商品、數量、單價與備註。</span></div>
       </form>
     </details>}
 
     {canWrite && <details className="panel drawer"><summary><span className="btn btn-primary"><Minus size={16} />寄賣代發</span></summary>
-      {fulfillmentMessage && <div className="form-error">{fulfillmentMessage}</div>}
+      {fulfillmentMessage && <div className="form-error" style={{ background: "#fff8df", color: "#786b3d", borderColor: "#d3bd69" }}>{fulfillmentMessage}</div>}
       <form className="form-grid" onSubmit={submitFulfillment}>
         <div className="field"><label htmlFor="fulfillment-date">日期</label><input className="input" id="fulfillment-date" name="occurredAt" type="date" defaultValue={today} required /></div>
-        <ProductPicker products={products} name="productId" />
+        <ProductPicker products={products} name="productId" resetToken={fulfillmentResetToken} />
         <div className="field"><label htmlFor="source-channel">寄賣來源</label><select className="select" id="source-channel" name="sourceChannelId" required><option value="">請選擇寄賣經銷</option>{consignmentChannels.map((channel) => <option key={channel.id} value={channel.id}>{channel.name}</option>)}</select></div>
         <div className="field"><label htmlFor="sales-channel">銷售歸屬</label><select className="select" id="sales-channel" name="salesChannelId" required><option value="">請選擇直營通路</option>{directChannels.map((channel) => <option key={channel.id} value={channel.id}>{channel.name}</option>)}</select></div>
         <div className="field"><label htmlFor="fulfillment-quantity">數量</label><input className="input" id="fulfillment-quantity" name="quantity" type="number" min="1" defaultValue="1" required /></div>
         <div className="field"><label htmlFor="fulfillment-price">成交單價</label><input className="input" id="fulfillment-price" name="unitPrice" type="number" min="0" step="1" required /></div>
-        <div className="field"><label htmlFor="fulfillment-reference">單號</label><input className="input" id="fulfillment-reference" name="referenceNo" placeholder="選填" /></div>
-        <div className="field"><label htmlFor="fulfillment-note">備註</label><input className="input" id="fulfillment-note" name="note" placeholder="選填" /></div>
-        <div className="wide"><button className="btn btn-primary" disabled={fulfillmentLoading}>{fulfillmentLoading ? "處理中…" : "記錄寄賣代發"}</button> <span className="helper">系統會在同一個交易內自動建立「寄賣退回」與「直營出貨」，避免半套異動。</span></div>
+        <div className="field"><label htmlFor="fulfillment-reference">單號</label><input className="input" id="fulfillment-reference" name="referenceNo" placeholder="選填；連續輸入時會保留" /></div>
+        <div className="field"><label htmlFor="fulfillment-note">備註</label><input className="input" id="fulfillment-note" name="note" placeholder="選填；每筆儲存後會清空" /></div>
+        <div className="wide"><button className="btn btn-primary" disabled={fulfillmentLoading}>{fulfillmentLoading ? "處理中…" : "記錄寄賣代發"}</button> <span className="helper">系統會在同一個交易內自動建立「寄賣退回」與「直營出貨」；連續輸入時會保留日期與通路。</span></div>
       </form>
     </details>}
 
