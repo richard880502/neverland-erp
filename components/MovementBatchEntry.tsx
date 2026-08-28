@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { ClipboardPaste, Plus, Trash2 } from "lucide-react";
+import { Plus, Trash2 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { channelTypeLabels, isSale, movementLabels } from "@/lib/inventory";
 import type { ChannelType, MovementType } from "@prisma/client";
@@ -16,8 +16,10 @@ type BatchRow = {
   unitPrice: string;
   note: string;
 };
+type GridColumn = "productKey" | "quantity" | "unitPrice" | "note";
 
 const channelRequiredTypes: MovementType[] = ["SHIP", "SALES_RETURN", "CONSIGN_OUT", "CONSIGN_RETURN", "CONSIGN_SOLD", "BUYOUT"];
+const gridColumns: GridColumn[] = ["productKey", "quantity", "unitPrice", "note"];
 
 function productLabel(product: Product) {
   return `${product.sku} · ${product.name}${product.size ? ` · ${product.size}` : ""}`;
@@ -31,6 +33,10 @@ function emptyRow(id = crypto.randomUUID()): BatchRow {
   return { id, productKey: "", productId: "", quantity: "1", unitPrice: "", note: "" };
 }
 
+function rowHasContent(row: BatchRow) {
+  return Boolean(row.productKey.trim() || row.productId || row.quantity !== "1" || row.unitPrice || row.note);
+}
+
 export function MovementBatchEntry({ products, channels }: { products: Product[]; channels: Channel[] }) {
   const router = useRouter();
   const today = new Date().toLocaleDateString("en-CA");
@@ -40,11 +46,11 @@ export function MovementBatchEntry({ products, channels }: { products: Product[]
   const [referenceNo, setReferenceNo] = useState("");
   const [commonNote, setCommonNote] = useState("");
   const [rows, setRows] = useState<BatchRow[]>([emptyRow("initial")]);
-  const [pasteText, setPasteText] = useState("");
   const [message, setMessage] = useState("");
   const [loading, setLoading] = useState(false);
 
   const sortedProducts = useMemo(() => [...products].sort((a, b) => a.sku.localeCompare(b.sku, "zh-Hant", { numeric: true })), [products]);
+  const activeRowCount = useMemo(() => rows.filter(rowHasContent).length, [rows]);
   const listId = "movement-batch-products";
 
   function resolveProduct(value: string) {
@@ -68,48 +74,73 @@ export function MovementBatchEntry({ products, channels }: { products: Product[]
     updateRow(id, { productKey: value, productId: product?.id ?? "" });
   }
 
-  function parsePaste() {
-    const lines = pasteText.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
-    if (!lines.length) return setMessage("請先從試算表複製資料貼到文字框");
-    let unresolved = 0;
-    let invalidQuantity = 0;
-    const parsed: BatchRow[] = [];
-
-    for (const line of lines) {
-      const cells = line.split("\t").map((cell) => cell.trim());
-      if (!cells[0]) continue;
-      const headerText = cells.join(" ").toLocaleLowerCase();
-      if ((headerText.includes("sku") || headerText.includes("商品")) && (headerText.includes("數量") || headerText.includes("qty"))) continue;
-
-      let product = resolveProduct(cells[0]);
-      let quantityIndex = 1;
-      let displayKey = cells[0];
-      if (!product && cells.length >= 3) {
-        product = resolveProductNameSize(cells[0], cells[1]);
-        quantityIndex = 2;
-        if (product) displayKey = productLabel(product);
-      }
-      if (!product) unresolved += 1;
-      const quantity = cells[quantityIndex] ?? "1";
-      if (!Number.isInteger(Number(quantity)) || Number(quantity) <= 0) invalidQuantity += 1;
-      parsed.push({
-        id: crypto.randomUUID(),
-        productKey: product ? productLabel(product) : displayKey,
-        productId: product?.id ?? "",
-        quantity,
-        unitPrice: cells[quantityIndex + 1] ?? "",
-        note: cells.slice(quantityIndex + 2).join(" "),
-      });
+  function applyValue(row: BatchRow, column: GridColumn, value: string) {
+    if (column === "productKey") {
+      const product = resolveProduct(value);
+      return { ...row, productKey: product ? productLabel(product) : value, productId: product?.id ?? "" };
     }
+    return { ...row, [column]: value };
+  }
 
-    if (!parsed.length) return setMessage("沒有解析到可使用的資料列");
-    setRows(parsed);
-    setMessage(`已解析 ${parsed.length} 筆${unresolved ? `；${unresolved} 筆商品尚未匹配` : ""}${invalidQuantity ? `；${invalidQuantity} 筆數量格式需確認` : ""}。`);
+  function pasteIntoGrid(event: React.ClipboardEvent<HTMLInputElement>, rowIndex: number, startColumn: GridColumn) {
+    const clipboard = event.clipboardData.getData("text/plain").replace(/\r/g, "");
+    if (!clipboard) return;
+    event.preventDefault();
+
+    const matrix = clipboard.split("\n").filter((line, index, lines) => line.length > 0 || index < lines.length - 1).map((line) => line.split("\t"));
+    if (!matrix.length) return;
+
+    let unresolved = 0;
+    setRows((current) => {
+      const next = current.map((row) => ({ ...row }));
+      while (next.length < rowIndex + matrix.length) next.push(emptyRow());
+      const startColumnIndex = gridColumns.indexOf(startColumn);
+
+      matrix.forEach((cells, matrixRowIndex) => {
+        const targetIndex = rowIndex + matrixRowIndex;
+        let target = next[targetIndex];
+        const trimmed = cells.map((cell) => cell.trim());
+
+        if (startColumn === "productKey" && trimmed.length >= 2) {
+          const directProduct = resolveProduct(trimmed[0]);
+          const productByNameSize = directProduct ? null : resolveProductNameSize(trimmed[0], trimmed[1]);
+          if (productByNameSize) {
+            target = { ...target, productKey: productLabel(productByNameSize), productId: productByNameSize.id };
+            if (trimmed[2] !== undefined && trimmed[2] !== "") target.quantity = trimmed[2];
+            if (trimmed[3] !== undefined) target.unitPrice = trimmed[3];
+            if (trimmed.length > 4) target.note = trimmed.slice(4).join(" ");
+            next[targetIndex] = target;
+            return;
+          }
+        }
+
+        trimmed.forEach((value, offset) => {
+          const column = gridColumns[startColumnIndex + offset];
+          if (!column) {
+            if (startColumnIndex + offset > gridColumns.indexOf("note") && value) target.note = [target.note, value].filter(Boolean).join(" ");
+            return;
+          }
+          if (column === "productKey") {
+            const product = resolveProduct(value);
+            target = { ...target, productKey: product ? productLabel(product) : value, productId: product?.id ?? "" };
+            if (value && !product) unresolved += 1;
+          } else {
+            target = applyValue(target, column, value);
+          }
+        });
+        next[targetIndex] = target;
+      });
+
+      return next;
+    });
+
+    const cellCount = matrix.reduce((sum, line) => sum + line.length, 0);
+    setMessage(`已直接貼入 ${matrix.length} 列、${cellCount} 格${unresolved ? `；${unresolved} 筆商品尚未匹配` : ""}。`);
   }
 
   async function submitBatch() {
     setMessage("");
-    const activeRows = rows.filter((row) => row.productKey.trim() || row.productId || row.quantity !== "1" || row.unitPrice || row.note);
+    const activeRows = rows.filter(rowHasContent);
     if (!occurredAt) return setMessage("請選擇共同日期");
     if (channelRequiredTypes.includes(type) && !channelId) return setMessage("這個事件需要先選擇共同通路");
     if (!activeRows.length) return setMessage("請至少加入一筆商品資料");
@@ -151,14 +182,13 @@ export function MovementBatchEntry({ products, channels }: { products: Product[]
 
     setLoading(false);
     setRows([emptyRow()]);
-    setPasteText("");
     setMessage(`已一次寫入 ${created} 筆；日期、事件、通路與單號已保留，可繼續下一批。`);
     router.refresh();
   }
 
   return <details className="panel drawer" open>
     <summary><span className="btn btn-primary"><Plus size={16} />批次登錄</span></summary>
-    <p className="helper" style={{ marginTop: 0 }}>適合月結經銷銷貨表：日期、事件、通路只設定一次，下面連續輸入商品。也可直接從 Google Sheets / Excel 複製多列貼上。</p>
+    <p className="helper" style={{ marginTop: 0 }}>適合月結經銷銷貨表：日期、事件、通路只設定一次。表格本身支援直接貼上，可從 Excel / Google Sheets 複製整欄或整個區塊後貼到任一儲存格。</p>
     {message && <div className="form-error" style={{ background: "#fff8df", color: "#786b3d", borderColor: "#d3bd69" }}>{message}</div>}
 
     <div className="form-grid">
@@ -170,29 +200,23 @@ export function MovementBatchEntry({ products, channels }: { products: Product[]
     </div>
 
     <datalist id={listId}>{sortedProducts.map((product) => <option key={product.id} value={productLabel(product)} />)}</datalist>
+    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, flexWrap: "wrap", marginBottom: 8 }}>
+      <span className="helper">提示：點第一格後直接貼上多列資料；列數不足會自動新增。支援「SKU｜數量｜單價｜備註」或「商品名稱｜尺寸｜數量｜單價｜備註」。</span>
+      <button className="btn btn-secondary" type="button" onClick={() => setRows((current) => [...current, emptyRow()])}><Plus size={14} />新增一列</button>
+    </div>
     <div className="table-wrap" style={{ border: "1px solid var(--line)", marginBottom: 12 }}>
       <table>
         <thead><tr><th style={{ minWidth: 300 }}>商品 / SKU</th><th style={{ width: 110 }}>數量</th><th style={{ width: 150 }}>成交單價</th><th style={{ minWidth: 180 }}>單筆備註</th><th style={{ width: 58 }}></th></tr></thead>
-        <tbody>{rows.map((row) => <tr key={row.id}>
-          <td><input className="input" list={listId} value={row.productKey} onChange={(event) => updateProduct(row.id, event.target.value)} placeholder="輸入 SKU 或選商品" style={{ minWidth: 280 }} /></td>
-          <td><input className="input" type="number" min="1" value={row.quantity} onChange={(event) => updateRow(row.id, { quantity: event.target.value })} /></td>
-          <td><input className="input" type="number" min="0" step="1" value={row.unitPrice} onChange={(event) => updateRow(row.id, { unitPrice: event.target.value })} placeholder={isSale(type) ? "必填" : "選填"} /></td>
-          <td><input className="input" value={row.note} onChange={(event) => updateRow(row.id, { note: event.target.value })} placeholder="選填" /></td>
+        <tbody>{rows.map((row, rowIndex) => <tr key={row.id}>
+          <td><input className="input" list={listId} value={row.productKey} onPaste={(event) => pasteIntoGrid(event, rowIndex, "productKey")} onChange={(event) => updateProduct(row.id, event.target.value)} placeholder="輸入 SKU、選商品，或直接貼上" style={{ minWidth: 280 }} aria-invalid={Boolean(row.productKey && !row.productId)} /></td>
+          <td><input className="input" type="number" min="1" value={row.quantity} onPaste={(event) => pasteIntoGrid(event, rowIndex, "quantity")} onChange={(event) => updateRow(row.id, { quantity: event.target.value })} /></td>
+          <td><input className="input" type="number" min="0" step="1" value={row.unitPrice} onPaste={(event) => pasteIntoGrid(event, rowIndex, "unitPrice")} onChange={(event) => updateRow(row.id, { unitPrice: event.target.value })} placeholder={isSale(type) ? "必填" : "選填"} /></td>
+          <td><input className="input" value={row.note} onPaste={(event) => pasteIntoGrid(event, rowIndex, "note")} onChange={(event) => updateRow(row.id, { note: event.target.value })} placeholder="選填" /></td>
           <td><button className="btn btn-danger icon-btn" type="button" onClick={() => setRows((current) => current.length === 1 ? [emptyRow()] : current.filter((item) => item.id !== row.id))} title="刪除此列"><Trash2 size={14} /></button></td>
         </tr>)}</tbody>
       </table>
     </div>
-    <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 18 }}>
-      <button className="btn btn-secondary" type="button" onClick={() => setRows((current) => [...current, emptyRow()])}><Plus size={14} />新增一列</button>
-      <span className="helper" style={{ alignSelf: "center" }}>同批資料不會在每列重複要求日期、事件與通路。</span>
-    </div>
 
-    <div className="field">
-      <label>從試算表貼上</label>
-      <textarea className="textarea" rows={4} value={pasteText} onChange={(event) => setPasteText(event.target.value)} placeholder={"格式 A：SKU[TAB]數量[TAB]單價[TAB]備註\n格式 B：商品名稱[TAB]尺寸[TAB]數量[TAB]單價[TAB]備註"} />
-      <div><button className="btn btn-secondary" type="button" onClick={parsePaste}><ClipboardPaste size={14} />解析並放入表格</button></div>
-    </div>
-
-    <button className="btn btn-primary" type="button" disabled={loading} onClick={() => void submitBatch()}>{loading ? "批次寫入中…" : `一次寫入 ${rows.length} 筆`}</button>
+    <button className="btn btn-primary" type="button" disabled={loading || activeRowCount === 0} onClick={() => void submitBatch()}>{loading ? "批次寫入中…" : `一次寫入 ${activeRowCount} 筆`}</button>
   </details>;
 }
