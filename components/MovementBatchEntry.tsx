@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { Plus, Trash2 } from "lucide-react";
+import { Copy, Plus, Trash2 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { channelTypeLabels, isSale, movementLabels } from "@/lib/inventory";
 import type { ChannelType, MovementType } from "@prisma/client";
@@ -16,10 +16,8 @@ type BatchRow = {
   unitPrice: string;
   note: string;
 };
-type GridColumn = "productKey" | "quantity" | "unitPrice" | "note";
 
 const channelRequiredTypes: MovementType[] = ["SHIP", "SALES_RETURN", "CONSIGN_OUT", "CONSIGN_RETURN", "CONSIGN_SOLD", "BUYOUT"];
-const gridColumns: GridColumn[] = ["productKey", "quantity", "unitPrice", "note"];
 
 function productLabel(product: Product) {
   return `${product.sku} · ${product.name}${product.size ? ` · ${product.size}` : ""}`;
@@ -58,13 +56,6 @@ export function MovementBatchEntry({ products, channels }: { products: Product[]
     return products.find((product) => normalize(product.sku) === key || normalize(productLabel(product)) === key) ?? null;
   }
 
-  function resolveProductNameSize(name: string, size: string) {
-    const normalizedName = normalize(name);
-    const normalizedSize = normalize(size);
-    const matches = products.filter((product) => normalize(product.name) === normalizedName && normalize(product.size) === normalizedSize);
-    return matches.length === 1 ? matches[0] : null;
-  }
-
   function updateRow(id: string, patch: Partial<BatchRow>) {
     setRows((current) => current.map((row) => row.id === id ? { ...row, ...patch } : row));
   }
@@ -74,68 +65,24 @@ export function MovementBatchEntry({ products, channels }: { products: Product[]
     updateRow(id, { productKey: value, productId: product?.id ?? "" });
   }
 
-  function applyValue(row: BatchRow, column: GridColumn, value: string) {
-    if (column === "productKey") {
-      const product = resolveProduct(value);
-      return { ...row, productKey: product ? productLabel(product) : value, productId: product?.id ?? "" };
-    }
-    return { ...row, [column]: value };
+  function duplicateRow(id: string) {
+    setRows((current) => {
+      const index = current.findIndex((row) => row.id === id);
+      if (index < 0) return current;
+      const source = current[index];
+      const copy = { ...source, id: crypto.randomUUID() };
+      return [...current.slice(0, index + 1), copy, ...current.slice(index + 1)];
+    });
+    setMessage("已複製一列；只需要修改不同的商品、數量、單價或備註。");
   }
 
-  function pasteIntoGrid(event: React.ClipboardEvent<HTMLInputElement>, rowIndex: number, startColumn: GridColumn) {
-    const clipboard = event.clipboardData.getData("text/plain").replace(/\r/g, "");
-    if (!clipboard) return;
-    event.preventDefault();
-
-    const matrix = clipboard.split("\n").filter((line, index, lines) => line.length > 0 || index < lines.length - 1).map((line) => line.split("\t"));
-    if (!matrix.length) return;
-
-    let unresolved = 0;
+  function duplicateLastRow() {
     setRows((current) => {
-      const next = current.map((row) => ({ ...row }));
-      while (next.length < rowIndex + matrix.length) next.push(emptyRow());
-      const startColumnIndex = gridColumns.indexOf(startColumn);
-
-      matrix.forEach((cells, matrixRowIndex) => {
-        const targetIndex = rowIndex + matrixRowIndex;
-        let target = next[targetIndex];
-        const trimmed = cells.map((cell) => cell.trim());
-
-        if (startColumn === "productKey" && trimmed.length >= 2) {
-          const directProduct = resolveProduct(trimmed[0]);
-          const productByNameSize = directProduct ? null : resolveProductNameSize(trimmed[0], trimmed[1]);
-          if (productByNameSize) {
-            target = { ...target, productKey: productLabel(productByNameSize), productId: productByNameSize.id };
-            if (trimmed[2] !== undefined && trimmed[2] !== "") target.quantity = trimmed[2];
-            if (trimmed[3] !== undefined) target.unitPrice = trimmed[3];
-            if (trimmed.length > 4) target.note = trimmed.slice(4).join(" ");
-            next[targetIndex] = target;
-            return;
-          }
-        }
-
-        trimmed.forEach((value, offset) => {
-          const column = gridColumns[startColumnIndex + offset];
-          if (!column) {
-            if (startColumnIndex + offset > gridColumns.indexOf("note") && value) target.note = [target.note, value].filter(Boolean).join(" ");
-            return;
-          }
-          if (column === "productKey") {
-            const product = resolveProduct(value);
-            target = { ...target, productKey: product ? productLabel(product) : value, productId: product?.id ?? "" };
-            if (value && !product) unresolved += 1;
-          } else {
-            target = applyValue(target, column, value);
-          }
-        });
-        next[targetIndex] = target;
-      });
-
-      return next;
+      const source = [...current].reverse().find(rowHasContent);
+      if (!source) return [...current, emptyRow()];
+      return [...current, { ...source, id: crypto.randomUUID() }];
     });
-
-    const cellCount = matrix.reduce((sum, line) => sum + line.length, 0);
-    setMessage(`已直接貼入 ${matrix.length} 列、${cellCount} 格${unresolved ? `；${unresolved} 筆商品尚未匹配` : ""}。`);
+    setMessage("已沿用上一列內容新增一列。");
   }
 
   async function submitBatch() {
@@ -188,7 +135,7 @@ export function MovementBatchEntry({ products, channels }: { products: Product[]
 
   return <details className="panel drawer" open>
     <summary><span className="btn btn-primary"><Plus size={16} />批次登錄</span></summary>
-    <p className="helper" style={{ marginTop: 0 }}>適合月結經銷銷貨表：日期、事件、通路只設定一次。表格本身支援直接貼上，可從 Excel / Google Sheets 複製整欄或整個區塊後貼到任一儲存格。</p>
+    <p className="helper" style={{ marginTop: 0 }}>適合月結經銷銷貨：日期、事件、通路只設定一次。需要重複相近資料時，直接複製上一列或指定列，再修改不同欄位即可。</p>
     {message && <div className="form-error" style={{ background: "#fff8df", color: "#786b3d", borderColor: "#d3bd69" }}>{message}</div>}
 
     <div className="form-grid">
@@ -196,23 +143,29 @@ export function MovementBatchEntry({ products, channels }: { products: Product[]
       <div className="field"><label>共同事件</label><select className="select" value={type} onChange={(event) => setType(event.target.value as MovementType)}>{Object.entries(movementLabels).map(([value, label]) => <option value={value} key={value}>{label}</option>)}</select></div>
       <div className="field"><label>共同通路</label><select className="select" value={channelId} onChange={(event) => setChannelId(event.target.value)}><option value="">不指定</option>{channels.map((channel) => <option key={channel.id} value={channel.id}>{channel.name} · {channelTypeLabels[channel.type]}</option>)}</select></div>
       <div className="field"><label>共同單號 / 月結識別</label><input className="input" value={referenceNo} onChange={(event) => setReferenceNo(event.target.value)} placeholder="例如 Zipper 2026-07" /></div>
-      <div className="field wide"><label>共同備註（選填）</label><input className="input" value={commonNote} onChange={(event) => setCommonNote(event.target.value)} placeholder="例如 7 月寄賣銷貨表" /></div>
+      <div className="field wide"><label>共同備註（選填）</label><input className="input" value={commonNote} onChange={(event) => setCommonNote(event.target.value)} placeholder="例如 7 月寄賣銷貨" /></div>
     </div>
 
     <datalist id={listId}>{sortedProducts.map((product) => <option key={product.id} value={productLabel(product)} />)}</datalist>
     <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, flexWrap: "wrap", marginBottom: 8 }}>
-      <span className="helper">提示：點第一格後直接貼上多列資料；列數不足會自動新增。支援「SKU｜數量｜單價｜備註」或「商品名稱｜尺寸｜數量｜單價｜備註」。</span>
-      <button className="btn btn-secondary" type="button" onClick={() => setRows((current) => [...current, emptyRow()])}><Plus size={14} />新增一列</button>
+      <span className="helper">同一批共同資料不會重複要求輸入；相近商品可複製一列後直接修改。</span>
+      <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+        <button className="btn btn-secondary" type="button" onClick={() => setRows((current) => [...current, emptyRow()])}><Plus size={14} />新增空白列</button>
+        <button className="btn btn-secondary" type="button" onClick={duplicateLastRow}><Copy size={14} />複製上一列</button>
+      </div>
     </div>
     <div className="table-wrap" style={{ border: "1px solid var(--line)", marginBottom: 12 }}>
       <table>
-        <thead><tr><th style={{ minWidth: 300 }}>商品 / SKU</th><th style={{ width: 110 }}>數量</th><th style={{ width: 150 }}>成交單價</th><th style={{ minWidth: 180 }}>單筆備註</th><th style={{ width: 58 }}></th></tr></thead>
-        <tbody>{rows.map((row, rowIndex) => <tr key={row.id}>
-          <td><input className="input" list={listId} value={row.productKey} onPaste={(event) => pasteIntoGrid(event, rowIndex, "productKey")} onChange={(event) => updateProduct(row.id, event.target.value)} placeholder="輸入 SKU、選商品，或直接貼上" style={{ minWidth: 280 }} aria-invalid={Boolean(row.productKey && !row.productId)} /></td>
-          <td><input className="input" type="number" min="1" value={row.quantity} onPaste={(event) => pasteIntoGrid(event, rowIndex, "quantity")} onChange={(event) => updateRow(row.id, { quantity: event.target.value })} /></td>
-          <td><input className="input" type="number" min="0" step="1" value={row.unitPrice} onPaste={(event) => pasteIntoGrid(event, rowIndex, "unitPrice")} onChange={(event) => updateRow(row.id, { unitPrice: event.target.value })} placeholder={isSale(type) ? "必填" : "選填"} /></td>
-          <td><input className="input" value={row.note} onPaste={(event) => pasteIntoGrid(event, rowIndex, "note")} onChange={(event) => updateRow(row.id, { note: event.target.value })} placeholder="選填" /></td>
-          <td><button className="btn btn-danger icon-btn" type="button" onClick={() => setRows((current) => current.length === 1 ? [emptyRow()] : current.filter((item) => item.id !== row.id))} title="刪除此列"><Trash2 size={14} /></button></td>
+        <thead><tr><th style={{ minWidth: 300 }}>商品 / SKU</th><th style={{ width: 110 }}>數量</th><th style={{ width: 150 }}>成交單價</th><th style={{ minWidth: 180 }}>單筆備註</th><th style={{ width: 104 }}></th></tr></thead>
+        <tbody>{rows.map((row) => <tr key={row.id}>
+          <td><input className="input" list={listId} value={row.productKey} onChange={(event) => updateProduct(row.id, event.target.value)} placeholder="輸入 SKU 或選商品" style={{ minWidth: 280 }} aria-invalid={Boolean(row.productKey && !row.productId)} /></td>
+          <td><input className="input" type="number" min="1" value={row.quantity} onChange={(event) => updateRow(row.id, { quantity: event.target.value })} /></td>
+          <td><input className="input" type="number" min="0" step="1" value={row.unitPrice} onChange={(event) => updateRow(row.id, { unitPrice: event.target.value })} placeholder={isSale(type) ? "必填" : "選填"} /></td>
+          <td><input className="input" value={row.note} onChange={(event) => updateRow(row.id, { note: event.target.value })} placeholder="選填" /></td>
+          <td><div style={{ display: "flex", gap: 6, justifyContent: "flex-end" }}>
+            <button className="btn btn-secondary icon-btn" type="button" onClick={() => duplicateRow(row.id)} title="複製此列"><Copy size={14} /></button>
+            <button className="btn btn-danger icon-btn" type="button" onClick={() => setRows((current) => current.length === 1 ? [emptyRow()] : current.filter((item) => item.id !== row.id))} title="刪除此列"><Trash2 size={14} /></button>
+          </div></td>
         </tr>)}</tbody>
       </table>
     </div>
