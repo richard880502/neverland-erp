@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { Copy, Plus, Trash2 } from "lucide-react";
+import { ChevronDown, Copy, Plus, Trash2 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { channelTypeLabels, isSale, movementLabels } from "@/lib/inventory";
 import type { ChannelType, MovementType } from "@prisma/client";
@@ -134,52 +134,62 @@ export function MovementBatchEntry({ products, channels }: { products: Product[]
   }
 
   return <details className="panel drawer" open>
-    <summary><span className="btn btn-primary"><Plus size={16} />批次登錄</span></summary>
-    <p className="helper" style={{ marginTop: 0, marginBottom: 18 }}>適合月結經銷銷貨：日期、事件、通路只設定一次。需要重複相近資料時，直接複製上一列或指定列，再修改不同欄位即可。</p>
-    {message && <div className="form-error" style={{ background: "#fff8df", color: "#786b3d", borderColor: "#d3bd69" }}>{message}</div>}
-
-    <div style={{ display: "grid", gridTemplateColumns: "repeat(4, minmax(0, 1fr))", gap: 16, alignItems: "end" }}>
-      <div className="field"><label>共同日期</label><input className="input" type="date" value={occurredAt} onChange={(event) => setOccurredAt(event.target.value)} /></div>
-      <div className="field"><label>共同事件</label><select className="select" value={type} onChange={(event) => setType(event.target.value as MovementType)}>{Object.entries(movementLabels).map(([value, label]) => <option value={value} key={value}>{label}</option>)}</select></div>
-      <div className="field"><label>共同通路</label><select className="select" value={channelId} onChange={(event) => setChannelId(event.target.value)}><option value="">不指定</option>{channels.map((channel) => <option key={channel.id} value={channel.id}>{channel.name} · {channelTypeLabels[channel.type]}</option>)}</select></div>
-      <div className="field"><label>共同單號 / 月結識別</label><input className="input" value={referenceNo} onChange={(event) => setReferenceNo(event.target.value)} placeholder="例如 Zipper 2026-07" /></div>
-    </div>
-
-    <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr) auto", gap: 16, alignItems: "end", marginTop: 16, marginBottom: 18 }}>
-      <div className="field" style={{ minWidth: 0 }}><label>共同備註（選填）</label><input className="input" value={commonNote} onChange={(event) => setCommonNote(event.target.value)} placeholder="例如 7 月寄賣銷貨" /></div>
-      <div style={{ display: "flex", gap: 8, alignItems: "center", minHeight: 46 }}>
-        <button className="btn btn-secondary" type="button" onClick={() => setRows((current) => [...current, emptyRow()])}><Plus size={14} />新增空白列</button>
-        <button className="btn btn-secondary" type="button" onClick={duplicateLastRow}><Copy size={14} />複製上一列</button>
+    <summary style={{ justifyContent: "stretch", marginBottom: 0, padding: "14px 18px" }}>
+      <div style={{ width: "100%", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 16 }}>
+        <div style={{ minWidth: 0 }}>
+          <strong style={{ display: "block", fontSize: 14, lineHeight: 1.35 }}>批次登錄</strong>
+          <span className="helper" style={{ display: "block", marginTop: 3 }}>日期、事件與通路只設定一次；下面連續新增商品列。</span>
+        </div>
+        <ChevronDown size={17} aria-hidden="true" style={{ flex: "0 0 auto" }} />
       </div>
-    </div>
+    </summary>
 
-    <datalist id={listId}>{sortedProducts.map((product) => <option key={product.id} value={productLabel(product)} />)}</datalist>
-    <div className="table-wrap" style={{ border: "1px solid var(--line)", marginBottom: 12 }}>
-      <table style={{ width: "100%", minWidth: 900, tableLayout: "fixed" }}>
-        <colgroup>
-          <col style={{ width: "42%" }} />
-          <col style={{ width: "12%" }} />
-          <col style={{ width: "16%" }} />
-          <col style={{ width: "22%" }} />
-          <col style={{ width: 96 }} />
-        </colgroup>
-        <thead><tr><th>商品 / SKU</th><th>數量</th><th>成交單價</th><th>單筆備註</th><th style={{ textAlign: "center" }}>操作</th></tr></thead>
-        <tbody>{rows.map((row) => <tr key={row.id}>
-          <td style={{ verticalAlign: "middle" }}><input className="input" list={listId} value={row.productKey} onChange={(event) => updateProduct(row.id, event.target.value)} placeholder="輸入 SKU 或選商品" style={{ width: "100%", minWidth: 0 }} aria-invalid={Boolean(row.productKey && !row.productId)} /></td>
-          <td style={{ verticalAlign: "middle" }}><input className="input" type="number" min="1" value={row.quantity} onChange={(event) => updateRow(row.id, { quantity: event.target.value })} style={{ width: "100%", minWidth: 0 }} /></td>
-          <td style={{ verticalAlign: "middle" }}><input className="input" type="number" min="0" step="1" value={row.unitPrice} onChange={(event) => updateRow(row.id, { unitPrice: event.target.value })} placeholder={isSale(type) ? "必填" : "選填"} style={{ width: "100%", minWidth: 0 }} /></td>
-          <td style={{ verticalAlign: "middle" }}><input className="input" value={row.note} onChange={(event) => updateRow(row.id, { note: event.target.value })} placeholder="選填" style={{ width: "100%", minWidth: 0 }} /></td>
-          <td style={{ verticalAlign: "middle" }}><div style={{ display: "flex", gap: 6, alignItems: "center", justifyContent: "center" }}>
-            <button className="btn btn-secondary icon-btn" type="button" onClick={() => duplicateRow(row.id)} title="複製此列"><Copy size={14} /></button>
-            <button className="btn btn-danger icon-btn" type="button" onClick={() => setRows((current) => current.length === 1 ? [emptyRow()] : current.filter((item) => item.id !== row.id))} title="刪除此列"><Trash2 size={14} /></button>
-          </div></td>
-        </tr>)}</tbody>
-      </table>
-    </div>
+    <div style={{ padding: 18 }}>
+      {message && <div className="form-error" style={{ background: "#fff8df", color: "#786b3d", borderColor: "#d3bd69" }}>{message}</div>}
 
-    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
-      <span className="helper">同一批共同資料只設定一次；每列只填商品、數量、單價與備註。</span>
-      <button className="btn btn-primary" type="button" disabled={loading || activeRowCount === 0} onClick={() => void submitBatch()}>{loading ? "批次寫入中…" : `一次寫入 ${activeRowCount} 筆`}</button>
+      <div className="form-grid" style={{ padding: 0 }}>
+        <div className="field"><label>共同日期</label><input className="input" type="date" value={occurredAt} onChange={(event) => setOccurredAt(event.target.value)} /></div>
+        <div className="field"><label>共同事件</label><select className="select" value={type} onChange={(event) => setType(event.target.value as MovementType)}>{Object.entries(movementLabels).map(([value, label]) => <option value={value} key={value}>{label}</option>)}</select></div>
+        <div className="field"><label>共同通路</label><select className="select" value={channelId} onChange={(event) => setChannelId(event.target.value)}><option value="">不指定</option>{channels.map((channel) => <option key={channel.id} value={channel.id}>{channel.name} · {channelTypeLabels[channel.type]}</option>)}</select></div>
+        <div className="field"><label>共同單號 / 月結識別</label><input className="input" value={referenceNo} onChange={(event) => setReferenceNo(event.target.value)} placeholder="例如 Zipper 2026-07" /></div>
+      </div>
+
+      <div style={{ display: "flex", alignItems: "flex-end", gap: 16, flexWrap: "wrap", marginTop: 16, marginBottom: 18 }}>
+        <div className="field" style={{ flex: "1 1 420px", minWidth: 280, marginBottom: 0 }}><label>共同備註（選填）</label><input className="input" value={commonNote} onChange={(event) => setCommonNote(event.target.value)} placeholder="例如 7 月寄賣銷貨" /></div>
+        <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+          <button className="btn btn-secondary" style={{ height: 38 }} type="button" onClick={() => setRows((current) => [...current, emptyRow()])}><Plus size={14} />新增空白列</button>
+          <button className="btn btn-secondary" style={{ height: 38 }} type="button" onClick={duplicateLastRow}><Copy size={14} />複製上一列</button>
+        </div>
+      </div>
+
+      <datalist id={listId}>{sortedProducts.map((product) => <option key={product.id} value={productLabel(product)} />)}</datalist>
+      <div className="table-wrap" style={{ border: "1px solid var(--line)", marginBottom: 12 }}>
+        <table style={{ width: "100%", minWidth: 900, tableLayout: "fixed" }}>
+          <colgroup>
+            <col style={{ width: "42%" }} />
+            <col style={{ width: "12%" }} />
+            <col style={{ width: "16%" }} />
+            <col style={{ width: "22%" }} />
+            <col style={{ width: 96 }} />
+          </colgroup>
+          <thead><tr><th>商品 / SKU</th><th>數量</th><th>成交單價</th><th>單筆備註</th><th style={{ textAlign: "center" }}>操作</th></tr></thead>
+          <tbody>{rows.map((row) => <tr key={row.id}>
+            <td style={{ verticalAlign: "middle" }}><input className="input" list={listId} value={row.productKey} onChange={(event) => updateProduct(row.id, event.target.value)} placeholder="輸入 SKU 或選商品" style={{ width: "100%", minWidth: 0 }} aria-invalid={Boolean(row.productKey && !row.productId)} /></td>
+            <td style={{ verticalAlign: "middle" }}><input className="input" type="number" min="1" value={row.quantity} onChange={(event) => updateRow(row.id, { quantity: event.target.value })} style={{ width: "100%", minWidth: 0 }} /></td>
+            <td style={{ verticalAlign: "middle" }}><input className="input" type="number" min="0" step="1" value={row.unitPrice} onChange={(event) => updateRow(row.id, { unitPrice: event.target.value })} placeholder={isSale(type) ? "必填" : "選填"} style={{ width: "100%", minWidth: 0 }} /></td>
+            <td style={{ verticalAlign: "middle" }}><input className="input" value={row.note} onChange={(event) => updateRow(row.id, { note: event.target.value })} placeholder="選填" style={{ width: "100%", minWidth: 0 }} /></td>
+            <td style={{ verticalAlign: "middle" }}><div style={{ display: "flex", gap: 6, alignItems: "center", justifyContent: "center" }}>
+              <button className="btn btn-secondary icon-btn" type="button" onClick={() => duplicateRow(row.id)} title="複製此列"><Copy size={14} /></button>
+              <button className="btn btn-danger icon-btn" type="button" onClick={() => setRows((current) => current.length === 1 ? [emptyRow()] : current.filter((item) => item.id !== row.id))} title="刪除此列"><Trash2 size={14} /></button>
+            </div></td>
+          </tr>)}</tbody>
+        </table>
+      </div>
+
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
+        <span className="helper">同一批共同資料只設定一次；每列只填商品、數量、單價與備註。</span>
+        <button className="btn btn-primary" type="button" disabled={loading || activeRowCount === 0} onClick={() => void submitBatch()}>{loading ? "批次寫入中…" : `一次寫入 ${activeRowCount} 筆`}</button>
+      </div>
     </div>
   </details>;
 }
