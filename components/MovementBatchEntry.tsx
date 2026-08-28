@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { ChevronDown, Copy, Plus, Trash2 } from "lucide-react";
+import { Copy, Plus, Trash2 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { channelTypeLabels, isSale, movementLabels } from "@/lib/inventory";
 import type { ChannelType, MovementType } from "@prisma/client";
@@ -134,15 +134,7 @@ export function MovementBatchEntry({ products, channels }: { products: Product[]
   }
 
   return <details className="panel drawer" open>
-    <summary style={{ justifyContent: "stretch", marginBottom: 0, padding: "14px 18px" }}>
-      <div style={{ width: "100%", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 16 }}>
-        <div style={{ minWidth: 0 }}>
-          <strong style={{ display: "block", fontSize: 14, lineHeight: 1.35 }}>批次登錄</strong>
-          <span className="helper" style={{ display: "block", marginTop: 3 }}>日期、事件與通路只設定一次；下面連續新增商品列。</span>
-        </div>
-        <ChevronDown size={17} aria-hidden="true" style={{ flex: "0 0 auto" }} />
-      </div>
-    </summary>
+    <summary><span className="btn btn-primary"><Plus size={16} />批次登錄</span></summary>
 
     <div style={{ padding: 18 }}>
       {message && <div className="form-error" style={{ background: "#fff8df", color: "#786b3d", borderColor: "#d3bd69" }}>{message}</div>}
