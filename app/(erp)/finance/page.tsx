@@ -26,7 +26,7 @@ export default async function FinancePage({ searchParams }: { searchParams: Prom
   const range = monthRange(requestedMonth);
   const [user, transactions, categories, products, channels, dashboard] = await Promise.all([
     getCurrentUser(),
-    listFinanceTransactions({ start: range.start, end: range.end, take: 300 }),
+    listFinanceTransactions({ start: range.start, end: range.end, take: 500 }),
     listFinanceCategories(),
     prisma.product.findMany({ where: { active: true }, orderBy: { sku: "asc" }, select: { id: true, sku: true, name: true, size: true } }),
     prisma.channel.findMany({ where: { active: true }, orderBy: { name: "asc" }, select: { id: true, name: true, type: true } }),
@@ -34,7 +34,7 @@ export default async function FinancePage({ searchParams }: { searchParams: Prom
   ]);
 
   return <>
-    <PageHeader eyebrow="Finance" title="財務工作台" description="收入依通路與商品分析；支出依大類、細項、付款對象與用途管理。Finance 只引用 ERP 商品與通路，不修改它們自己的生命週期狀態。" />
+    <PageHeader eyebrow="Finance" title="財務工作台" description="先看本月到底賺不賺錢，再從查帳直接找到對應商品、店家、用途、發票與金額。支出發票是主要憑證追蹤對象。" />
     <FinanceManager
       month={requestedMonth}
       canWrite={user?.role !== "VIEWER"}
@@ -56,6 +56,8 @@ export default async function FinancePage({ searchParams }: { searchParams: Prom
         paymentStatus: item.paymentStatus,
         reconciliationStatus: item.reconciliationStatus,
         invoiceStatus: item.invoiceStatus,
+        invoiceNo: item.invoiceNo,
+        productNames: item.productNames,
         source: item.source,
       }))}
     />
