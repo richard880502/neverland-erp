@@ -22,6 +22,7 @@ enum FinanceInvoiceStatus {
   RECEIVED
   VOIDED
   CREDITED
+  NOT_REQUIRED
 }
 
 enum FinanceSource {
@@ -110,17 +111,18 @@ model FinanceTransaction {
 }
 
 model FinanceTransactionItem {
-  id            String             @id
-  transactionId String
-  productId     String?
-  sku           String?
-  productName   String
-  size          String?
-  quantity      Int                @default(1)
-  unitAmount    Decimal?           @db.Decimal(14, 2)
-  lineAmount    Decimal            @db.Decimal(14, 2)
-  transaction   FinanceTransaction @relation(fields: [transactionId], references: [id], onDelete: Cascade)
-  createdAt     DateTime           @default(now())
+  id               String             @id
+  transactionId    String
+  productId        String?
+  sku              String?
+  productName      String
+  size             String?
+  quantity         Int                @default(1)
+  unitAmount       Decimal?           @db.Decimal(14, 2)
+  lineAmount       Decimal            @db.Decimal(14, 2)
+  unitCostSnapshot Decimal?           @db.Decimal(14, 2)
+  transaction      FinanceTransaction @relation(fields: [transactionId], references: [id], onDelete: Cascade)
+  createdAt        DateTime           @default(now())
 
   @@index([transactionId])
   @@index([productId])
