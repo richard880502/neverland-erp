@@ -21,6 +21,9 @@ export const financeCreateSchema = z.object({
   amount: z.coerce.number().gt(0).max(100_000_000),
   categoryId: z.string().trim().min(1).optional().nullable(),
   counterparty: z.string().trim().max(200).optional().nullable(),
+  relatedParty: z.string().trim().max(200).optional().nullable(),
+  salesChannel: z.string().trim().max(120).optional().nullable(),
+  summary: z.string().trim().max(500).optional().nullable(),
   channelId: z.string().trim().min(1).optional().nullable(),
   paymentStatus: z.enum(["PENDING", "PARTIAL", "PAID", "REFUNDED", "VOID"]).default("PAID"),
   reconciliationStatus: z.enum(["UNMATCHED", "MATCHED", "RECONCILED"]).default("UNMATCHED"),
@@ -38,6 +41,10 @@ export const financeUpdateSchema = z.object({
   reconciliationStatus: z.enum(["UNMATCHED", "MATCHED", "RECONCILED"]).optional(),
   invoiceStatus: z.enum(["MISSING", "RECEIVED", "VOIDED", "CREDITED"]).optional(),
   categoryId: z.string().trim().min(1).nullable().optional(),
+  counterparty: z.string().trim().max(200).nullable().optional(),
+  relatedParty: z.string().trim().max(200).nullable().optional(),
+  salesChannel: z.string().trim().max(120).nullable().optional(),
+  summary: z.string().trim().max(500).nullable().optional(),
   note: z.string().trim().max(2000).nullable().optional(),
 });
 
@@ -50,7 +57,11 @@ export type FinanceRow = {
   amount: Prisma.Decimal;
   categoryId: string | null;
   categoryName: string | null;
+  categoryParentName: string | null;
   counterparty: string | null;
+  relatedParty: string | null;
+  salesChannel: string | null;
+  summary: string | null;
   paymentStatus: string;
   reconciliationStatus: string;
   invoiceStatus: string;
@@ -76,10 +87,13 @@ export async function listFinanceTransactions(input?: { start?: string; end?: st
   const where = conditions.length ? Prisma.sql`WHERE ${Prisma.join(conditions, " AND ")}` : Prisma.empty;
   return prisma.$queryRaw<FinanceRow[]>(Prisma.sql`
     SELECT t."id", t."occurredAt", t."direction", t."amount", t."categoryId",
-           c."name" AS "categoryName", t."counterparty", t."paymentStatus",
-           t."reconciliationStatus", t."invoiceStatus", t."source", t."note", t."createdAt"
+           c."name" AS "categoryName", p."name" AS "categoryParentName",
+           t."counterparty", t."relatedParty", t."salesChannel", t."summary",
+           t."paymentStatus", t."reconciliationStatus", t."invoiceStatus",
+           t."source", t."note", t."createdAt"
     FROM "FinanceTransaction" t
     LEFT JOIN "FinanceCategory" c ON c."id" = t."categoryId"
+    LEFT JOIN "FinanceCategory" p ON p."id" = c."parentId"
     ${where}
     ORDER BY t."occurredAt" DESC, t."createdAt" DESC
     LIMIT ${take}
@@ -87,32 +101,57 @@ export async function listFinanceTransactions(input?: { start?: string; end?: st
 }
 
 export async function listFinanceCategories() {
-  return prisma.$queryRaw<Array<{ id: string; code: string; name: string; direction: "INCOME" | "EXPENSE" }>>(Prisma.sql`
-    SELECT "id", "code", "name", "direction" FROM "FinanceCategory"
-    WHERE "active" = true ORDER BY "direction", "name"
+  return prisma.$queryRaw<Array<{ id: string; code: string; name: string; direction: "INCOME" | "EXPENSE"; parentId: string | null; parentName: string | null }>>(Prisma.sql`
+    SELECT c."id", c."code", c."name", c."direction", c."parentId", p."name" AS "parentName"
+    FROM "FinanceCategory" c
+    LEFT JOIN "FinanceCategory" p ON p."id" = c."parentId"
+    WHERE c."active" = true
+    ORDER BY c."direction", COALESCE(p."name", c."name"), CASE WHEN c."parentId" IS NULL THEN 0 ELSE 1 END, c."name"
   `);
+}
+
+async function validateCategory(categoryId: string | null | undefined, direction: "INCOME" | "EXPENSE") {
+  if (!categoryId) return;
+  const categories = await prisma.$queryRaw<Array<{ direction: string; childCount: bigint }>>(Prisma.sql`
+    SELECT c."direction", COUNT(child."id") AS "childCount"
+    FROM "FinanceCategory" c
+    LEFT JOIN "FinanceCategory" child ON child."parentId" = c."id" AND child."active" = true
+    WHERE c."id" = ${categoryId} AND c."active" = true
+    GROUP BY c."id", c."direction"
+    LIMIT 1
+  `);
+  if (!categories[0]) throw new Error("找不到財務分類");
+  if (categories[0].direction !== direction) throw new Error("分類方向與收入 / 支出不一致");
+  if (direction === "EXPENSE" && Number(categories[0].childCount) > 0) throw new Error("請選擇支出細項，不要只選大分類");
+}
+
+async function resolveChannelId(input: z.infer<typeof financeCreateSchema>) {
+  if (input.channelId) return input.channelId;
+  if (input.direction !== "INCOME") return null;
+  const candidates = [input.counterparty, input.salesChannel].filter((value): value is string => Boolean(value));
+  if (!candidates.length) return null;
+  const channels = await prisma.channel.findMany({ where: { active: true, name: { in: candidates } }, select: { id: true, name: true } });
+  const preferred = channels.find((channel) => channel.name === input.counterparty) ?? channels.find((channel) => channel.name === input.salesChannel);
+  return preferred?.id ?? null;
 }
 
 export async function createFinanceTransaction(input: z.infer<typeof financeCreateSchema>, actor: Actor) {
   if (actor.role === "VIEWER") throw new Error("目前角色沒有新增收支權限");
-  if (input.categoryId) {
-    const categories = await prisma.$queryRaw<Array<{ direction: string }>>(Prisma.sql`SELECT "direction" FROM "FinanceCategory" WHERE "id" = ${input.categoryId} AND "active" = true LIMIT 1`);
-    if (!categories[0]) throw new Error("找不到財務分類");
-    if (categories[0].direction !== input.direction) throw new Error("分類方向與收入 / 支出不一致");
-  }
+  await validateCategory(input.categoryId, input.direction);
   const linkedProductIds = [...new Set(input.items.map((item) => item.productId).filter((id): id is string => Boolean(id)))];
   if (linkedProductIds.length) {
     const count = await prisma.product.count({ where: { id: { in: linkedProductIds } } });
     if (count !== linkedProductIds.length) throw new Error("商品明細包含不存在的商品");
   }
+  const channelId = await resolveChannelId(input);
 
   return prisma.$transaction(async (tx) => {
     const id = randomUUID();
     await tx.$executeRaw(Prisma.sql`
       INSERT INTO "FinanceTransaction"
-        ("id", "occurredAt", "direction", "amount", "categoryId", "counterparty", "channelId", "source", "sourceRef", "paymentStatus", "reconciliationStatus", "invoiceStatus", "note", "legacySheet", "legacyRow", "createdById", "updatedAt")
+        ("id", "occurredAt", "direction", "amount", "categoryId", "counterparty", "relatedParty", "salesChannel", "summary", "channelId", "source", "sourceRef", "paymentStatus", "reconciliationStatus", "invoiceStatus", "note", "legacySheet", "legacyRow", "createdById", "updatedAt")
       VALUES
-        (${id}, ${startOfTaipeiDate(input.occurredAt)}, ${input.direction}::"FinanceDirection", ${input.amount}, ${input.categoryId ?? null}, ${input.counterparty ?? null}, ${input.channelId ?? null}, ${input.source}::"FinanceSource", ${input.sourceRef ?? null}, ${input.paymentStatus}::"FinancePaymentStatus", ${input.reconciliationStatus}::"FinanceReconciliationStatus", ${input.invoiceStatus}::"FinanceInvoiceStatus", ${input.note ?? null}, ${input.legacySheet ?? null}, ${input.legacyRow ?? null}, ${actor.userId}, CURRENT_TIMESTAMP)
+        (${id}, ${startOfTaipeiDate(input.occurredAt)}, ${input.direction}::"FinanceDirection", ${input.amount}, ${input.categoryId ?? null}, ${input.counterparty ?? null}, ${input.relatedParty ?? null}, ${input.salesChannel ?? null}, ${input.summary ?? null}, ${channelId}, ${input.source}::"FinanceSource", ${input.sourceRef ?? null}, ${input.paymentStatus}::"FinancePaymentStatus", ${input.reconciliationStatus}::"FinanceReconciliationStatus", ${input.invoiceStatus}::"FinanceInvoiceStatus", ${input.note ?? null}, ${input.legacySheet ?? null}, ${input.legacyRow ?? null}, ${actor.userId}, CURRENT_TIMESTAMP)
     `);
     for (const item of input.items) {
       await tx.$executeRaw(Prisma.sql`
@@ -127,7 +166,16 @@ export async function createFinanceTransaction(input: z.infer<typeof financeCrea
       action: "FINANCE_TRANSACTION_CREATED",
       entityType: "FinanceTransaction",
       entityId: id,
-      metadata: { direction: input.direction, amount: input.amount, categoryId: input.categoryId ?? null, source: input.source, itemCount: input.items.length },
+      metadata: {
+        direction: input.direction,
+        amount: input.amount,
+        categoryId: input.categoryId ?? null,
+        salesChannel: input.salesChannel ?? null,
+        counterparty: input.counterparty ?? null,
+        relatedParty: input.relatedParty ?? null,
+        source: input.source,
+        itemCount: input.items.length,
+      },
       ipAddress: actor.ipAddress ?? null,
     }});
     return { id };
@@ -136,18 +184,19 @@ export async function createFinanceTransaction(input: z.infer<typeof financeCrea
 
 export async function updateFinanceTransaction(id: string, input: z.infer<typeof financeUpdateSchema>, actor: Actor) {
   if (actor.role === "VIEWER") throw new Error("目前角色沒有修改收支權限");
-  const current = await prisma.$queryRaw<Array<{ id: string; direction: string }>>(Prisma.sql`SELECT "id", "direction" FROM "FinanceTransaction" WHERE "id" = ${id} LIMIT 1`);
+  const current = await prisma.$queryRaw<Array<{ id: string; direction: "INCOME" | "EXPENSE" }>>(Prisma.sql`SELECT "id", "direction" FROM "FinanceTransaction" WHERE "id" = ${id} LIMIT 1`);
   if (!current[0]) throw new Error("找不到收支紀錄");
-  if (input.categoryId) {
-    const categories = await prisma.$queryRaw<Array<{ direction: string }>>(Prisma.sql`SELECT "direction" FROM "FinanceCategory" WHERE "id" = ${input.categoryId} LIMIT 1`);
-    if (!categories[0] || categories[0].direction !== current[0].direction) throw new Error("分類方向不符合這筆交易");
-  }
+  if (Object.prototype.hasOwnProperty.call(input, "categoryId")) await validateCategory(input.categoryId, current[0].direction);
   await prisma.$executeRaw(Prisma.sql`
     UPDATE "FinanceTransaction" SET
       "paymentStatus" = COALESCE(${input.paymentStatus ?? null}::"FinancePaymentStatus", "paymentStatus"),
       "reconciliationStatus" = COALESCE(${input.reconciliationStatus ?? null}::"FinanceReconciliationStatus", "reconciliationStatus"),
       "invoiceStatus" = COALESCE(${input.invoiceStatus ?? null}::"FinanceInvoiceStatus", "invoiceStatus"),
       "categoryId" = CASE WHEN ${Object.prototype.hasOwnProperty.call(input, "categoryId")} THEN ${input.categoryId ?? null} ELSE "categoryId" END,
+      "counterparty" = CASE WHEN ${Object.prototype.hasOwnProperty.call(input, "counterparty")} THEN ${input.counterparty ?? null} ELSE "counterparty" END,
+      "relatedParty" = CASE WHEN ${Object.prototype.hasOwnProperty.call(input, "relatedParty")} THEN ${input.relatedParty ?? null} ELSE "relatedParty" END,
+      "salesChannel" = CASE WHEN ${Object.prototype.hasOwnProperty.call(input, "salesChannel")} THEN ${input.salesChannel ?? null} ELSE "salesChannel" END,
+      "summary" = CASE WHEN ${Object.prototype.hasOwnProperty.call(input, "summary")} THEN ${input.summary ?? null} ELSE "summary" END,
       "note" = CASE WHEN ${Object.prototype.hasOwnProperty.call(input, "note")} THEN ${input.note ?? null} ELSE "note" END,
       "updatedAt" = CURRENT_TIMESTAMP
     WHERE "id" = ${id}
@@ -178,15 +227,27 @@ export async function getFinanceDashboard(month: string) {
     GROUP BY i."productId", i."productName" ORDER BY "revenue" DESC LIMIT 8
   `);
   const topCategories = await prisma.$queryRaw<Array<{ name: string; amount: Prisma.Decimal }>>(Prisma.sql`
-    SELECT COALESCE(c."name", '未分類') AS "name", COALESCE(SUM(t."amount"),0) AS "amount"
-    FROM "FinanceTransaction" t LEFT JOIN "FinanceCategory" c ON c."id" = t."categoryId"
+    SELECT COALESCE(parent."name", c."name", '未分類') AS "name", COALESCE(SUM(t."amount"),0) AS "amount"
+    FROM "FinanceTransaction" t
+    LEFT JOIN "FinanceCategory" c ON c."id" = t."categoryId"
+    LEFT JOIN "FinanceCategory" parent ON parent."id" = c."parentId"
     WHERE t."occurredAt" >= ${start} AND t."occurredAt" < ${end} AND t."direction" = 'EXPENSE' AND t."paymentStatus" <> 'VOID'
-    GROUP BY c."name" ORDER BY "amount" DESC LIMIT 8
+    GROUP BY COALESCE(parent."name", c."name", '未分類') ORDER BY "amount" DESC LIMIT 8
+  `);
+  const topChannels = await prisma.$queryRaw<Array<{ name: string; amount: Prisma.Decimal }>>(Prisma.sql`
+    SELECT COALESCE(NULLIF("salesChannel", ''), '未指定') AS "name", COALESCE(SUM("amount"),0) AS "amount"
+    FROM "FinanceTransaction"
+    WHERE "occurredAt" >= ${start} AND "occurredAt" < ${end} AND "direction" = 'INCOME' AND "paymentStatus" <> 'VOID'
+    GROUP BY COALESCE(NULLIF("salesChannel", ''), '未指定') ORDER BY "amount" DESC LIMIT 8
   `);
   const row = totals[0] ?? { income: new Prisma.Decimal(0), expense: new Prisma.Decimal(0), receivable: new Prisma.Decimal(0) };
   return {
-    income: Number(row.income), expense: Number(row.expense), cashFlow: Number(row.income) - Number(row.expense), receivable: Number(row.receivable),
+    income: Number(row.income),
+    expense: Number(row.expense),
+    cashFlow: Number(row.income) - Number(row.expense),
+    receivable: Number(row.receivable),
     topProducts: topProducts.map((item) => ({ ...item, revenue: Number(item.revenue), quantity: Number(item.quantity) })),
     topCategories: topCategories.map((item) => ({ ...item, amount: Number(item.amount) })),
+    topChannels: topChannels.map((item) => ({ ...item, amount: Number(item.amount) })),
   };
 }
