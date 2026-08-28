@@ -39,6 +39,5 @@ INSERT INTO "FinanceCategory" ("id", "code", "name", "direction", "parentId") VA
   ('fin_cat_packaging', 'packaging', '包裝 / 文具', 'EXPENSE', 'fin_group_operations'),
   ('fin_cat_accounting', 'accounting', '會計', 'EXPENSE', 'fin_group_operations'),
   ('fin_cat_software', 'software', '網站 / 軟體', 'EXPENSE', 'fin_group_operations'),
-  ('fin_cat_membership', 'membership', '會費', 'EXPENSE', 'fin_group_operations'),
-  ('fin_cat_other', 'other', '其他', 'EXPENSE', 'fin_group_operations')
+  ('fin_cat_membership', 'membership', '會費', 'EXPENSE', 'fin_group_operations')
 ON CONFLICT ("code") DO NOTHING;
