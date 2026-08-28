@@ -35,24 +35,56 @@ def money(v):
     except Exception: return None
 
 
-def classify(subject, item, category):
-    s = ' '.join([text(subject), text(item), text(category)]).lower()
+def classify(subject, detail, summary):
+    s_subject = text(subject).lower()
+    if '銷售' in s_subject or s_subject == '收入': return 'INCOME'
+    if '支出' in s_subject: return 'EXPENSE'
+    s = ' '.join([s_subject, text(detail), text(summary)]).lower()
     income_words = ['銷售', '收入', '經銷', '蝦皮', 'shopee', '官網', '買斷']
-    expense_words = ['費用', '支出', '成本', '製作', '運費', '宣傳', '廣告', '公關', '交際', '包材', '物流']
+    expense_words = ['費用', '支出', '成本', '製作', '運費', '宣傳', '廣告', '公關', '交際', '包材', '物流', '拍攝']
     if any(w in s for w in income_words): return 'INCOME'
     if any(w in s for w in expense_words): return 'EXPENSE'
     return None
 
 
-def category_code(subject, item, category, direction):
-    s = ' '.join([text(subject), text(item), text(category)]).lower()
-    if direction == 'INCOME':
-        if any(w in s for w in ['經銷', '買斷']): return 'wholesale'
-        return 'sales'
-    if any(w in s for w in ['製作', '打版', '布料', '加工', '成本']): return 'production'
-    if any(w in s for w in ['宣傳', '廣告', '公關', '拍攝', 'kol']): return 'marketing'
-    if any(w in s for w in ['運費', '物流', '7-11', '黑貓']): return 'shipping'
-    return 'admin'
+def normalize_sales_channel(detail):
+    value = text(detail)
+    aliases = {
+        'ＩＧ': 'IG', 'ig': 'IG', 'instagram': 'IG',
+        '蝦皮': '蝦皮', 'shopee': '蝦皮', '官網': '官網',
+        '經銷': '經銷', '親友': '親友', '家人/朋友': '親友', '其他收入': '其他',
+    }
+    return aliases.get(value.lower(), aliases.get(value, value or None))
+
+
+def expense_category_code(detail, summary):
+    d = text(detail).lower()
+    s = f'{d} {text(summary).lower()}'
+    if '再製' in s: return 'rework'
+    if '進貨運費' in s: return 'inbound_shipping'
+    if '出貨運費' in s: return 'shipping'
+    if '公關品' in s: return 'pr'
+    if '租棚' in s: return 'studio'
+    if '拍攝' in s or '麻豆' in s or '模特' in s: return 'photography'
+    if '廣告' in s: return 'ads'
+    if '製作' in s or '打版' in s or '布料' in s or '加工' in s: return 'production'
+    if '包裝' in s or '文具' in s or '破壞袋' in s: return 'packaging'
+    if '會計' in s: return 'accounting'
+    if any(w in s for w in ['網域', '主機', '軟體', 'gandi', 'hosting']): return 'software'
+    if any(w in s for w in ['會費', '入會費', '公會']): return 'membership'
+    return 'other'
+
+
+def infer_expense_counterparty(detail, summary):
+    d = text(detail)
+    match = re.search(r'製作[（(]([^）)]+)[）)]', d)
+    if match and match.group(1).strip() not in ('其他', ''):
+        return match.group(1).strip()
+    s = text(summary).lower()
+    if '7-11' in s or '店到店' in s: return '7-11'
+    if '郵局' in s: return '郵局'
+    if '黑貓' in s: return '黑貓宅急便'
+    return None
 
 
 def parse_workbook(path):
@@ -107,7 +139,7 @@ def normalize_sheet(sheet_name, rows):
     for row_no, cells in rows[:40]:
         vals = {i: text(v) for i, v in cells.items()}
         joined = '|'.join(vals.values())
-        if '日期' in joined and ('科目' in joined or '收支項目' in joined) and ('金額' in joined or '收入' in joined):
+        if '日期' in joined and '科目' in joined and ('收支細項' in joined or '收支項目' in joined) and ('金額' in joined or '收入' in joined):
             header_row = row_no
             headers = vals
             break
@@ -118,11 +150,17 @@ def normalize_sheet(sheet_name, rows):
             if any(n in h for n in needles): return i
         return None
 
+    def find_exact(*names):
+        for i, h in headers.items():
+            if h in names: return i
+        return None
+
     c_date = find_col('日期')
-    c_subject = find_col('科目')
-    c_item = find_col('收支項目')
-    c_category = find_col('類別')
-    c_counterparty = find_col('經銷', '店家', '廠商')
+    c_subject = find_exact('科目')
+    c_detail = find_col('收支細項', '收支項目')
+    c_product_category = find_exact('類別')
+    c_related_party = find_col('經銷/店家', '經銷', '店家', '廠商')
+    c_summary = find_exact('項目')
     c_product = find_col('產品名稱', '商品名稱')
     c_size = find_col('尺寸')
     c_qty = find_col('件數', '數量')
@@ -134,9 +172,13 @@ def normalize_sheet(sheet_name, rows):
         if row_no <= header_row: continue
         get = lambda c: cells.get(c, '') if c is not None else ''
         amount = money(get(c_amount))
-        subject, item, category = text(get(c_subject)), text(get(c_item)), text(get(c_category))
+        subject = text(get(c_subject))
+        detail = text(get(c_detail))
+        summary = text(get(c_summary))
+        product_category = text(get(c_product_category))
         product = text(get(c_product))
-        if not any([amount, subject, item, product]): continue
+        related_party = text(get(c_related_party))
+        if not any([amount, subject, detail, summary, product]): continue
         raw_date = get(c_date)
         date = excel_date(raw_date) or text(raw_date)
         if re.match(r'^\d{1,2}/\d{1,2}$', date): date = '2026-' + '-'.join(x.zfill(2) for x in date.split('/'))
@@ -144,21 +186,33 @@ def normalize_sheet(sheet_name, rows):
             parts = date.split('/')
             y = int(parts[2]); y = y + 1911 if y < 1911 else y
             date = f'{y:04d}-{int(parts[0]):02d}-{int(parts[1]):02d}'
-        direction = classify(subject, item, category)
+        direction = classify(subject, detail, summary)
         reasons = []
-        if not amount or amount <= 0: reasons.append('缺少有效金額')
+        if amount is None or amount == 0: reasons.append('缺少有效金額')
+        if amount is not None and amount < 0: reasons.append('負數交易需人工確認為退款 / 折讓')
         if not direction: reasons.append('無法判斷收入 / 支出')
         if not re.match(r'^2026-\d{2}-\d{2}$', date or ''): reasons.append('日期需要確認')
-        status = 'READY' if not reasons else ('REJECTED' if not amount else 'REVIEW')
+        status = 'READY' if not reasons else ('REJECTED' if amount is None or amount == 0 else 'REVIEW')
         qty = money(get(c_qty))
+        if qty is not None and qty < 0:
+            if '負數交易需人工確認為退款 / 折讓' not in reasons: reasons.append('負數數量需人工確認為退款 / 退貨')
+            status = 'REVIEW'
+
+        sales_channel = normalize_sales_channel(detail) if direction == 'INCOME' else None
+        category_code = ('wholesale' if sales_channel == '經銷' else 'sales') if direction == 'INCOME' else (expense_category_code(detail, summary) if direction == 'EXPENSE' else None)
+        counterparty = (related_party or None) if direction == 'INCOME' else infer_expense_counterparty(detail, summary)
         normalized = {
             'occurredAt': date or None,
             'direction': direction,
-            'amount': amount,
-            'categoryCode': category_code(subject, item, category, direction) if direction else None,
-            'counterparty': text(get(c_counterparty)) or item or None,
+            'amount': abs(amount) if amount is not None else None,
+            'categoryCode': category_code,
+            'salesChannel': sales_channel,
+            'counterparty': counterparty,
+            'relatedParty': related_party or None if direction == 'EXPENSE' else None,
+            'summary': summary or None,
+            'productCategory': product_category or None,
             'note': text(get(c_note)) or None,
-            'items': ([{'productName': product, 'size': text(get(c_size)) or None, 'quantity': int(qty or 1), 'lineAmount': amount}] if product and amount else []),
+            'items': ([{'productName': product, 'size': text(get(c_size)) or None, 'quantity': abs(int(qty or 1)), 'lineAmount': abs(amount)}] if product and amount not in (None, 0) else []),
         }
         out.append({'sheetName': sheet_name, 'rowNumber': row_no, 'status': status, 'reason': '；'.join(reasons) or None, 'raw': {str(k): text(v) for k,v in cells.items()}, 'normalized': normalized})
     return out
