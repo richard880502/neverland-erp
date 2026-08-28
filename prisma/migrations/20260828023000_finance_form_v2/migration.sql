@@ -26,7 +26,7 @@ SET "name" = '出貨運費', "parentId" = 'fin_group_logistics'
 WHERE "code" = 'shipping';
 
 UPDATE "FinanceCategory"
-SET "name" = '其他', "parentId" = 'fin_group_operations'
+SET "name" = '其他（舊分類）', "parentId" = 'fin_group_operations', "active" = false
 WHERE "code" = 'admin';
 
 INSERT INTO "FinanceCategory" ("id", "code", "name", "direction", "parentId") VALUES
@@ -39,5 +39,6 @@ INSERT INTO "FinanceCategory" ("id", "code", "name", "direction", "parentId") VA
   ('fin_cat_packaging', 'packaging', '包裝 / 文具', 'EXPENSE', 'fin_group_operations'),
   ('fin_cat_accounting', 'accounting', '會計', 'EXPENSE', 'fin_group_operations'),
   ('fin_cat_software', 'software', '網站 / 軟體', 'EXPENSE', 'fin_group_operations'),
-  ('fin_cat_membership', 'membership', '會費', 'EXPENSE', 'fin_group_operations')
+  ('fin_cat_membership', 'membership', '會費', 'EXPENSE', 'fin_group_operations'),
+  ('fin_cat_other', 'other', '其他', 'EXPENSE', 'fin_group_operations')
 ON CONFLICT ("code") DO NOTHING;
