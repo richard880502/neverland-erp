@@ -57,16 +57,16 @@ model FinanceCategory {
 }
 
 model FinanceImportBatch {
-  id          String               @id
-  filename    String
-  source      FinanceSource        @default(EXCEL)
-  status      String               @default("PREVIEW")
-  summary     Json?
-  createdById String
-  completedAt DateTime?
-  rows        FinanceImportRow[]
+  id           String               @id
+  filename     String
+  source       FinanceSource        @default(EXCEL)
+  status       String               @default("PREVIEW")
+  summary      Json?
+  createdById  String
+  completedAt  DateTime?
+  rows         FinanceImportRow[]
   transactions FinanceTransaction[]
-  createdAt   DateTime             @default(now())
+  createdAt    DateTime             @default(now())
 
   @@index([createdAt])
 }
@@ -78,6 +78,9 @@ model FinanceTransaction {
   amount                 Decimal                     @db.Decimal(14, 2)
   categoryId             String?
   counterparty           String?
+  relatedParty           String?
+  salesChannel           String?
+  summary                String?
   channelId              String?
   source                 FinanceSource               @default(MANUAL)
   sourceRef              String?
@@ -101,6 +104,7 @@ model FinanceTransaction {
   @@index([occurredAt, direction])
   @@index([categoryId, occurredAt])
   @@index([channelId, occurredAt])
+  @@index([salesChannel, occurredAt])
   @@index([paymentStatus])
   @@index([reconciliationStatus])
 }
