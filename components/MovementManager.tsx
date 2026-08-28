@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Minus, RotateCcw, Search } from "lucide-react";
 import { PageHeader } from "@/components/ui/PageHeader";
@@ -17,7 +17,7 @@ function productLabel(product: Product) {
   return `${product.sku} · ${product.name}${product.size ? ` · ${product.size}` : ""}`;
 }
 
-function ProductPicker({ products, name = "productId", required = true, resetToken = 0 }: { products: Product[]; name?: string; required?: boolean; resetToken?: number }) {
+function ProductPicker({ products, name = "productId", required = true }: { products: Product[]; name?: string; required?: boolean }) {
   const [query, setQuery] = useState("");
   const [selectedId, setSelectedId] = useState("");
   const [sort, setSort] = useState<ProductSort>("sku");
@@ -25,11 +25,6 @@ function ProductPicker({ products, name = "productId", required = true, resetTok
     ? a.sku.localeCompare(b.sku, "zh-Hant", { numeric: true })
     : a.name.localeCompare(b.name, "zh-Hant") || (a.size ?? "").localeCompare(b.size ?? "", "zh-Hant")), [products, sort]);
   const listId = `product-options-${name}`;
-
-  useEffect(() => {
-    setQuery("");
-    setSelectedId("");
-  }, [resetToken]);
 
   function choose(value: string) {
     setQuery(value);
@@ -148,7 +143,7 @@ export function MovementManager({ products, channels, movements, canWrite }: { p
       <form className="form-grid" onSubmit={submit}>
         <div className="field"><label htmlFor="movement-date">日期</label><input className="input" id="movement-date" name="occurredAt" type="date" defaultValue={today} required /></div>
         <div className="field"><label htmlFor="movement-type">事件</label><select className="select" id="movement-type" name="type" defaultValue="RECEIVE">{Object.entries(movementLabels).map(([value, label]) => <option value={value} key={value}>{label}</option>)}</select></div>
-        <ProductPicker products={products} resetToken={movementResetToken} />
+        <ProductPicker key={`movement-${movementResetToken}`} products={products} />
         <div className="field"><label htmlFor="movement-channel">通路（進貨／進貨退出可不選）</label><select className="select" id="movement-channel" name="channelId"><option value="">不指定</option>{channels.map((c) => <option value={c.id} key={c.id}>{c.name} · {channelTypeLabels[c.type]}</option>)}</select></div>
         <div className="field"><label htmlFor="movement-quantity">數量</label><input className="input" id="movement-quantity" name="quantity" type="number" min="1" defaultValue="1" required /></div>
         <div className="field"><label htmlFor="movement-price">成交單價（出貨／銷貨退回）</label><input className="input" id="movement-price" name="unitPrice" type="number" min="0" step="1" /></div>
@@ -162,7 +157,7 @@ export function MovementManager({ products, channels, movements, canWrite }: { p
       {fulfillmentMessage && <div className="form-error" style={{ background: "#fff8df", color: "#786b3d", borderColor: "#d3bd69" }}>{fulfillmentMessage}</div>}
       <form className="form-grid" onSubmit={submitFulfillment}>
         <div className="field"><label htmlFor="fulfillment-date">日期</label><input className="input" id="fulfillment-date" name="occurredAt" type="date" defaultValue={today} required /></div>
-        <ProductPicker products={products} name="productId" resetToken={fulfillmentResetToken} />
+        <ProductPicker key={`fulfillment-${fulfillmentResetToken}`} products={products} name="productId" />
         <div className="field"><label htmlFor="source-channel">寄賣來源</label><select className="select" id="source-channel" name="sourceChannelId" required><option value="">請選擇寄賣經銷</option>{consignmentChannels.map((channel) => <option key={channel.id} value={channel.id}>{channel.name}</option>)}</select></div>
         <div className="field"><label htmlFor="sales-channel">銷售歸屬</label><select className="select" id="sales-channel" name="salesChannelId" required><option value="">請選擇直營通路</option>{directChannels.map((channel) => <option key={channel.id} value={channel.id}>{channel.name}</option>)}</select></div>
         <div className="field"><label htmlFor="fulfillment-quantity">數量</label><input className="input" id="fulfillment-quantity" name="quantity" type="number" min="1" defaultValue="1" required /></div>
