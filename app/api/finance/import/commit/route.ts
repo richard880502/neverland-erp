@@ -82,7 +82,7 @@ export async function POST(request: Request) {
         legacyRow: row.rowNumber,
         paymentStatus: "PAID",
         reconciliationStatus: "UNMATCHED",
-        invoiceStatus: "MISSING",
+        invoiceStatus: n.direction === "EXPENSE" ? "MISSING" : "NOT_REQUIRED",
         items: mappedItems,
       });
       if (!parsed.success) {
