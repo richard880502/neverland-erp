@@ -3,6 +3,7 @@
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { FileSpreadsheet, Plus, RefreshCw, Upload } from "lucide-react";
+import { FinanceAudit } from "@/components/FinanceAudit";
 import styles from "@/app/(erp)/finance/finance.module.css";
 
 type Transaction = {
@@ -19,6 +20,8 @@ type Transaction = {
   paymentStatus: string;
   reconciliationStatus: string;
   invoiceStatus: string;
+  invoiceNo: string | null;
+  productNames: string[];
   source: string;
 };
 type Category = { id: string; code: string; name: string; direction: "INCOME" | "EXPENSE"; parentId: string | null; parentName: string | null };
@@ -29,6 +32,17 @@ type Dashboard = {
   expense: number;
   cashFlow: number;
   receivable: number;
+  grossRevenue: number;
+  refunds: number;
+  netRevenue: number;
+  cogs: number;
+  inventorySpend: number;
+  operatingExpense: number;
+  grossProfit: number;
+  estimatedNetProfit: number;
+  profitMargin: number;
+  costCoverage: number;
+  missingExpenseInvoices: number;
   topProducts: Array<{ productId: string | null; productName: string; revenue: number; quantity: number }>;
   topCategories: Array<{ name: string; amount: number }>;
   topChannels: Array<{ name: string; amount: number }>;
@@ -53,13 +67,11 @@ type ImportRow = {
 };
 type ImportPreview = { batchId: string; summary: { total: number; READY: number; REVIEW: number; REJECTED: number }; rows: ImportRow[] };
 
-const paymentLabels: Record<string, string> = { PENDING: "待付款/收款", PARTIAL: "部分完成", PAID: "已付款/入帳", REFUNDED: "已退款", VOID: "已作廢" };
-const reconcileLabels: Record<string, string> = { UNMATCHED: "未對帳", MATCHED: "已配對", RECONCILED: "已對帳" };
-const invoiceLabels: Record<string, string> = { MISSING: "缺發票", RECEIVED: "已取得", VOIDED: "已作廢", CREDITED: "折讓" };
 const salesChannelOptions = ["蝦皮", "官網", "經銷", "親友", "IG", "其他"];
 
 function money(value: number) { return new Intl.NumberFormat("zh-TW", { style: "currency", currency: "TWD", maximumFractionDigits: 0 }).format(value); }
 function today() { return new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Taipei", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date()); }
+function percent(value: number) { return `${new Intl.NumberFormat("zh-TW", { maximumFractionDigits: 1 }).format(value)}%`; }
 
 export function FinanceManager({ month, canWrite, transactions, categories, products, channels, dashboard }: { month: string; canWrite: boolean; transactions: Transaction[]; categories: Category[]; products: Product[]; channels: Channel[]; dashboard: Dashboard }) {
   const router = useRouter();
@@ -75,6 +87,9 @@ export function FinanceManager({ month, canWrite, transactions, categories, prod
   const [note, setNote] = useState("");
   const [productId, setProductId] = useState("");
   const [quantity, setQuantity] = useState("1");
+  const [expenseInvoiceStatus, setExpenseInvoiceStatus] = useState<"MISSING" | "RECEIVED" | "NOT_REQUIRED">("MISSING");
+  const [invoiceNo, setInvoiceNo] = useState("");
+  const [invoiceDate, setInvoiceDate] = useState(today());
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState("");
   const [preview, setPreview] = useState<ImportPreview | null>(null);
@@ -89,6 +104,7 @@ export function FinanceManager({ month, canWrite, transactions, categories, prod
   const topRevenueMax = useMemo(() => Math.max(1, ...dashboard.topProducts.map((item) => item.revenue)), [dashboard.topProducts]);
   const topExpenseMax = useMemo(() => Math.max(1, ...dashboard.topCategories.map((item) => item.amount)), [dashboard.topCategories]);
   const topChannelMax = useMemo(() => Math.max(1, ...dashboard.topChannels.map((item) => item.amount)), [dashboard.topChannels]);
+  const profitable = dashboard.estimatedNetProfit >= 0;
 
   function changeDirection(next: "INCOME" | "EXPENSE") {
     setDirection(next);
@@ -97,6 +113,9 @@ export function FinanceManager({ month, canWrite, transactions, categories, prod
     setCounterparty("");
     setRelatedParty("");
     setSummary("");
+    setExpenseInvoiceStatus("MISSING");
+    setInvoiceNo("");
+    setInvoiceDate(occurredAt || today());
     setMessage("");
   }
 
@@ -124,6 +143,7 @@ export function FinanceManager({ month, canWrite, transactions, categories, prod
       quantity: Number(quantity || 1),
       lineAmount: numericAmount,
     }] : [];
+    const invoiceStatus = direction === "EXPENSE" ? expenseInvoiceStatus : "NOT_REQUIRED";
     const response = await fetch("/api/finance/transactions", {
       method: "POST",
       headers: { "content-type": "application/json" },
@@ -139,7 +159,12 @@ export function FinanceManager({ month, canWrite, transactions, categories, prod
         note: note || null,
         paymentStatus: "PAID",
         reconciliationStatus: "UNMATCHED",
-        invoiceStatus: "MISSING",
+        invoiceStatus,
+        invoice: direction === "EXPENSE" && expenseInvoiceStatus === "RECEIVED" ? {
+          invoiceNo: invoiceNo || null,
+          issuedAt: invoiceDate || occurredAt,
+          grossAmount: numericAmount,
+        } : null,
         source: "MANUAL",
         items: item,
       }),
@@ -154,6 +179,8 @@ export function FinanceManager({ month, canWrite, transactions, categories, prod
     setNote("");
     setProductId("");
     setQuantity("1");
+    setExpenseInvoiceStatus("MISSING");
+    setInvoiceNo("");
     setMessage("已新增收支紀錄");
     router.refresh();
   }
@@ -194,10 +221,32 @@ export function FinanceManager({ month, canWrite, transactions, categories, prod
     </div>
 
     <section className={styles.kpis}>
-      <article><span>本月收入</span><strong>{money(dashboard.income)}</strong><small>INCOME</small></article>
-      <article><span>本月支出</span><strong>{money(dashboard.expense)}</strong><small>EXPENSE</small></article>
+      <article><span>本月淨營收</span><strong>{money(dashboard.netRevenue)}</strong><small>NET REVENUE</small></article>
+      <article className={profitable ? styles.profitPositive : styles.profitNegative}><span>估算淨利</span><strong>{profitable ? "+" : ""}{money(dashboard.estimatedNetProfit)}</strong><small>{profitable ? "賺錢" : "賠錢"} · 淨利率 {percent(dashboard.profitMargin)}</small></article>
       <article><span>淨現金流</span><strong>{money(dashboard.cashFlow)}</strong><small>CASH FLOW</small></article>
-      <article><span>未收帳款</span><strong>{money(dashboard.receivable)}</strong><small>RECEIVABLE</small></article>
+      <article><span>待補支出發票</span><strong>{dashboard.missingExpenseInvoices} 筆</strong><small>EXPENSE RECEIPTS</small></article>
+    </section>
+
+    <section className={`panel ${styles.profitPanel}`}>
+      <div className={styles.sectionHead}><div><span>00 / PROFIT & LOSS</span><h2>本月損益</h2></div><strong className={profitable ? styles.profitTextPositive : styles.profitTextNegative}>{profitable ? "賺錢" : "賠錢"}</strong></div>
+      <div className={styles.profitLayout}>
+        <div className={styles.profitStatement}>
+          <div><span>銷售收入</span><strong>{money(dashboard.grossRevenue)}</strong></div>
+          <div><span>退款 / 已退款收入</span><strong>-{money(dashboard.refunds)}</strong></div>
+          <div className={styles.profitSubtotal}><span>淨營收</span><strong>{money(dashboard.netRevenue)}</strong></div>
+          <div><span>已售商品成本 COGS</span><strong>-{money(dashboard.cogs)}</strong></div>
+          <div className={styles.profitSubtotal}><span>毛利</span><strong>{money(dashboard.grossProfit)}</strong></div>
+          <div><span>營運費用</span><strong>-{money(dashboard.operatingExpense)}</strong></div>
+          <div className={styles.profitTotal}><span>估算淨利</span><strong>{profitable ? "+" : ""}{money(dashboard.estimatedNetProfit)}</strong></div>
+        </div>
+        <div className={styles.profitNotes}>
+          <div><span>淨利率</span><strong>{percent(dashboard.profitMargin)}</strong></div>
+          <div><span>商品成本覆蓋率</span><strong>{percent(dashboard.costCoverage)}</strong></div>
+          <div><span>本月進貨 / 製作現金支出</span><strong>{money(dashboard.inventorySpend)}</strong></div>
+          <div><span>未收帳款</span><strong>{money(dashboard.receivable)}</strong></div>
+          <p>{dashboard.costCoverage < 95 ? "目前仍有部分銷售沒有對應商品成本，淨利屬估算值；把商品成本補齊後會更準。" : "商品成本資料覆蓋良好；損益會依交易當下的成本快照計算。"}</p>
+        </div>
+      </div>
     </section>
 
     <section className={styles.grid}>
@@ -209,7 +258,7 @@ export function FinanceManager({ month, canWrite, transactions, categories, prod
         </div>
         {message && <p className={styles.formMessage}>{message}</p>}
         <div className={styles.formGrid}>
-          <div className="field"><label>日期</label><input className="input" type="date" value={occurredAt} onChange={(e) => setOccurredAt(e.target.value)} /></div>
+          <div className="field"><label>日期</label><input className="input" type="date" value={occurredAt} onChange={(e) => { setOccurredAt(e.target.value); if (!invoiceDate) setInvoiceDate(e.target.value); }} /></div>
           <div className="field"><label>金額</label><input className="input" type="number" min="0" value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="NT$" /></div>
 
           {direction === "INCOME" ? <>
@@ -224,9 +273,15 @@ export function FinanceManager({ month, canWrite, transactions, categories, prod
 
           <div className="field"><label>關聯商品（選填）</label><select className="select" value={productId} onChange={(e) => setProductId(e.target.value)}><option value="">不指定商品</option>{products.map((p) => <option key={p.id} value={p.id}>{p.sku} · {p.name}{p.size ? ` · ${p.size}` : ""}</option>)}</select></div>
           <div className="field"><label>數量</label><input className="input" type="number" min="1" value={quantity} onChange={(e) => setQuantity(e.target.value)} disabled={!productId} /></div>
+
+          {direction === "EXPENSE" && <>
+            <div className="field"><label>發票 / 憑證</label><select className="select" value={expenseInvoiceStatus} onChange={(e) => setExpenseInvoiceStatus(e.target.value as "MISSING" | "RECEIVED" | "NOT_REQUIRED")}><option value="MISSING">待補發票</option><option value="RECEIVED">已取得</option><option value="NOT_REQUIRED">不需發票</option></select></div>
+            {expenseInvoiceStatus === "RECEIVED" ? <div className="field"><label>發票號碼（選填）</label><input className="input" value={invoiceNo} onChange={(e) => setInvoiceNo(e.target.value)} placeholder="AB12345678" /></div> : <div />}
+            {expenseInvoiceStatus === "RECEIVED" && <div className="field"><label>發票日期</label><input className="input" type="date" value={invoiceDate} onChange={(e) => setInvoiceDate(e.target.value)} /></div>}
+          </>}
         </div>
         <div className="field"><label>用途 / 摘要</label><input className="input" value={summary} onChange={(e) => setSummary(e.target.value)} placeholder={direction === "INCOME" ? "例如：7 月經銷銷售" : "例如：NeverLand Jersey 第一批製作"} /></div>
-        <div className="field"><label>備註</label><textarea className="textarea" rows={2} value={note} onChange={(e) => setNote(e.target.value)} placeholder="發票號碼、請款資訊、特殊狀況…" /></div>
+        <div className="field"><label>備註</label><textarea className="textarea" rows={2} value={note} onChange={(e) => setNote(e.target.value)} placeholder="請款資訊、特殊狀況、補充說明…" /></div>
         <button className="btn btn-primary" disabled={saving} onClick={createTransaction}>{saving ? "儲存中…" : "新增交易"}</button>
       </div>}
 
@@ -254,9 +309,6 @@ export function FinanceManager({ month, canWrite, transactions, categories, prod
       {preview && <><div className={styles.importStats}><span>總筆數 <strong>{preview.summary.total}</strong></span><span>可匯入 <strong>{preview.summary.READY}</strong></span><span>待確認 <strong>{preview.summary.REVIEW}</strong></span><span>拒絕 <strong>{preview.summary.REJECTED}</strong></span></div><div className="table-wrap"><table><thead><tr><th>來源</th><th>狀態</th><th>日期</th><th>方向</th><th>分類 / 通路</th><th>對象</th><th>用途 / 摘要</th><th>金額</th><th>原因</th></tr></thead><tbody>{preview.rows.slice(0,100).map((row) => <tr key={`${row.sheetName}-${row.rowNumber}`}><td>{row.sheetName} #{row.rowNumber}</td><td><span className="badge">{row.status}</span></td><td>{row.normalized.occurredAt ?? "—"}</td><td>{row.normalized.direction === "INCOME" ? "收入" : row.normalized.direction === "EXPENSE" ? "支出" : "—"}</td><td>{row.normalized.direction === "INCOME" ? row.normalized.salesChannel ?? "—" : row.normalized.categoryCode ?? "—"}</td><td>{row.normalized.counterparty ?? row.normalized.relatedParty ?? "—"}</td><td>{row.normalized.summary ?? "—"}</td><td>{row.normalized.amount ? money(row.normalized.amount) : "—"}</td><td>{row.reason ?? "—"}</td></tr>)}</tbody></table></div></>}
     </section>}
 
-    <section className={styles.transactions}>
-      <div className={styles.sectionHead}><div><span>06 / TRANSACTIONS</span><h2>收支紀錄</h2></div></div>
-      <div className="panel table-panel"><div className="table-wrap"><table><thead><tr><th>日期</th><th>類型</th><th>分類 / 通路</th><th>對象</th><th>用途 / 摘要</th><th>金額</th><th>付款</th><th>對帳</th><th>發票</th><th>來源</th></tr></thead><tbody>{transactions.map((item) => <tr key={item.id}><td className="mono">{item.occurredAt}</td><td><span className={`${styles.direction} ${item.direction === "INCOME" ? styles.income : styles.expense}`}>{item.direction === "INCOME" ? "收入" : "支出"}</span></td><td>{item.direction === "INCOME" ? item.salesChannel ?? item.categoryName ?? "未指定" : [item.categoryParentName, item.categoryName].filter(Boolean).join(" / ") || "未分類"}</td><td>{item.counterparty ?? item.relatedParty ?? "—"}</td><td>{item.summary ?? "—"}</td><td className={item.direction === "INCOME" ? styles.amountIncome : styles.amountExpense}>{item.direction === "INCOME" ? "+" : "-"}{money(item.amount)}</td><td>{paymentLabels[item.paymentStatus] ?? item.paymentStatus}</td><td>{reconcileLabels[item.reconciliationStatus] ?? item.reconciliationStatus}</td><td>{invoiceLabels[item.invoiceStatus] ?? item.invoiceStatus}</td><td>{item.source}</td></tr>)}</tbody></table></div>{!transactions.length && <div className={styles.empty}>這個月份還沒有收支資料。</div>}</div>
-    </section>
+    <FinanceAudit transactions={transactions} canWrite={canWrite} />
   </div>;
 }
