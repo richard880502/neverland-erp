@@ -46,6 +46,7 @@ type Dashboard = {
   topProducts: Array<{ productId: string | null; productName: string; revenue: number; quantity: number }>;
   topCategories: Array<{ name: string; amount: number }>;
   topChannels: Array<{ name: string; amount: number }>;
+  period: { months: number; startMonth: string; endMonth: string };
 };
 type ImportRow = {
   sheetName: string;
@@ -68,12 +69,13 @@ type ImportRow = {
 type ImportPreview = { batchId: string; summary: { total: number; READY: number; REVIEW: number; REJECTED: number }; rows: ImportRow[] };
 
 const salesChannelOptions = ["蝦皮", "官網", "經銷", "親友", "IG", "其他"];
+const periodOptions = [1, 3, 6, 12, 24];
 
 function money(value: number) { return new Intl.NumberFormat("zh-TW", { style: "currency", currency: "TWD", maximumFractionDigits: 0 }).format(value); }
 function today() { return new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Taipei", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date()); }
 function percent(value: number) { return `${new Intl.NumberFormat("zh-TW", { maximumFractionDigits: 1 }).format(value)}%`; }
 
-export function FinanceManager({ month, canWrite, transactions, categories, products, channels, dashboard }: { month: string; canWrite: boolean; transactions: Transaction[]; categories: Category[]; products: Product[]; channels: Channel[]; dashboard: Dashboard }) {
+export function FinanceManager({ month, months, canWrite, transactions, categories, products, channels, dashboard }: { month: string; months: number; canWrite: boolean; transactions: Transaction[]; categories: Category[]; products: Product[]; channels: Channel[]; dashboard: Dashboard }) {
   const router = useRouter();
   const [direction, setDirection] = useState<"INCOME" | "EXPENSE">("INCOME");
   const [occurredAt, setOccurredAt] = useState(today());
@@ -105,6 +107,12 @@ export function FinanceManager({ month, canWrite, transactions, categories, prod
   const topExpenseMax = useMemo(() => Math.max(1, ...dashboard.topCategories.map((item) => item.amount)), [dashboard.topCategories]);
   const topChannelMax = useMemo(() => Math.max(1, ...dashboard.topChannels.map((item) => item.amount)), [dashboard.topChannels]);
   const profitable = dashboard.estimatedNetProfit >= 0;
+  const periodName = months === 1 ? "本月" : `近 ${months} 個月`;
+  const periodSpan = months === 1 ? dashboard.period.endMonth : `${dashboard.period.startMonth} ～ ${dashboard.period.endMonth}`;
+
+  function goToPeriod(nextMonth: string, nextMonths: number) {
+    router.push(`/finance?month=${encodeURIComponent(nextMonth)}&months=${nextMonths}`);
+  }
 
   function changeDirection(next: "INCOME" | "EXPENSE") {
     setDirection(next);
@@ -216,19 +224,20 @@ export function FinanceManager({ month, canWrite, transactions, categories, prod
     <datalist id="finance-parties">{channels.map((channel) => <option value={channel.name} key={channel.id} />)}</datalist>
 
     <div className={styles.toolbar}>
-      <label>月份 <input className="input" type="month" value={month} onChange={(event) => router.push(`/finance?month=${event.target.value}`)} /></label>
+      <label>基準月份 <input className="input" type="month" value={month} onChange={(event) => goToPeriod(event.target.value, months)} /></label>
+      <label>顯示期間 <select className="select" value={months} style={{ minWidth: 120, height: "var(--control-height)" }} onChange={(event) => goToPeriod(month, Number(event.target.value))}>{periodOptions.map((value) => <option value={value} key={value}>{value === 1 ? "1 個月" : `近 ${value} 個月`}</option>)}</select></label>
       <button className="btn btn-secondary" type="button" onClick={() => router.refresh()}><RefreshCw size={14} />重新整理</button>
     </div>
 
     <section className={styles.kpis}>
-      <article><span>本月淨營收</span><strong>{money(dashboard.netRevenue)}</strong><small>NET REVENUE</small></article>
-      <article className={profitable ? styles.profitPositive : styles.profitNegative}><span>估算淨利</span><strong>{profitable ? "+" : ""}{money(dashboard.estimatedNetProfit)}</strong><small>{profitable ? "賺錢" : "賠錢"} · 淨利率 {percent(dashboard.profitMargin)}</small></article>
-      <article><span>淨現金流</span><strong>{money(dashboard.cashFlow)}</strong><small>CASH FLOW</small></article>
-      <article><span>待補支出發票</span><strong>{dashboard.missingExpenseInvoices} 筆</strong><small>EXPENSE RECEIPTS</small></article>
+      <article><span>{periodName}淨營收</span><strong>{money(dashboard.netRevenue)}</strong><small>NET REVENUE</small></article>
+      <article className={profitable ? styles.profitPositive : styles.profitNegative}><span>{periodName}估算淨利</span><strong>{profitable ? "+" : ""}{money(dashboard.estimatedNetProfit)}</strong><small>{profitable ? "賺錢" : "賠錢"} · 淨利率 {percent(dashboard.profitMargin)}</small></article>
+      <article><span>{periodName}淨現金流</span><strong>{money(dashboard.cashFlow)}</strong><small>CASH FLOW</small></article>
+      <article><span>{periodName}待補支出發票</span><strong>{dashboard.missingExpenseInvoices} 筆</strong><small>EXPENSE RECEIPTS</small></article>
     </section>
 
     <section className={`panel ${styles.profitPanel}`}>
-      <div className={styles.sectionHead}><div><span>00 / PROFIT & LOSS</span><h2>本月損益</h2></div><strong className={profitable ? styles.profitTextPositive : styles.profitTextNegative}>{profitable ? "賺錢" : "賠錢"}</strong></div>
+      <div className={styles.sectionHead}><div><span>00 / PROFIT & LOSS</span><h2>{periodName}損益</h2><small>{periodSpan}</small></div><strong className={profitable ? styles.profitTextPositive : styles.profitTextNegative}>{profitable ? "賺錢" : "賠錢"}</strong></div>
       <div className={styles.profitLayout}>
         <div className={styles.profitStatement}>
           <div><span>銷售收入</span><strong>{money(dashboard.grossRevenue)}</strong></div>
@@ -242,7 +251,7 @@ export function FinanceManager({ month, canWrite, transactions, categories, prod
         <div className={styles.profitNotes}>
           <div><span>淨利率</span><strong>{percent(dashboard.profitMargin)}</strong></div>
           <div><span>商品成本覆蓋率</span><strong>{percent(dashboard.costCoverage)}</strong></div>
-          <div><span>本月進貨 / 製作現金支出</span><strong>{money(dashboard.inventorySpend)}</strong></div>
+          <div><span>{periodName}進貨 / 製作現金支出</span><strong>{money(dashboard.inventorySpend)}</strong></div>
           <div><span>未收帳款</span><strong>{money(dashboard.receivable)}</strong></div>
           <p>{dashboard.costCoverage < 95 ? "目前仍有部分銷售沒有對應商品成本，淨利屬估算值；把商品成本補齊後會更準。" : "商品成本資料覆蓋良好；損益會依交易當下的成本快照計算。"}</p>
         </div>
@@ -287,18 +296,18 @@ export function FinanceManager({ month, canWrite, transactions, categories, prod
 
       <div className={`panel ${styles.panel}`}>
         <div className={styles.sectionHead}><div><span>02 / PRODUCT REVENUE</span><h2>商品營收</h2></div></div>
-        <div className={styles.rankList}>{dashboard.topProducts.length ? dashboard.topProducts.map((item, index) => <div key={`${item.productId}-${item.productName}`}><span className={styles.rank}>{String(index + 1).padStart(2,"0")}</span><span className={styles.rankName}>{item.productName}<small>{item.quantity} 件</small></span><span className={styles.bar}><i style={{ width: `${Math.max(4, item.revenue / topRevenueMax * 100)}%` }} /></span><strong>{money(item.revenue)}</strong></div>) : <p className={styles.empty}>這個月份還沒有商品收入資料。</p>}</div>
+        <div className={styles.rankList}>{dashboard.topProducts.length ? dashboard.topProducts.map((item, index) => <div key={`${item.productId}-${item.productName}`}><span className={styles.rank}>{String(index + 1).padStart(2,"0")}</span><span className={styles.rankName}>{item.productName}<small>{item.quantity} 件</small></span><span className={styles.bar}><i style={{ width: `${Math.max(4, item.revenue / topRevenueMax * 100)}%` }} /></span><strong>{money(item.revenue)}</strong></div>) : <p className={styles.empty}>這個區間還沒有商品收入資料。</p>}</div>
       </div>
     </section>
 
     <section className={styles.grid}>
       <div className={`panel ${styles.panel}`}>
         <div className={styles.sectionHead}><div><span>03 / EXPENSE STRUCTURE</span><h2>支出結構</h2></div></div>
-        <div className={styles.rankList}>{dashboard.topCategories.length ? dashboard.topCategories.map((item, index) => <div key={item.name}><span className={styles.rank}>{String(index + 1).padStart(2,"0")}</span><span className={styles.rankName}>{item.name}</span><span className={styles.bar}><i style={{ width: `${Math.max(4, item.amount / topExpenseMax * 100)}%` }} /></span><strong>{money(item.amount)}</strong></div>) : <p className={styles.empty}>這個月份還沒有支出資料。</p>}</div>
+        <div className={styles.rankList}>{dashboard.topCategories.length ? dashboard.topCategories.map((item, index) => <div key={item.name}><span className={styles.rank}>{String(index + 1).padStart(2,"0")}</span><span className={styles.rankName}>{item.name}</span><span className={styles.bar}><i style={{ width: `${Math.max(4, item.amount / topExpenseMax * 100)}%` }} /></span><strong>{money(item.amount)}</strong></div>) : <p className={styles.empty}>這個區間還沒有支出資料。</p>}</div>
       </div>
       <div className={`panel ${styles.panel}`}>
         <div className={styles.sectionHead}><div><span>04 / SALES CHANNELS</span><h2>收入通路</h2></div></div>
-        <div className={styles.rankList}>{dashboard.topChannels.length ? dashboard.topChannels.map((item, index) => <div key={item.name}><span className={styles.rank}>{String(index + 1).padStart(2,"0")}</span><span className={styles.rankName}>{item.name}</span><span className={styles.bar}><i style={{ width: `${Math.max(4, item.amount / topChannelMax * 100)}%` }} /></span><strong>{money(item.amount)}</strong></div>) : <p className={styles.empty}>這個月份還沒有收入通路資料。</p>}</div>
+        <div className={styles.rankList}>{dashboard.topChannels.length ? dashboard.topChannels.map((item, index) => <div key={item.name}><span className={styles.rank}>{String(index + 1).padStart(2,"0")}</span><span className={styles.rankName}>{item.name}</span><span className={styles.bar}><i style={{ width: `${Math.max(4, item.amount / topChannelMax * 100)}%` }} /></span><strong>{money(item.amount)}</strong></div>) : <p className={styles.empty}>這個區間還沒有收入通路資料。</p>}</div>
       </div>
     </section>
 
