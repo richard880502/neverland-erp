@@ -27,7 +27,16 @@ export async function POST(request: Request) {
     const auth = await requireApiUser({ roles: ["ADMIN", "STAFF"] });
     const parsed = financeCreateSchema.safeParse(await request.json().catch(() => null));
     if (!parsed.success) return NextResponse.json({ error: "請檢查日期、收入/支出、金額與商品明細" }, { status: 400 });
-    const result = await createFinanceTransaction(parsed.data, { userId: auth.user.id, role: auth.user.role, ipAddress: clientIp(request) });
+
+    const input = parsed.data;
+    const isSalesReturn = input.direction === "INCOME"
+      && input.paymentStatus === "REFUNDED"
+      && input.sourceRef?.startsWith("RETURN:");
+    if (isSalesReturn && (!input.items.length || input.items.some((item) => !item.productId))) {
+      return NextResponse.json({ error: "銷貨退回必須選擇退回商品" }, { status: 400 });
+    }
+
+    const result = await createFinanceTransaction(input, { userId: auth.user.id, role: auth.user.role, ipAddress: clientIp(request) });
     return NextResponse.json(result, { status: 201 });
   } catch (error) {
     const authError = authErrorResponse(error);
