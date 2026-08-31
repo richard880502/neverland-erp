@@ -97,6 +97,7 @@ export function FinanceManager({ period, periodLabel, startDate, endDate, canWri
 }) {
   const router = useRouter();
   const [direction, setDirection] = useState<"INCOME" | "EXPENSE">("INCOME");
+  const [isReturn, setIsReturn] = useState(false);
   const [occurredAt, setOccurredAt] = useState(today());
   const [amount, setAmount] = useState("");
   const [parentCategoryId, setParentCategoryId] = useState("");
@@ -122,9 +123,9 @@ export function FinanceManager({ period, periodLabel, startDate, endDate, canWri
   const selectedProduct = products.find((product) => product.id === productId) ?? null;
   const readyRows = preview?.rows.filter((row) => row.status === "READY") ?? [];
 
-  const topRevenueMax = useMemo(() => Math.max(1, ...dashboard.topProducts.map((item) => item.revenue)), [dashboard.topProducts]);
+  const topRevenueMax = useMemo(() => Math.max(1, ...dashboard.topProducts.map((item) => Math.max(0, item.revenue))), [dashboard.topProducts]);
   const topExpenseMax = useMemo(() => Math.max(1, ...dashboard.topCategories.map((item) => item.amount)), [dashboard.topCategories]);
-  const topChannelMax = useMemo(() => Math.max(1, ...dashboard.topChannels.map((item) => item.amount)), [dashboard.topChannels]);
+  const topChannelMax = useMemo(() => Math.max(1, ...dashboard.topChannels.map((item) => Math.max(0, item.amount))), [dashboard.topChannels]);
   const profitable = dashboard.estimatedNetProfit >= 0;
   const periodSpan = `${startDate} ～ ${endDate}`;
 
@@ -146,13 +147,16 @@ export function FinanceManager({ period, periodLabel, startDate, endDate, canWri
     router.push(`/finance?period=custom&start=${encodeURIComponent(nextStart)}&end=${encodeURIComponent(nextEnd)}`);
   }
 
-  function changeDirection(next: "INCOME" | "EXPENSE") {
+  function changeDirection(next: "INCOME" | "EXPENSE", returnMode = false) {
     setDirection(next);
+    setIsReturn(next === "INCOME" && returnMode);
     setParentCategoryId("");
     setCategoryId("");
     setCounterparty("");
     setRelatedParty("");
     setSummary("");
+    setProductId("");
+    setQuantity("1");
     setExpenseInvoiceStatus("MISSING");
     setInvoiceNo("");
     setInvoiceDate(occurredAt || today());
@@ -167,7 +171,8 @@ export function FinanceManager({ period, periodLabel, startDate, endDate, canWri
   async function createTransaction() {
     const numericAmount = Number(amount);
     if (!numericAmount || numericAmount <= 0) return setMessage("請輸入有效金額");
-    if (direction === "INCOME" && !salesChannel.trim()) return setMessage("請選擇或輸入收入通路");
+    if (direction === "INCOME" && !salesChannel.trim()) return setMessage(isReturn ? "請選擇退回來源通路" : "請選擇或輸入收入通路");
+    if (isReturn && !selectedProduct) return setMessage("銷貨退回必須選擇退回商品");
     if (direction === "EXPENSE" && !categoryId) return setMessage("請選擇支出大類與細項");
 
     const autoIncomeCategory = direction === "INCOME"
@@ -195,9 +200,9 @@ export function FinanceManager({ period, periodLabel, startDate, endDate, canWri
         salesChannel: direction === "INCOME" ? salesChannel || null : null,
         counterparty: counterparty || null,
         relatedParty: direction === "EXPENSE" ? relatedParty || null : null,
-        summary: summary || null,
+        summary: summary || (isReturn && selectedProduct ? `${selectedProduct.name}${selectedProduct.size ? ` ${selectedProduct.size}` : ""} 銷貨退回` : null),
         note: note || null,
-        paymentStatus: "PAID",
+        paymentStatus: isReturn ? "REFUNDED" : "PAID",
         reconciliationStatus: "UNMATCHED",
         invoiceStatus,
         invoice: direction === "EXPENSE" && expenseInvoiceStatus === "RECEIVED" ? {
@@ -206,6 +211,7 @@ export function FinanceManager({ period, periodLabel, startDate, endDate, canWri
           grossAmount: numericAmount,
         } : null,
         source: "MANUAL",
+        sourceRef: isReturn ? "RETURN:MANUAL" : null,
         items: item,
       }),
     });
@@ -221,7 +227,7 @@ export function FinanceManager({ period, periodLabel, startDate, endDate, canWri
     setQuantity("1");
     setExpenseInvoiceStatus("MISSING");
     setInvoiceNo("");
-    setMessage("已新增收支紀錄");
+    setMessage(isReturn ? "已新增銷貨退回紀錄" : "已新增收支紀錄");
     router.refresh();
   }
 
@@ -278,7 +284,7 @@ export function FinanceManager({ period, periodLabel, startDate, endDate, canWri
       <div className={styles.profitLayout}>
         <div className={styles.profitStatement}>
           <div><span>銷售收入</span><strong>{money(dashboard.grossRevenue)}</strong></div>
-          <div><span>退款 / 已退款收入</span><strong>-{money(dashboard.refunds)}</strong></div>
+          <div><span>退款 / 銷貨退回</span><strong>-{money(dashboard.refunds)}</strong></div>
           <div className={styles.profitSubtotal}><span>淨營收</span><strong>{money(dashboard.netRevenue)}</strong></div>
           <div><span>已售商品成本 COGS</span><strong>-{money(dashboard.cogs)}</strong></div>
           <div className={styles.profitSubtotal}><span>毛利</span><strong>{money(dashboard.grossProfit)}</strong></div>
@@ -299,17 +305,18 @@ export function FinanceManager({ period, periodLabel, startDate, endDate, canWri
       {canWrite && <div className={`panel ${styles.panel}`}>
         <div className={styles.sectionHead}><div><span>01 / QUICK ENTRY</span><h2>快速記帳</h2></div><Plus size={17} /></div>
         <div className={styles.segmented}>
-          <button type="button" className={direction === "INCOME" ? styles.active : ""} onClick={() => changeDirection("INCOME")}>收入</button>
+          <button type="button" className={direction === "INCOME" && !isReturn ? styles.active : ""} onClick={() => changeDirection("INCOME")}>收入</button>
+          <button type="button" className={direction === "INCOME" && isReturn ? styles.active : ""} onClick={() => changeDirection("INCOME", true)}>銷貨退回</button>
           <button type="button" className={direction === "EXPENSE" ? styles.active : ""} onClick={() => changeDirection("EXPENSE")}>支出</button>
         </div>
         {message && <p className={styles.formMessage}>{message}</p>}
         <div className={styles.formGrid}>
-          <div className="field"><label>日期</label><input className="input" type="date" value={occurredAt} onChange={(e) => { setOccurredAt(e.target.value); if (!invoiceDate) setInvoiceDate(e.target.value); }} /></div>
-          <div className="field"><label>金額</label><input className="input" type="number" min="0" value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="NT$" /></div>
+          <div className="field"><label>{isReturn ? "退貨 / 退款日期" : "日期"}</label><input className="input" type="date" value={occurredAt} onChange={(e) => { setOccurredAt(e.target.value); if (!invoiceDate) setInvoiceDate(e.target.value); }} /></div>
+          <div className="field"><label>{isReturn ? "退款金額" : "金額"}</label><input className="input" type="number" min="0" value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="NT$" /></div>
 
           {direction === "INCOME" ? <>
-            <div className="field"><label>收入通路</label><input className="input" list="finance-sales-channels" value={salesChannel} onChange={(e) => setSalesChannel(e.target.value)} placeholder="蝦皮 / 官網 / 經銷 / 親友…" /></div>
-            <div className="field"><label>客戶 / 店家（選填）</label><input className="input" list="finance-parties" value={counterparty} onChange={(e) => setCounterparty(e.target.value)} placeholder="Chambers / Simon / 客戶名稱…" /></div>
+            <div className="field"><label>{isReturn ? "退回來源通路" : "收入通路"}</label><input className="input" list="finance-sales-channels" value={salesChannel} onChange={(e) => setSalesChannel(e.target.value)} placeholder="蝦皮 / 官網 / 經銷 / 親友…" /></div>
+            <div className="field"><label>{isReturn ? "退貨客戶 / 店家（選填）" : "客戶 / 店家（選填）"}</label><input className="input" list="finance-parties" value={counterparty} onChange={(e) => setCounterparty(e.target.value)} placeholder="Chambers / Simon / 客戶名稱…" /></div>
           </> : <>
             <div className="field"><label>支出大類</label><select className="select" value={parentCategoryId} onChange={(e) => changeExpenseParent(e.target.value)}><option value="">選擇大類</option>{expenseParents.map((category) => <option key={category.id} value={category.id}>{category.name}</option>)}</select></div>
             <div className="field"><label>支出細項</label><select className="select" value={categoryId} onChange={(e) => setCategoryId(e.target.value)} disabled={!parentCategoryId}><option value="">選擇細項</option>{expenseChildren.map((category) => <option key={category.id} value={category.id}>{category.name}</option>)}</select></div>
@@ -317,8 +324,8 @@ export function FinanceManager({ period, periodLabel, startDate, endDate, canWri
             <div className="field"><label>關聯店家 / 對象（選填）</label><input className="input" list="finance-parties" value={relatedParty} onChange={(e) => setRelatedParty(e.target.value)} placeholder="Simon / Chambers / 公關對象…" /></div>
           </>}
 
-          <div className="field"><label>關聯商品（選填）</label><select className="select" value={productId} onChange={(e) => setProductId(e.target.value)}><option value="">不指定商品</option>{products.map((p) => <option key={p.id} value={p.id}>{p.sku} · {p.name}{p.size ? ` · ${p.size}` : ""}</option>)}</select></div>
-          <div className="field"><label>數量</label><input className="input" type="number" min="1" value={quantity} onChange={(e) => setQuantity(e.target.value)} disabled={!productId} /></div>
+          <div className="field"><label>{isReturn ? "退回商品（必填）" : "關聯商品（選填）"}</label><select className="select" value={productId} onChange={(e) => setProductId(e.target.value)}><option value="">{isReturn ? "選擇退回商品" : "不指定商品"}</option>{products.map((p) => <option key={p.id} value={p.id}>{p.sku} · {p.name}{p.size ? ` · ${p.size}` : ""}</option>)}</select></div>
+          <div className="field"><label>{isReturn ? "退回數量" : "數量"}</label><input className="input" type="number" min="1" value={quantity} onChange={(e) => setQuantity(e.target.value)} disabled={!productId} /></div>
 
           {direction === "EXPENSE" && <>
             <div className="field"><label>發票 / 憑證</label><select className="select" value={expenseInvoiceStatus} onChange={(e) => setExpenseInvoiceStatus(e.target.value as "MISSING" | "RECEIVED" | "NOT_REQUIRED")}><option value="MISSING">待補發票</option><option value="RECEIVED">已取得</option><option value="NOT_REQUIRED">不需發票</option></select></div>
@@ -326,14 +333,14 @@ export function FinanceManager({ period, periodLabel, startDate, endDate, canWri
             {expenseInvoiceStatus === "RECEIVED" && <div className="field"><label>發票日期</label><input className="input" type="date" value={invoiceDate} onChange={(e) => setInvoiceDate(e.target.value)} /></div>}
           </>}
         </div>
-        <div className="field"><label>用途 / 摘要</label><input className="input" value={summary} onChange={(e) => setSummary(e.target.value)} placeholder={direction === "INCOME" ? "例如：7 月經銷銷售" : "例如：NeverLand Jersey 第一批製作"} /></div>
-        <div className="field"><label>備註</label><textarea className="textarea" rows={2} value={note} onChange={(e) => setNote(e.target.value)} placeholder="請款資訊、特殊狀況、補充說明…" /></div>
-        <button className="btn btn-primary" disabled={saving} onClick={createTransaction}>{saving ? "儲存中…" : "新增交易"}</button>
+        <div className="field"><label>用途 / 摘要</label><input className="input" value={summary} onChange={(e) => setSummary(e.target.value)} placeholder={isReturn ? "例如：8 月官網退貨 / 尺寸不合" : direction === "INCOME" ? "例如：7 月經銷銷售" : "例如：NeverLand Jersey 第一批製作"} /></div>
+        <div className="field"><label>備註</label><textarea className="textarea" rows={2} value={note} onChange={(e) => setNote(e.target.value)} placeholder={isReturn ? "原訂單、退款方式、退貨原因…" : "請款資訊、特殊狀況、補充說明…"} /></div>
+        <button className="btn btn-primary" disabled={saving} onClick={createTransaction}>{saving ? "儲存中…" : isReturn ? "新增銷貨退回" : "新增交易"}</button>
       </div>}
 
       <div className={`panel ${styles.panel}`}>
         <div className={styles.sectionHead}><div><span>02 / PRODUCT REVENUE</span><h2>商品營收</h2></div></div>
-        <div className={styles.rankList}>{dashboard.topProducts.length ? dashboard.topProducts.map((item, index) => <div key={`${item.productId}-${item.productName}`}><span className={styles.rank}>{String(index + 1).padStart(2,"0")}</span><span className={styles.rankName}>{item.productName}<small>{item.quantity} 件</small></span><span className={styles.bar}><i style={{ width: `${Math.max(4, item.revenue / topRevenueMax * 100)}%` }} /></span><strong>{money(item.revenue)}</strong></div>) : <p className={styles.empty}>這個區間還沒有商品收入資料。</p>}</div>
+        <div className={styles.rankList}>{dashboard.topProducts.length ? dashboard.topProducts.map((item, index) => <div key={`${item.productId}-${item.productName}`}><span className={styles.rank}>{String(index + 1).padStart(2,"0")}</span><span className={styles.rankName}>{item.productName}<small>{item.quantity} 件</small></span><span className={styles.bar}><i style={{ width: `${Math.max(4, Math.max(0, item.revenue) / topRevenueMax * 100)}%` }} /></span><strong>{money(item.revenue)}</strong></div>) : <p className={styles.empty}>這個區間還沒有商品收入資料。</p>}</div>
       </div>
     </section>
 
@@ -344,7 +351,7 @@ export function FinanceManager({ period, periodLabel, startDate, endDate, canWri
       </div>
       <div className={`panel ${styles.panel}`}>
         <div className={styles.sectionHead}><div><span>04 / SALES CHANNELS</span><h2>收入通路</h2></div></div>
-        <div className={styles.rankList}>{dashboard.topChannels.length ? dashboard.topChannels.map((item, index) => <div key={item.name}><span className={styles.rank}>{String(index + 1).padStart(2,"0")}</span><span className={styles.rankName}>{item.name}</span><span className={styles.bar}><i style={{ width: `${Math.max(4, item.amount / topChannelMax * 100)}%` }} /></span><strong>{money(item.amount)}</strong></div>) : <p className={styles.empty}>這個區間還沒有收入通路資料。</p>}</div>
+        <div className={styles.rankList}>{dashboard.topChannels.length ? dashboard.topChannels.map((item, index) => <div key={item.name}><span className={styles.rank}>{String(index + 1).padStart(2,"0")}</span><span className={styles.rankName}>{item.name}</span><span className={styles.bar}><i style={{ width: `${Math.max(4, Math.max(0, item.amount) / topChannelMax * 100)}%` }} /></span><strong>{money(item.amount)}</strong></div>) : <p className={styles.empty}>這個區間還沒有收入通路資料。</p>}</div>
       </div>
     </section>
 
