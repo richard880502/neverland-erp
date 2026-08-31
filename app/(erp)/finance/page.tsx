@@ -1,9 +1,11 @@
 import { getCurrentUser } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { FinanceManager } from "@/components/FinanceManager";
+import { FinanceOverview } from "@/components/FinanceOverview";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { listFinanceCategories, listFinanceTransactions } from "@/lib/services/finance";
 import { getFinanceDashboardByDates } from "@/lib/services/finance-range";
+import workspaceStyles from "@/app/(erp)/finance/finance-workspace.module.css";
 
 const datePattern = /^\d{4}-\d{2}-\d{2}$/;
 const periodLabels = {
@@ -88,34 +90,44 @@ export default async function FinancePage({ searchParams }: { searchParams: Prom
 
   return <>
     <PageHeader eyebrow="Finance" title="財務工作台" description={periodDescription} />
-    <FinanceManager
+    <FinanceOverview
+      key={`${period.preset}-${period.startDate}-${period.endDate}`}
       period={period.preset}
       periodLabel={period.label}
       startDate={period.startDate}
       endDate={period.endDate}
-      canWrite={user?.role !== "VIEWER"}
       dashboard={dashboard}
-      categories={categories}
-      products={products}
-      channels={channels}
-      transactions={transactions.map((item) => ({
-        id: item.id,
-        occurredAt: date(item.occurredAt),
-        direction: item.direction,
-        amount: Number(item.amount),
-        categoryName: item.categoryName,
-        categoryParentName: item.categoryParentName,
-        counterparty: item.counterparty,
-        relatedParty: item.relatedParty,
-        salesChannel: item.salesChannel,
-        summary: item.summary,
-        paymentStatus: item.paymentStatus,
-        reconciliationStatus: item.reconciliationStatus,
-        invoiceStatus: item.invoiceStatus,
-        invoiceNo: item.invoiceNo,
-        productNames: item.productNames,
-        source: item.source,
-      }))}
     />
+    <div className={workspaceStyles.managerShell}>
+      <FinanceManager
+        period={period.preset}
+        periodLabel={period.label}
+        startDate={period.startDate}
+        endDate={period.endDate}
+        canWrite={user?.role !== "VIEWER"}
+        dashboard={dashboard}
+        categories={categories}
+        products={products}
+        channels={channels}
+        transactions={transactions.map((item) => ({
+          id: item.id,
+          occurredAt: date(item.occurredAt),
+          direction: item.direction,
+          amount: Number(item.amount),
+          categoryName: item.categoryName,
+          categoryParentName: item.categoryParentName,
+          counterparty: item.counterparty,
+          relatedParty: item.relatedParty,
+          salesChannel: item.salesChannel,
+          summary: item.summary,
+          paymentStatus: item.paymentStatus,
+          reconciliationStatus: item.reconciliationStatus,
+          invoiceStatus: item.invoiceStatus,
+          invoiceNo: item.invoiceNo,
+          productNames: item.productNames,
+          source: item.source,
+        }))}
+      />
+    </div>
   </>;
 }
