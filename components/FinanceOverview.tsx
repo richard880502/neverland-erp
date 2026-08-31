@@ -78,6 +78,11 @@ export function FinanceOverview({ period, periodLabel, startDate, endDate, dashb
   const span = maxPositive - minNegative || 1;
   const zeroTop = maxPositive === 0 && minNegative === 0 ? 100 : maxPositive / span * 100;
   const compact = dashboard.trend.length > 12;
+  const metricToneClass = metric === "netRevenue"
+    ? styles.revenueMetric
+    : metric === "grossProfit"
+      ? styles.grossProfitMetric
+      : styles.netProfitMetric;
   const chartStyle = { "--zero-top": `${zeroTop}%`, minWidth: `${Math.max(680, dashboard.trend.length * 68)}px` } as CSSProperties;
 
   function goToPreset(nextPeriod: string) {
@@ -124,7 +129,7 @@ export function FinanceOverview({ period, periodLabel, startDate, endDate, dashb
       <article><span>{periodLabel}待補支出發票</span><strong>{dashboard.missingExpenseInvoices} 筆</strong><small>EXPENSE RECEIPTS</small></article>
     </section>
 
-    <section className={styles.trendPanel}>
+    <section className={`${styles.trendPanel} ${metricToneClass}`}>
       <div className={styles.trendHead}>
         <div>
           <span>FINANCIAL TREND</span>
