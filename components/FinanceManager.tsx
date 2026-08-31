@@ -77,7 +77,6 @@ const periodOptions = [
   ["24m", "近 24 個月"],
   ["this-year", "今年"],
   ["last-year", "去年"],
-  ["custom", "自訂區間"],
 ] as const;
 
 function money(value: number) { return new Intl.NumberFormat("zh-TW", { style: "currency", currency: "TWD", maximumFractionDigits: 0 }).format(value); }
@@ -130,11 +129,11 @@ export function FinanceManager({ period, periodLabel, startDate, endDate, canWri
   const periodSpan = `${startDate} ～ ${endDate}`;
 
   function goToPreset(nextPeriod: string) {
-    if (nextPeriod === "custom") {
-      router.push(`/finance?period=custom&start=${encodeURIComponent(startDate)}&end=${encodeURIComponent(endDate)}`);
-      return;
-    }
     router.push(`/finance?period=${encodeURIComponent(nextPeriod)}`);
+  }
+
+  function openCustomRange() {
+    router.push(`/finance?period=custom&start=${encodeURIComponent(startDate)}&end=${encodeURIComponent(endDate)}`);
   }
 
   function applyCustomRange(event: React.FormEvent<HTMLFormElement>) {
@@ -257,7 +256,8 @@ export function FinanceManager({ period, periodLabel, startDate, endDate, canWri
     <datalist id="finance-parties">{channels.map((channel) => <option value={channel.name} key={channel.id} />)}</datalist>
 
     <form className={styles.toolbar} key={`${period}-${startDate}-${endDate}`} onSubmit={applyCustomRange}>
-      <label>統計期間 <select className="select" value={period} onChange={(event) => goToPreset(event.target.value)}>{periodOptions.map(([value, label]) => <option value={value} key={value}>{label}</option>)}</select></label>
+      <label>統計期間 <select className="select" value={period === "custom" ? "" : period} onChange={(event) => goToPreset(event.target.value)}><option value="" disabled>快捷區間</option>{periodOptions.map(([value, label]) => <option value={value} key={value}>{label}</option>)}</select></label>
+      <button className={period === "custom" ? "btn btn-primary" : "btn btn-secondary"} type="button" onClick={openCustomRange}>自訂區間</button>
       {period === "custom" && <>
         <label>開始日期 <input className="input" name="start" type="date" defaultValue={startDate} /></label>
         <label>結束日期 <input className="input" name="end" type="date" defaultValue={endDate} /></label>
