@@ -1,6 +1,8 @@
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 
+const datePattern = /^\d{4}-\d{2}-\d{2}$/;
+
 function monthIndex(month: string) {
   const match = month.match(/^(\d{4})-(\d{2})$/);
   if (!match) throw new Error("月份格式錯誤");
@@ -14,6 +16,19 @@ function monthFromIndex(index: number) {
   const year = Math.floor(index / 12);
   const mon = index % 12 + 1;
   return `${year}-${String(mon).padStart(2, "0")}`;
+}
+
+function validateDate(value: string) {
+  if (!datePattern.test(value)) throw new Error("日期格式錯誤");
+  const parsed = new Date(`${value}T00:00:00+08:00`);
+  if (Number.isNaN(parsed.getTime())) throw new Error("日期格式錯誤");
+  return parsed;
+}
+
+function nextTaipeiDate(value: string) {
+  const date = validateDate(value);
+  date.setUTCDate(date.getUTCDate() + 1);
+  return date;
 }
 
 export function financePeriodRange(endMonth: string, months: number) {
@@ -32,9 +47,11 @@ export function financePeriodRange(endMonth: string, months: number) {
   };
 }
 
-export async function getFinanceDashboardRange(endMonth: string, months = 3) {
-  const range = financePeriodRange(endMonth, months);
-  const { start, end } = range;
+export async function getFinanceDashboardByDates(startDate: string, endDate: string) {
+  const start = validateDate(startDate);
+  const inclusiveEnd = validateDate(endDate);
+  if (start > inclusiveEnd) throw new Error("開始日期不能晚於結束日期");
+  const end = nextTaipeiDate(endDate);
 
   const [totals, expenseSplit, cogsRows, topProducts, topCategories, topChannels] = await Promise.all([
     prisma.$queryRaw<Array<{
@@ -134,10 +151,13 @@ export async function getFinanceDashboardRange(endMonth: string, months = 3) {
     topProducts: topProducts.map((item) => ({ ...item, revenue: Number(item.revenue), quantity: Number(item.quantity) })),
     topCategories: topCategories.map((item) => ({ ...item, amount: Number(item.amount) })),
     topChannels: topChannels.map((item) => ({ ...item, amount: Number(item.amount) })),
-    period: {
-      months: range.months,
-      startMonth: range.startMonth,
-      endMonth: range.endMonth,
-    },
+    period: { startDate, endDate },
   };
+}
+
+export async function getFinanceDashboardRange(endMonth: string, months = 3) {
+  const range = financePeriodRange(endMonth, months);
+  const endDate = new Date(range.end.getTime() - 1);
+  const endDay = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Taipei", year: "numeric", month: "2-digit", day: "2-digit" }).format(endDate);
+  return getFinanceDashboardByDates(range.startDate, endDay);
 }
