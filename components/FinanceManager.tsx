@@ -46,7 +46,6 @@ type Dashboard = {
   topProducts: Array<{ productId: string | null; productName: string; revenue: number; quantity: number }>;
   topCategories: Array<{ name: string; amount: number }>;
   topChannels: Array<{ name: string; amount: number }>;
-  period: { months: number; startMonth: string; endMonth: string };
 };
 type ImportRow = {
   sheetName: string;
@@ -69,13 +68,34 @@ type ImportRow = {
 type ImportPreview = { batchId: string; summary: { total: number; READY: number; REVIEW: number; REJECTED: number }; rows: ImportRow[] };
 
 const salesChannelOptions = ["蝦皮", "官網", "經銷", "親友", "IG", "其他"];
-const periodOptions = [1, 3, 6, 12, 24];
+const periodOptions = [
+  ["this-month", "本月"],
+  ["last-month", "上個月"],
+  ["3m", "近 3 個月"],
+  ["6m", "近 6 個月"],
+  ["12m", "近 12 個月"],
+  ["24m", "近 24 個月"],
+  ["this-year", "今年"],
+  ["last-year", "去年"],
+  ["custom", "自訂區間"],
+] as const;
 
 function money(value: number) { return new Intl.NumberFormat("zh-TW", { style: "currency", currency: "TWD", maximumFractionDigits: 0 }).format(value); }
 function today() { return new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Taipei", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date()); }
 function percent(value: number) { return `${new Intl.NumberFormat("zh-TW", { maximumFractionDigits: 1 }).format(value)}%`; }
 
-export function FinanceManager({ month, months, canWrite, transactions, categories, products, channels, dashboard }: { month: string; months: number; canWrite: boolean; transactions: Transaction[]; categories: Category[]; products: Product[]; channels: Channel[]; dashboard: Dashboard }) {
+export function FinanceManager({ period, periodLabel, startDate, endDate, canWrite, transactions, categories, products, channels, dashboard }: {
+  period: string;
+  periodLabel: string;
+  startDate: string;
+  endDate: string;
+  canWrite: boolean;
+  transactions: Transaction[];
+  categories: Category[];
+  products: Product[];
+  channels: Channel[];
+  dashboard: Dashboard;
+}) {
   const router = useRouter();
   const [direction, setDirection] = useState<"INCOME" | "EXPENSE">("INCOME");
   const [occurredAt, setOccurredAt] = useState(today());
@@ -107,11 +127,24 @@ export function FinanceManager({ month, months, canWrite, transactions, categori
   const topExpenseMax = useMemo(() => Math.max(1, ...dashboard.topCategories.map((item) => item.amount)), [dashboard.topCategories]);
   const topChannelMax = useMemo(() => Math.max(1, ...dashboard.topChannels.map((item) => item.amount)), [dashboard.topChannels]);
   const profitable = dashboard.estimatedNetProfit >= 0;
-  const periodName = months === 1 ? "本月" : `近 ${months} 個月`;
-  const periodSpan = months === 1 ? dashboard.period.endMonth : `${dashboard.period.startMonth} ～ ${dashboard.period.endMonth}`;
+  const periodSpan = `${startDate} ～ ${endDate}`;
 
-  function goToPeriod(nextMonth: string, nextMonths: number) {
-    router.push(`/finance?month=${encodeURIComponent(nextMonth)}&months=${nextMonths}`);
+  function goToPreset(nextPeriod: string) {
+    if (nextPeriod === "custom") {
+      router.push(`/finance?period=custom&start=${encodeURIComponent(startDate)}&end=${encodeURIComponent(endDate)}`);
+      return;
+    }
+    router.push(`/finance?period=${encodeURIComponent(nextPeriod)}`);
+  }
+
+  function applyCustomRange(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const form = new FormData(event.currentTarget);
+    const nextStart = String(form.get("start") ?? "");
+    const nextEnd = String(form.get("end") ?? "");
+    if (!nextStart || !nextEnd) return alert("請選擇開始與結束日期");
+    if (nextStart > nextEnd) return alert("開始日期不能晚於結束日期");
+    router.push(`/finance?period=custom&start=${encodeURIComponent(nextStart)}&end=${encodeURIComponent(nextEnd)}`);
   }
 
   function changeDirection(next: "INCOME" | "EXPENSE") {
@@ -223,21 +256,25 @@ export function FinanceManager({ month, months, canWrite, transactions, categori
     <datalist id="finance-sales-channels">{salesChannelOptions.map((name) => <option value={name} key={name} />)}</datalist>
     <datalist id="finance-parties">{channels.map((channel) => <option value={channel.name} key={channel.id} />)}</datalist>
 
-    <div className={styles.toolbar}>
-      <label>基準月份 <input className="input" type="month" value={month} onChange={(event) => goToPeriod(event.target.value, months)} /></label>
-      <label>顯示期間 <select className="select" value={months} style={{ minWidth: 120, height: "var(--control-height)" }} onChange={(event) => goToPeriod(month, Number(event.target.value))}>{periodOptions.map((value) => <option value={value} key={value}>{value === 1 ? "1 個月" : `近 ${value} 個月`}</option>)}</select></label>
+    <form className={styles.toolbar} key={`${period}-${startDate}-${endDate}`} onSubmit={applyCustomRange}>
+      <label>統計期間 <select className="select" value={period} onChange={(event) => goToPreset(event.target.value)}>{periodOptions.map(([value, label]) => <option value={value} key={value}>{label}</option>)}</select></label>
+      {period === "custom" && <>
+        <label>開始日期 <input className="input" name="start" type="date" defaultValue={startDate} /></label>
+        <label>結束日期 <input className="input" name="end" type="date" defaultValue={endDate} /></label>
+        <button className="btn btn-primary" type="submit">套用</button>
+      </>}
       <button className="btn btn-secondary" type="button" onClick={() => router.refresh()}><RefreshCw size={14} />重新整理</button>
-    </div>
+    </form>
 
     <section className={styles.kpis}>
-      <article><span>{periodName}淨營收</span><strong>{money(dashboard.netRevenue)}</strong><small>NET REVENUE</small></article>
-      <article className={profitable ? styles.profitPositive : styles.profitNegative}><span>{periodName}估算淨利</span><strong>{profitable ? "+" : ""}{money(dashboard.estimatedNetProfit)}</strong><small>{profitable ? "賺錢" : "賠錢"} · 淨利率 {percent(dashboard.profitMargin)}</small></article>
-      <article><span>{periodName}淨現金流</span><strong>{money(dashboard.cashFlow)}</strong><small>CASH FLOW</small></article>
-      <article><span>{periodName}待補支出發票</span><strong>{dashboard.missingExpenseInvoices} 筆</strong><small>EXPENSE RECEIPTS</small></article>
+      <article><span>{periodLabel}淨營收</span><strong>{money(dashboard.netRevenue)}</strong><small>NET REVENUE</small></article>
+      <article className={profitable ? styles.profitPositive : styles.profitNegative}><span>{periodLabel}估算淨利</span><strong>{profitable ? "+" : ""}{money(dashboard.estimatedNetProfit)}</strong><small>{profitable ? "賺錢" : "賠錢"} · 淨利率 {percent(dashboard.profitMargin)}</small></article>
+      <article><span>{periodLabel}淨現金流</span><strong>{money(dashboard.cashFlow)}</strong><small>CASH FLOW</small></article>
+      <article><span>{periodLabel}待補支出發票</span><strong>{dashboard.missingExpenseInvoices} 筆</strong><small>EXPENSE RECEIPTS</small></article>
     </section>
 
     <section className={`panel ${styles.profitPanel}`}>
-      <div className={styles.sectionHead}><div><span>00 / PROFIT & LOSS</span><h2>{periodName}損益</h2><small>{periodSpan}</small></div><strong className={profitable ? styles.profitTextPositive : styles.profitTextNegative}>{profitable ? "賺錢" : "賠錢"}</strong></div>
+      <div className={styles.sectionHead}><div><span>00 / PROFIT & LOSS</span><h2>{periodLabel}損益</h2><small>{periodSpan}</small></div><strong className={profitable ? styles.profitTextPositive : styles.profitTextNegative}>{profitable ? "賺錢" : "賠錢"}</strong></div>
       <div className={styles.profitLayout}>
         <div className={styles.profitStatement}>
           <div><span>銷售收入</span><strong>{money(dashboard.grossRevenue)}</strong></div>
@@ -251,7 +288,7 @@ export function FinanceManager({ month, months, canWrite, transactions, categori
         <div className={styles.profitNotes}>
           <div><span>淨利率</span><strong>{percent(dashboard.profitMargin)}</strong></div>
           <div><span>商品成本覆蓋率</span><strong>{percent(dashboard.costCoverage)}</strong></div>
-          <div><span>{periodName}進貨 / 製作現金支出</span><strong>{money(dashboard.inventorySpend)}</strong></div>
+          <div><span>{periodLabel}進貨 / 製作現金支出</span><strong>{money(dashboard.inventorySpend)}</strong></div>
           <div><span>未收帳款</span><strong>{money(dashboard.receivable)}</strong></div>
           <p>{dashboard.costCoverage < 95 ? "目前仍有部分銷售沒有對應商品成本，淨利屬估算值；把商品成本補齊後會更準。" : "商品成本資料覆蓋良好；損益會依交易當下的成本快照計算。"}</p>
         </div>
