@@ -86,16 +86,25 @@ export async function getFinanceDashboardByDates(startDate: string, endDate: str
       missingExpenseInvoices: bigint;
     }>>(Prisma.sql`
       SELECT
-        COALESCE(SUM(CASE WHEN "direction" = 'INCOME' AND "paymentStatus" <> 'VOID' THEN "amount" ELSE 0 END), 0) AS "grossRevenue",
-        COALESCE(SUM(CASE WHEN "direction" = 'INCOME' AND "paymentStatus" = 'REFUNDED' THEN "amount" ELSE 0 END), 0) AS "refunds",
-        COALESCE(SUM(CASE WHEN "direction" = 'INCOME' AND "paymentStatus" NOT IN ('VOID','REFUNDED') THEN "amount" ELSE 0 END), 0) AS "netRevenue",
-        COALESCE(SUM(CASE WHEN "direction" = 'EXPENSE' AND "paymentStatus" NOT IN ('VOID','REFUNDED') THEN "amount" ELSE 0 END), 0) AS "totalExpense",
-        COALESCE(SUM(CASE WHEN "direction" = 'INCOME' AND "paymentStatus" IN ('PENDING','PARTIAL') THEN "amount" ELSE 0 END), 0) AS "receivable",
-        COALESCE(SUM(CASE WHEN "direction" = 'INCOME' AND "paymentStatus" = 'PAID' THEN "amount" ELSE 0 END), 0) AS "cashIncome",
-        COALESCE(SUM(CASE WHEN "direction" = 'EXPENSE' AND "paymentStatus" = 'PAID' THEN "amount" ELSE 0 END), 0) AS "cashExpense",
-        COUNT(*) FILTER (WHERE "direction" = 'EXPENSE' AND "paymentStatus" <> 'VOID' AND "invoiceStatus" = 'MISSING') AS "missingExpenseInvoices"
-      FROM "FinanceTransaction"
-      WHERE "occurredAt" >= ${start} AND "occurredAt" < ${end}
+        COALESCE(SUM(CASE
+          WHEN t."direction" = 'INCOME' AND t."paymentStatus" <> 'VOID'
+            AND NOT (t."paymentStatus" = 'REFUNDED' AND COALESCE(t."sourceRef", '') LIKE 'RETURN:%')
+          THEN t."amount" ELSE 0 END), 0) AS "grossRevenue",
+        COALESCE(SUM(CASE WHEN t."direction" = 'INCOME' AND t."paymentStatus" = 'REFUNDED' THEN t."amount" ELSE 0 END), 0) AS "refunds",
+        COALESCE(SUM(CASE
+          WHEN t."direction" = 'INCOME' AND t."paymentStatus" NOT IN ('VOID','REFUNDED') THEN t."amount"
+          WHEN t."direction" = 'INCOME' AND t."paymentStatus" = 'REFUNDED' AND COALESCE(t."sourceRef", '') LIKE 'RETURN:%' THEN -t."amount"
+          ELSE 0 END), 0) AS "netRevenue",
+        COALESCE(SUM(CASE WHEN t."direction" = 'EXPENSE' AND t."paymentStatus" NOT IN ('VOID','REFUNDED') THEN t."amount" ELSE 0 END), 0) AS "totalExpense",
+        COALESCE(SUM(CASE WHEN t."direction" = 'INCOME' AND t."paymentStatus" IN ('PENDING','PARTIAL') THEN t."amount" ELSE 0 END), 0) AS "receivable",
+        COALESCE(SUM(CASE
+          WHEN t."direction" = 'INCOME' AND t."paymentStatus" = 'PAID' THEN t."amount"
+          WHEN t."direction" = 'INCOME' AND t."paymentStatus" = 'REFUNDED' AND COALESCE(t."sourceRef", '') LIKE 'RETURN:%' THEN -t."amount"
+          ELSE 0 END), 0) AS "cashIncome",
+        COALESCE(SUM(CASE WHEN t."direction" = 'EXPENSE' AND t."paymentStatus" = 'PAID' THEN t."amount" ELSE 0 END), 0) AS "cashExpense",
+        COUNT(*) FILTER (WHERE t."direction" = 'EXPENSE' AND t."paymentStatus" <> 'VOID' AND t."invoiceStatus" = 'MISSING') AS "missingExpenseInvoices"
+      FROM "FinanceTransaction" t
+      WHERE t."occurredAt" >= ${start} AND t."occurredAt" < ${end}
     `),
     prisma.$queryRaw<Array<{ inventorySpend: Prisma.Decimal; operatingExpense: Prisma.Decimal }>>(Prisma.sql`
       SELECT
@@ -110,19 +119,42 @@ export async function getFinanceDashboardByDates(startDate: string, endDate: str
     `),
     prisma.$queryRaw<Array<{ cogs: Prisma.Decimal; costedRevenue: Prisma.Decimal }>>(Prisma.sql`
       SELECT
-        COALESCE(SUM(CASE WHEN i."unitCostSnapshot" IS NOT NULL THEN i."quantity" * i."unitCostSnapshot" ELSE 0 END), 0) AS "cogs",
-        COALESCE(SUM(CASE WHEN i."unitCostSnapshot" IS NOT NULL THEN i."lineAmount" ELSE 0 END), 0) AS "costedRevenue"
+        COALESCE(SUM(CASE
+          WHEN i."unitCostSnapshot" IS NULL THEN 0
+          WHEN t."paymentStatus" NOT IN ('VOID','REFUNDED') THEN i."quantity" * i."unitCostSnapshot"
+          WHEN t."paymentStatus" = 'REFUNDED' AND COALESCE(t."sourceRef", '') LIKE 'RETURN:%' THEN -(i."quantity" * i."unitCostSnapshot")
+          ELSE 0 END), 0) AS "cogs",
+        COALESCE(SUM(CASE
+          WHEN i."unitCostSnapshot" IS NULL THEN 0
+          WHEN t."paymentStatus" NOT IN ('VOID','REFUNDED') THEN i."lineAmount"
+          WHEN t."paymentStatus" = 'REFUNDED' AND COALESCE(t."sourceRef", '') LIKE 'RETURN:%' THEN -i."lineAmount"
+          ELSE 0 END), 0) AS "costedRevenue"
       FROM "FinanceTransactionItem" i
       JOIN "FinanceTransaction" t ON t."id" = i."transactionId"
       WHERE t."occurredAt" >= ${start} AND t."occurredAt" < ${end}
         AND t."direction" = 'INCOME'
-        AND t."paymentStatus" NOT IN ('VOID','REFUNDED')
+        AND t."paymentStatus" <> 'VOID'
     `),
     prisma.$queryRaw<Array<{ productId: string | null; productName: string; revenue: Prisma.Decimal; quantity: bigint }>>(Prisma.sql`
-      SELECT i."productId", i."productName", COALESCE(SUM(i."lineAmount"),0) AS "revenue", COALESCE(SUM(i."quantity"),0) AS "quantity"
-      FROM "FinanceTransactionItem" i JOIN "FinanceTransaction" t ON t."id" = i."transactionId"
-      WHERE t."occurredAt" >= ${start} AND t."occurredAt" < ${end} AND t."direction" = 'INCOME' AND t."paymentStatus" NOT IN ('VOID','REFUNDED')
-      GROUP BY i."productId", i."productName" ORDER BY "revenue" DESC LIMIT 8
+      SELECT
+        i."productId",
+        i."productName",
+        COALESCE(SUM(CASE
+          WHEN t."paymentStatus" NOT IN ('VOID','REFUNDED') THEN i."lineAmount"
+          WHEN t."paymentStatus" = 'REFUNDED' AND COALESCE(t."sourceRef", '') LIKE 'RETURN:%' THEN -i."lineAmount"
+          ELSE 0 END), 0) AS "revenue",
+        COALESCE(SUM(CASE
+          WHEN t."paymentStatus" NOT IN ('VOID','REFUNDED') THEN i."quantity"
+          WHEN t."paymentStatus" = 'REFUNDED' AND COALESCE(t."sourceRef", '') LIKE 'RETURN:%' THEN -i."quantity"
+          ELSE 0 END), 0) AS "quantity"
+      FROM "FinanceTransactionItem" i
+      JOIN "FinanceTransaction" t ON t."id" = i."transactionId"
+      WHERE t."occurredAt" >= ${start} AND t."occurredAt" < ${end}
+        AND t."direction" = 'INCOME'
+        AND t."paymentStatus" <> 'VOID'
+      GROUP BY i."productId", i."productName"
+      ORDER BY "revenue" DESC
+      LIMIT 8
     `),
     prisma.$queryRaw<Array<{ name: string; amount: Prisma.Decimal }>>(Prisma.sql`
       SELECT COALESCE(parent."name", c."name", '未分類') AS "name", COALESCE(SUM(t."amount"),0) AS "amount"
@@ -133,19 +165,31 @@ export async function getFinanceDashboardByDates(startDate: string, endDate: str
       GROUP BY COALESCE(parent."name", c."name", '未分類') ORDER BY "amount" DESC LIMIT 8
     `),
     prisma.$queryRaw<Array<{ name: string; amount: Prisma.Decimal }>>(Prisma.sql`
-      SELECT COALESCE(NULLIF("salesChannel", ''), '未指定') AS "name", COALESCE(SUM("amount"),0) AS "amount"
-      FROM "FinanceTransaction"
-      WHERE "occurredAt" >= ${start} AND "occurredAt" < ${end} AND "direction" = 'INCOME' AND "paymentStatus" NOT IN ('VOID','REFUNDED')
-      GROUP BY COALESCE(NULLIF("salesChannel", ''), '未指定') ORDER BY "amount" DESC LIMIT 8
+      SELECT
+        COALESCE(NULLIF(t."salesChannel", ''), '未指定') AS "name",
+        COALESCE(SUM(CASE
+          WHEN t."paymentStatus" NOT IN ('VOID','REFUNDED') THEN t."amount"
+          WHEN t."paymentStatus" = 'REFUNDED' AND COALESCE(t."sourceRef", '') LIKE 'RETURN:%' THEN -t."amount"
+          ELSE 0 END), 0) AS "amount"
+      FROM "FinanceTransaction" t
+      WHERE t."occurredAt" >= ${start} AND t."occurredAt" < ${end}
+        AND t."direction" = 'INCOME'
+        AND t."paymentStatus" <> 'VOID'
+      GROUP BY COALESCE(NULLIF(t."salesChannel", ''), '未指定')
+      ORDER BY "amount" DESC
+      LIMIT 8
     `),
     prisma.$queryRaw<Array<{ month: string; netRevenue: Prisma.Decimal }>>(Prisma.sql`
       SELECT
         to_char(date_trunc('month', t."occurredAt" AT TIME ZONE 'Asia/Taipei'), 'YYYY-MM') AS "month",
-        COALESCE(SUM(t."amount"), 0) AS "netRevenue"
+        COALESCE(SUM(CASE
+          WHEN t."paymentStatus" NOT IN ('VOID','REFUNDED') THEN t."amount"
+          WHEN t."paymentStatus" = 'REFUNDED' AND COALESCE(t."sourceRef", '') LIKE 'RETURN:%' THEN -t."amount"
+          ELSE 0 END), 0) AS "netRevenue"
       FROM "FinanceTransaction" t
       WHERE t."occurredAt" >= ${start} AND t."occurredAt" < ${end}
         AND t."direction" = 'INCOME'
-        AND t."paymentStatus" NOT IN ('VOID','REFUNDED')
+        AND t."paymentStatus" <> 'VOID'
       GROUP BY 1 ORDER BY 1
     `),
     prisma.$queryRaw<Array<{ month: string; operatingExpense: Prisma.Decimal }>>(Prisma.sql`
@@ -164,12 +208,16 @@ export async function getFinanceDashboardByDates(startDate: string, endDate: str
     prisma.$queryRaw<Array<{ month: string; cogs: Prisma.Decimal }>>(Prisma.sql`
       SELECT
         to_char(date_trunc('month', t."occurredAt" AT TIME ZONE 'Asia/Taipei'), 'YYYY-MM') AS "month",
-        COALESCE(SUM(CASE WHEN i."unitCostSnapshot" IS NOT NULL THEN i."quantity" * i."unitCostSnapshot" ELSE 0 END), 0) AS "cogs"
+        COALESCE(SUM(CASE
+          WHEN i."unitCostSnapshot" IS NULL THEN 0
+          WHEN t."paymentStatus" NOT IN ('VOID','REFUNDED') THEN i."quantity" * i."unitCostSnapshot"
+          WHEN t."paymentStatus" = 'REFUNDED' AND COALESCE(t."sourceRef", '') LIKE 'RETURN:%' THEN -(i."quantity" * i."unitCostSnapshot")
+          ELSE 0 END), 0) AS "cogs"
       FROM "FinanceTransactionItem" i
       JOIN "FinanceTransaction" t ON t."id" = i."transactionId"
       WHERE t."occurredAt" >= ${start} AND t."occurredAt" < ${end}
         AND t."direction" = 'INCOME'
-        AND t."paymentStatus" NOT IN ('VOID','REFUNDED')
+        AND t."paymentStatus" <> 'VOID'
       GROUP BY 1 ORDER BY 1
     `),
   ]);
@@ -185,7 +233,7 @@ export async function getFinanceDashboardByDates(startDate: string, endDate: str
   const operatingExpense = Number(expense.operatingExpense);
   const grossProfit = netRevenue - cogs;
   const estimatedNetProfit = grossProfit - operatingExpense;
-  const costCoverage = netRevenue > 0 ? Math.min(100, Number(cost.costedRevenue) / netRevenue * 100) : 100;
+  const costCoverage = netRevenue > 0 ? Math.max(0, Math.min(100, Number(cost.costedRevenue) / netRevenue * 100)) : 100;
 
   const revenueByMonth = new Map(monthlyRevenueRows.map((row) => [row.month, Number(row.netRevenue)]));
   const operatingByMonth = new Map(monthlyOperatingRows.map((row) => [row.month, Number(row.operatingExpense)]));
