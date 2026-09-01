@@ -276,6 +276,14 @@ export async function reverseInventoryMovement(id: string, actor: MovementActor)
     const original = await tx.stockMovement.findUnique({ where: { id }, include: { reversal: true, channel: true } });
     if (!original) throw new Error("找不到這筆異動");
     if (original.reversal || original.reversedAt || original.reversalOfId) throw new Error("這筆異動已沖銷或不可再次沖銷");
+
+    const [billingLock, directLock] = await Promise.all([
+      tx.billingStatementSource.findUnique({ where: { movementId: id }, select: { statementId: true } }),
+      tx.directSettlementSource.findUnique({ where: { movementId: id }, select: { settlementId: true } }),
+    ]);
+    if (billingLock) throw new Error("這筆銷貨已納入請款結算，請先作廢結算後再修正庫存異動");
+    if (directLock) throw new Error("這筆銷貨已納入直營撥款結算，請先作廢該結算後再修正庫存異動");
+
     const shippingRow = (await tx.$queryRaw<ShippingMovementRow[]>(Prisma.sql`
       SELECT "shippingGroupKey" FROM "StockMovement" WHERE "id" = ${id} LIMIT 1
     `))[0];
