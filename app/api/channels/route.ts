@@ -6,6 +6,7 @@ import { prisma } from "@/lib/prisma";
 const schema = z.object({ name: z.string().trim().min(1).max(120), type: z.enum(["SYSTEM", "DIRECT", "CONSIGNMENT", "BUYOUT"]) });
 
 function policyDefaults(type: z.infer<typeof schema>["type"]) {
+  if (type === "DIRECT") return { settlementCycle: "PER_PAYOUT" as const, billingTrigger: "PAYOUT_RECEIVED" as const };
   if (type === "CONSIGNMENT") return { settlementCycle: "MONTHLY" as const, billingTrigger: "EXTERNAL_STATEMENT" as const };
   if (type === "BUYOUT") return { settlementCycle: "PER_SHIPMENT" as const, billingTrigger: "DELIVERED" as const, billingWithinDays: 7 };
   return {};
