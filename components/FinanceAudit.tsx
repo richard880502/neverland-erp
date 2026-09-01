@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Search, X } from "lucide-react";
@@ -76,6 +77,36 @@ type Detail = {
     salesChannel: string | null;
     summary: string | null;
   }>;
+  billingSettlement: null | {
+    id: string;
+    statementNo: string;
+    channelId: string;
+    channelName: string;
+    sourceType: string;
+    status: string;
+    periodStart: string;
+    periodEnd: string;
+    issuedAt: string;
+    dueDate: string | null;
+    subtotal: number;
+    taxAmount: number;
+    shippingFee: number;
+    totalAmount: number;
+    sourceMovementCount: number;
+    sourceMovements: Array<{
+      id: string;
+      occurredAt: string;
+      type: string;
+      typeLabel: string;
+      quantity: number;
+      unitPrice: number | null;
+      referenceNo: string | null;
+      productId: string;
+      sku: string;
+      productName: string;
+      size: string | null;
+    }>;
+  };
 };
 
 const paymentLabels: Record<string, string> = { PENDING: "待付款/收款", PARTIAL: "部分完成", PAID: "已付款/入帳", REFUNDED: "已退款 / 銷貨退回", VOID: "已作廢" };
@@ -269,14 +300,29 @@ export function FinanceAudit({ transactions, canWrite }: { transactions: Transac
               <div><dt>關聯店家 / 對象</dt><dd>{detail.relatedParty ?? "—"}</dd></div>
               <div><dt>付款狀態</dt><dd>{paymentLabels[detail.paymentStatus] ?? detail.paymentStatus}</dd></div>
               <div><dt>對帳狀態</dt><dd>{reconcileLabels[detail.reconciliationStatus] ?? detail.reconciliationStatus}</dd></div>
-              <div><dt>來源</dt><dd>{detail.source}{detail.sourceRef?.startsWith("RETURN:") ? " · 銷貨退回" : ""}{detail.legacySheet ? ` · ${detail.legacySheet} #${detail.legacyRow}` : ""}</dd></div>
+              <div><dt>來源</dt><dd>{detail.billingSettlement ? "請款 / 結算" : detail.source}{detail.sourceRef?.startsWith("RETURN:") ? " · 銷貨退回" : ""}{detail.legacySheet ? ` · ${detail.legacySheet} #${detail.legacyRow}` : ""}</dd></div>
               <div><dt>備註</dt><dd>{detail.note ?? "—"}</dd></div>
             </dl></section>
 
-            <section className={styles.detailSection}><h3>{isRefund ? "退回商品" : "商品"}</h3>{detail.items.length ? <div className={styles.detailItems}>{detail.items.map((item) => <div key={item.id}>
+            <section className={styles.detailSection}><h3>{isRefund ? "退回商品" : detail.billingSettlement ? "結算商品彙總" : "商品"}</h3>{detail.items.length ? <div className={styles.detailItems}>{detail.items.map((item) => <div key={item.id}>
               <span><strong>{item.productName}</strong><small>{[item.sku, item.size, `${item.quantity} 件`].filter(Boolean).join(" · ")}</small></span>
               <span>{isRefund ? "-" : ""}{money(item.lineAmount)}<small>{item.unitCostSnapshot != null ? `成本快照 ${money(item.unitCostSnapshot)} / 件` : "尚無成本資料"}</small></span>
             </div>)}</div> : <p className={styles.emptyInline}>這筆交易沒有關聯商品。</p>}</section>
+
+            {detail.billingSettlement && <section className={styles.detailSection}>
+              <h3>原始銷貨紀錄</h3>
+              <dl>
+                <div><dt>請款單號</dt><dd>{detail.billingSettlement.statementNo}</dd></div>
+                <div><dt>結算期間</dt><dd>{displayDate(detail.billingSettlement.periodStart)} ～ {displayDate(detail.billingSettlement.periodEnd)}</dd></div>
+                <div><dt>來源筆數</dt><dd>{detail.billingSettlement.sourceMovementCount} 筆</dd></div>
+                <div><dt>結算狀態</dt><dd>{detail.billingSettlement.status}</dd></div>
+              </dl>
+              <div className={styles.detailItems}>{detail.billingSettlement.sourceMovements.map((movement) => <div key={movement.id}>
+                <span><strong>{movement.productName}</strong><small>{[displayDate(movement.occurredAt), movement.typeLabel, movement.sku, movement.size, movement.referenceNo ? `單號 ${movement.referenceNo}` : null].filter(Boolean).join(" · ")}</small></span>
+                <span>{movement.quantity} 件<small>{movement.unitPrice == null ? "未記錄成交單價" : `${money(movement.unitPrice)} / 件`}</small></span>
+              </div>)}</div>
+              <div className={styles.detailActions}><Link className="btn btn-secondary" href={`/billing/${detail.billingSettlement.id}`}>開啟完整結算單</Link></div>
+            </section>}
 
             {detail.direction === "EXPENSE" && <section className={styles.detailSection}><h3>支出發票 / 憑證</h3>
               <div className={styles.invoiceEditor}>
@@ -295,7 +341,7 @@ export function FinanceAudit({ transactions, canWrite }: { transactions: Transac
             </button>)}</div> : <p className={styles.emptyInline}>目前沒有找到同商品或同對象的其他交易。</p>}</section>
 
             {canWrite && <section className={styles.detailSection}><h3>交易操作</h3>
-              {isVoid ? <p className={styles.emptyInline}>此筆已作廢，仍保留於查帳與 Audit Log，但不計入 KPI、損益與排行。</p> : <div className={styles.detailActions}>
+              {isVoid ? <p className={styles.emptyInline}>此筆已作廢，仍保留於查帳與 Audit Log，但不計入 KPI、損益與排行。</p> : detail.billingSettlement ? <div className={styles.detailActions}><Link className="btn btn-secondary" href={`/billing/${detail.billingSettlement.id}`}>到結算單管理收款 / 作廢</Link></div> : <div className={styles.detailActions}>
                 <button type="button" className={`btn btn-secondary ${styles.dangerButton}`} disabled={voiding} onClick={() => void voidTransaction()}>{voiding ? "作廢中…" : "作廢此筆"}</button>
               </div>}
             </section>}
