@@ -71,6 +71,12 @@ function date(value: Date) {
   return new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Taipei", year: "numeric", month: "2-digit", day: "2-digit" }).format(value);
 }
 
+function sourceLabel(source: string, sourceRef: string | null | undefined) {
+  if (sourceRef?.startsWith("MOVEMENT_SHIPPING:")) return "庫存異動";
+  if (sourceRef?.startsWith("BILLING:")) return "請款結算";
+  return source;
+}
+
 export const dynamic = "force-dynamic";
 
 export default async function FinancePage({ searchParams }: { searchParams: Promise<{ period?: string; start?: string; end?: string }> }) {
@@ -130,7 +136,7 @@ export default async function FinancePage({ searchParams }: { searchParams: Prom
           invoiceStatus: item.invoiceStatus,
           invoiceNo: item.invoiceNo,
           productNames: item.productNames,
-          source: sourceRefById.get(item.id)?.startsWith("MOVEMENT_SHIPPING:") ? "庫存異動" : item.source,
+          source: sourceLabel(item.source, sourceRefById.get(item.id)),
         }))}
       />
     </div>
