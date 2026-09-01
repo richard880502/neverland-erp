@@ -4,6 +4,8 @@ import { z } from "zod";
 import { assertSameOrigin, authErrorResponse, clientIp, requireApiUser } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 
+const shippingPayerSchema = z.enum(["COMPANY", "CUSTOMER", "CHANNEL", "SUPPLIER"]);
+
 const updateSchema = z.object({
   active: z.boolean().optional(),
   companyName: z.string().trim().max(160).nullable().optional(),
@@ -15,6 +17,9 @@ const updateSchema = z.object({
   settlementRate: z.number().min(0).max(1).nullable().optional(),
   taxRate: z.number().min(0).max(1).nullable().optional(),
   paymentTermsDays: z.number().int().min(0).max(365).nullable().optional(),
+  defaultShippingMethod: z.string().trim().max(120).nullable().optional(),
+  defaultShippingFee: z.number().min(0).max(1_000_000).nullable().optional(),
+  defaultShippingPayer: shippingPayerSchema.nullable().optional(),
 }).strict().refine((value) => Object.values(value).some((item) => item !== undefined), { message: "沒有可更新欄位" });
 
 export async function PATCH(request: Request, context: { params: Promise<{ id: string }> }) {
@@ -22,7 +27,7 @@ export async function PATCH(request: Request, context: { params: Promise<{ id: s
     assertSameOrigin(request);
     const auth = await requireApiUser({ roles: ["ADMIN", "STAFF"] });
     const parsed = updateSchema.safeParse(await request.json().catch(() => null));
-    if (!parsed.success) return NextResponse.json({ error: "請檢查通路或請款設定欄位" }, { status: 400 });
+    if (!parsed.success) return NextResponse.json({ error: "請檢查通路設定欄位" }, { status: 400 });
     const { id } = await context.params;
     const existing = await prisma.channel.findUnique({ where: { id }, select: { id: true, name: true, type: true, active: true } });
     if (!existing) return NextResponse.json({ error: "找不到通路" }, { status: 404 });
@@ -37,7 +42,7 @@ export async function PATCH(request: Request, context: { params: Promise<{ id: s
       await tx.auditLog.create({
         data: {
           userId: auth.user.id,
-          action: activeOnly ? (parsed.data.active ? "CHANNEL_ENABLED" : "CHANNEL_DISABLED") : "CHANNEL_BILLING_PROFILE_UPDATED",
+          action: activeOnly ? (parsed.data.active ? "CHANNEL_ENABLED" : "CHANNEL_DISABLED") : "CHANNEL_SETTINGS_UPDATED",
           entityType: "Channel",
           entityId: id,
           metadata: { name: existing.name, updatedFields: Object.keys(parsed.data) },
