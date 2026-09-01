@@ -109,7 +109,7 @@ async function resolveMovementShipping(tx: Prisma.TransactionClient, input: Move
   const defaultFee = defaults?.defaultShippingFee == null ? undefined : Number(defaults.defaultShippingFee);
   const fee = explicitFee ?? defaultFee ?? 0;
   const method = input.shippingMethod?.trim() || defaults?.defaultShippingMethod?.trim() || null;
-  const payer = input.shippingPayer && input.shippingPayer !== ""
+  const payer = input.shippingPayer
     ? input.shippingPayer
     : defaults?.defaultShippingPayer || (fee > 0 ? "COMPANY" : null);
   const hasShipping = Boolean(method || fee > 0 || payer);
