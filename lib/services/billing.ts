@@ -93,6 +93,30 @@ async function findUnsettledMovements(db: Db, input: BillingPreviewInput, moveme
   });
 }
 
+async function getBillableShipping(db: Db, input: BillingPreviewInput, enabled: boolean) {
+  if (!enabled) return { fee: 0, groupCount: 0 };
+  const rows = await db.stockMovement.findMany({
+    where: {
+      channelId: input.channelId,
+      occurredAt: { gte: startOfTaipeiDate(input.periodStart), lte: endOfTaipeiDate(input.periodEnd) },
+      reversedAt: null,
+      reversalOfId: null,
+      shippingFee: { gt: 0 },
+      shippingPayer: { in: ["CHANNEL", "CUSTOMER"] },
+    },
+    select: { id: true, shippingFee: true, shippingGroupKey: true },
+    orderBy: { occurredAt: "asc" },
+  });
+  const groups = new Map<string, number>();
+  for (const row of rows) {
+    const key = row.shippingGroupKey || row.id;
+    const fee = Number(row.shippingFee ?? 0);
+    if (!groups.has(key)) groups.set(key, fee);
+    else groups.set(key, Math.max(groups.get(key) ?? 0, fee));
+  }
+  return { fee: roundMoney([...groups.values()].reduce((sum, fee) => sum + fee, 0)), groupCount: groups.size };
+}
+
 function groupMovementQuantities(movements: Array<{ productId: string; quantity: number }>) {
   const grouped = new Map<string, number>();
   for (const movement of movements) grouped.set(movement.productId, (grouped.get(movement.productId) ?? 0) + movement.quantity);
@@ -115,7 +139,10 @@ async function buildPreview(db: Db, input: BillingPreviewInput) {
   const channel = await db.channel.findUnique({ where: { id: input.channelId } });
   if (!channel || !channel.active) throw new Error("找不到可用的客戶通路");
   const source = sourceForChannel(channel.type);
-  const movements = await findUnsettledMovements(db, input, source.movementType);
+  const [movements, billableShipping] = await Promise.all([
+    findUnsettledMovements(db, input, source.movementType),
+    getBillableShipping(db, input, channel.includeShippingInBilling),
+  ]);
 
   const grouped = new Map<string, {
     productId: string;
@@ -146,6 +173,15 @@ async function buildPreview(db: Db, input: BillingPreviewInput) {
     sourceType: source.sourceType,
     sourceMovementCount: movements.length,
     sourceMovementIds: movements.map((movement) => movement.id),
+    suggestedShippingFee: billableShipping.fee,
+    suggestedShippingGroupCount: billableShipping.groupCount,
+    policy: {
+      settlementCycle: channel.settlementCycle,
+      billingTrigger: channel.billingTrigger,
+      billingWithinDays: channel.billingWithinDays,
+      includeShippingInBilling: channel.includeShippingInBilling,
+      requiresSalesInvoice: channel.requiresSalesInvoice,
+    },
     items: [...grouped.values()].sort((a, b) => a.sku.localeCompare(b.sku, "zh-Hant", { numeric: true })),
   };
 }
@@ -285,8 +321,13 @@ export async function createBillingStatement(input: BillingCreateInput, actor: A
             sourceRef: `BILLING:${statement.id}`,
             paymentStatus: "PENDING",
             reconciliationStatus: "UNMATCHED",
-            invoiceStatus: "NOT_REQUIRED",
-            note: [`請款單 ${statementNo}`, `期間 ${input.periodStart}～${input.periodEnd}`, settlementSources.length ? `來源銷貨 ${settlementSources.length} 筆` : "手動請款"].join("；"),
+            invoiceStatus: channel.requiresSalesInvoice ? "MISSING" : "NOT_REQUIRED",
+            note: [
+              `請款單 ${statementNo}`,
+              `期間 ${input.periodStart}～${input.periodEnd}`,
+              settlementSources.length ? `來源銷貨 ${settlementSources.length} 筆` : "手動請款",
+              channel.requiresSalesInvoice ? "需開銷項發票" : null,
+            ].filter(Boolean).join("；"),
             createdById: actor.userId,
             items: {
               create: items.map((item) => ({
@@ -318,6 +359,10 @@ export async function createBillingStatement(input: BillingCreateInput, actor: A
               itemCount: items.length,
               sourceMovementCount: settlementSources.length,
               financeTransactionId: financeId,
+              settlementCycle: channel.settlementCycle,
+              billingTrigger: channel.billingTrigger,
+              requiresSalesInvoice: channel.requiresSalesInvoice,
+              includeShippingInBilling: channel.includeShippingInBilling,
             },
             ipAddress: actor.ipAddress ?? null,
           },
