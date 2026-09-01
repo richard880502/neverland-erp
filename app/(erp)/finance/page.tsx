@@ -86,6 +86,11 @@ export default async function FinancePage({ searchParams }: { searchParams: Prom
     getFinanceDashboardByDates(period.startDate, period.endDate),
   ]);
 
+  const sourceRefs = transactions.length ? await prisma.financeTransaction.findMany({
+    where: { id: { in: transactions.map((item) => item.id) } },
+    select: { id: true, sourceRef: true },
+  }) : [];
+  const sourceRefById = new Map(sourceRefs.map((item) => [item.id, item.sourceRef]));
   const periodDescription = `目前顯示 ${period.startDate} ～ ${period.endDate}（${period.label}）；損益、排行與查帳都使用同一日期區間。`;
 
   return <>
@@ -125,7 +130,7 @@ export default async function FinancePage({ searchParams }: { searchParams: Prom
           invoiceStatus: item.invoiceStatus,
           invoiceNo: item.invoiceNo,
           productNames: item.productNames,
-          source: item.source,
+          source: sourceRefById.get(item.id)?.startsWith("MOVEMENT_SHIPPING:") ? "庫存異動" : item.source,
         }))}
       />
     </div>
