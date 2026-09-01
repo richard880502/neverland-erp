@@ -155,10 +155,7 @@ export function DirectSettlementManager({ channels, settlements, canWrite }: { c
   const itemRows = mergeProductRows(preview);
 
   useEffect(() => {
-    if (!channelId || !periodStart || !periodEnd || periodStart > periodEnd) {
-      setPreview(null);
-      return;
-    }
+    if (!channelId || !periodStart || !periodEnd || periodStart > periodEnd) return;
     const controller = new AbortController();
     const timer = setTimeout(async () => {
       setLoading(true); setMessage("");
@@ -240,11 +237,11 @@ export function DirectSettlementManager({ channels, settlements, canWrite }: { c
       <div className="panel billing-form-panel">
         <div className="billing-section-head"><span>01 / SOURCE</span><h2>待結算銷售</h2></div>
         {message && <div className="form-error">{message}</div>}
-        <div className="field"><label>直營通路</label><select className="select" value={channelId} onChange={(event) => { setChannelId(event.target.value); setActualPayout(""); }}><option value="">選擇通路</option>{channels.map((item) => <option value={item.id} key={item.id}>{item.name}</option>)}</select></div>
+        <div className="field"><label>直營通路</label><select className="select" value={channelId} onChange={(event) => { setChannelId(event.target.value); setPreview(null); setActualPayout(""); }}><option value="">選擇通路</option>{channels.map((item) => <option value={item.id} key={item.id}>{item.name}</option>)}</select></div>
         {channel && <div className="billing-customer-card"><div><strong>{channel.name}</strong></div><dl><div><dt>結算方式</dt><dd>{channel.settlementCycle ? cycleLabels[channel.settlementCycle] : "未設定"}</dd></div><div><dt>對帳觸發</dt><dd>{channel.billingTrigger ? triggerLabels[channel.billingTrigger] : "未設定"}</dd></div><div><dt>銷項發票</dt><dd>{channel.requiresSalesInvoice ? "系統追蹤" : "依訂單 / 平台"}</dd></div></dl></div>}
         <div className="billing-two-col">
-          <div className="field"><label>銷售期間起日</label><input className="input" type="date" value={periodStart} onChange={(event) => setPeriodStart(event.target.value)} /></div>
-          <div className="field"><label>銷售期間迄日</label><input className="input" type="date" value={periodEnd} onChange={(event) => setPeriodEnd(event.target.value)} /></div>
+          <div className="field"><label>銷售期間起日</label><input className="input" type="date" value={periodStart} onChange={(event) => { setPeriodStart(event.target.value); setPreview(null); setActualPayout(""); }} /></div>
+          <div className="field"><label>銷售期間迄日</label><input className="input" type="date" value={periodEnd} onChange={(event) => { setPeriodEnd(event.target.value); setPreview(null); setActualPayout(""); }} /></div>
           <div className="field"><label>撥款 / 入帳日期</label><input className="input" type="date" value={settledAt} onChange={(event) => setSettledAt(event.target.value)} /></div>
           <div className="field"><label>撥款 / 對帳單號</label><input className="input" value={payoutReference} onChange={(event) => setPayoutReference(event.target.value)} placeholder="平台撥款批次或銀行摘要" /></div>
         </div>
