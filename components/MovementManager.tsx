@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { Minus, RotateCcw, Search } from "lucide-react";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { MovementBatchEntry } from "@/components/MovementBatchEntry";
-import { channelTypeLabels, movementLabels } from "@/lib/inventory";
+import { movementLabels } from "@/lib/inventory";
 import type { ChannelType, MovementType } from "@prisma/client";
 
 type Product = { id: string; sku: string; name: string; size: string | null; listPrice: number | null };
@@ -37,8 +37,6 @@ type Movement = {
 };
 type ProductSort = "sku" | "name";
 
-const shippingMethods = ["7-11 店到店", "全家店到店", "郵局", "黑貓宅急便", "新竹物流", "Lalamove", "親送", "店取", "其他"];
-const shippingMovementTypes = new Set<MovementType>(["RECEIVE", "SHIP", "SALES_RETURN", "PURCHASE_RETURN", "CONSIGN_OUT", "CONSIGN_RETURN", "BUYOUT"]);
 const payerLabels: Record<string, string> = { COMPANY: "公司", CUSTOMER: "客戶", CHANNEL: "通路", SUPPLIER: "供應商" };
 
 function productLabel(product: Product) {
@@ -87,69 +85,12 @@ function setFormValue(form: HTMLFormElement, name: string, value: string) {
 
 export function MovementManager({ products, channels, movements, canWrite }: { products: Product[]; channels: Channel[]; movements: Movement[]; canWrite: boolean }) {
   const router = useRouter();
-  const [message, setMessage] = useState("");
   const [fulfillmentMessage, setFulfillmentMessage] = useState("");
-  const [loading, setLoading] = useState(false);
   const [fulfillmentLoading, setFulfillmentLoading] = useState(false);
-  const [movementResetToken, setMovementResetToken] = useState(0);
   const [fulfillmentResetToken, setFulfillmentResetToken] = useState(0);
-  const [movementType, setMovementType] = useState<MovementType>("RECEIVE");
   const today = new Date().toLocaleDateString("en-CA");
   const consignmentChannels = channels.filter((channel) => channel.type === "CONSIGNMENT");
   const directChannels = channels.filter((channel) => channel.type === "DIRECT");
-  const shippingEnabled = shippingMovementTypes.has(movementType);
-
-  function applyChannelShippingDefaults(form: HTMLFormElement, channelId: string) {
-    const channel = channels.find((item) => item.id === channelId);
-    setFormValue(form, "shippingMethod", channel?.defaultShippingMethod ?? "");
-    setFormValue(form, "shippingFee", channel?.defaultShippingFee == null ? "" : String(channel.defaultShippingFee));
-    setFormValue(form, "shippingPayer", channel?.defaultShippingPayer ?? "");
-  }
-
-  function changeMovementType(event: React.ChangeEvent<HTMLSelectElement>) {
-    const nextType = event.target.value as MovementType;
-    setMovementType(nextType);
-    const form = event.currentTarget.form;
-    if (!form) return;
-    if (!shippingMovementTypes.has(nextType)) {
-      setFormValue(form, "shippingMethod", "");
-      setFormValue(form, "shippingFee", "");
-      setFormValue(form, "shippingPayer", "");
-      return;
-    }
-    const channelId = String(new FormData(form).get("channelId") ?? "");
-    applyChannelShippingDefaults(form, channelId);
-  }
-
-  async function submit(event: React.FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    setMessage("");
-    setLoading(true);
-    const formElement = event.currentTarget;
-    const form = new FormData(formElement);
-    if (!form.get("productId")) { setLoading(false); return setMessage("請從搜尋候選中選擇有效商品，或輸入完整 SKU"); }
-    const sticky = {
-      occurredAt: String(form.get("occurredAt") || today),
-      type: String(form.get("type") || "RECEIVE"),
-      channelId: String(form.get("channelId") || ""),
-      referenceNo: String(form.get("referenceNo") || ""),
-    };
-    const response = await fetch("/api/movements", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(Object.fromEntries(form)) });
-    const result = await response.json();
-    setLoading(false);
-    if (!response.ok) return setMessage(result.error ?? "新增異動失敗");
-    formElement.reset();
-    setFormValue(formElement, "occurredAt", sticky.occurredAt);
-    setFormValue(formElement, "type", sticky.type);
-    setFormValue(formElement, "channelId", sticky.channelId);
-    setFormValue(formElement, "referenceNo", sticky.referenceNo);
-    setFormValue(formElement, "quantity", "1");
-    setMovementType(sticky.type as MovementType);
-    if (shippingMovementTypes.has(sticky.type as MovementType)) applyChannelShippingDefaults(formElement, sticky.channelId);
-    setMovementResetToken((value) => value + 1);
-    setMessage("已記錄；日期、事件、通路與單號已保留。若公司負擔運費，財務會自動新增一筆物流支出。");
-    router.refresh();
-  }
 
   async function submitFulfillment(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -188,31 +129,9 @@ export function MovementManager({ products, channels, movements, canWrite }: { p
   }
 
   return <>
-    <PageHeader eyebrow="Ledger" title="庫存異動" description="每次實物流動新增一筆；收送貨運費可在異動時一併記錄，公司負擔的費用會自動帶入財務。月結或同一箱多商品請優先使用批次登錄。" />
-    <datalist id="movement-shipping-methods">{shippingMethods.map((name) => <option value={name} key={name} />)}</datalist>
+    <PageHeader eyebrow="Ledger" title="庫存異動" description="新增庫存異動統一使用同一個表格式入口：一列就是單筆，多列可一次寫入；收送貨運費也會依共同設定自動帶入財務。" />
 
     {canWrite && <MovementBatchEntry products={products} channels={channels} />}
-
-    {canWrite && <details className="panel drawer"><summary><span className="btn btn-primary"><Minus size={16} />新增單筆異動</span></summary>
-      {message && <div className="form-error" style={{ background: "#fff8df", color: "#786b3d", borderColor: "#d3bd69" }}>{message}</div>}
-      <form className="form-grid" onSubmit={submit}>
-        <div className="field"><label htmlFor="movement-date">日期</label><input className="input" id="movement-date" name="occurredAt" type="date" defaultValue={today} required /></div>
-        <div className="field"><label htmlFor="movement-type">事件</label><select className="select" id="movement-type" name="type" value={movementType} onChange={changeMovementType}>{Object.entries(movementLabels).map(([value, label]) => <option value={value} key={value}>{label}</option>)}</select></div>
-        <ProductPicker key={`movement-${movementResetToken}`} products={products} />
-        <div className="field"><label htmlFor="movement-channel">通路（進貨／進貨退出可不選）</label><select className="select" id="movement-channel" name="channelId" onChange={(event) => { if (event.currentTarget.form && shippingEnabled) applyChannelShippingDefaults(event.currentTarget.form, event.target.value); }}><option value="">不指定</option>{channels.map((c) => <option value={c.id} key={c.id}>{c.name} · {channelTypeLabels[c.type]}</option>)}</select></div>
-        <div className="field"><label htmlFor="movement-quantity">數量</label><input className="input" id="movement-quantity" name="quantity" type="number" min="1" defaultValue="1" required /></div>
-        <div className="field"><label htmlFor="movement-price">成交單價（出貨／銷貨退回）</label><input className="input" id="movement-price" name="unitPrice" type="number" min="0" step="1" /></div>
-        <div className="field"><label htmlFor="movement-reference">單號</label><input className="input" id="movement-reference" name="referenceNo" placeholder="選填；連續輸入時會保留" /></div>
-        <div className="field"><label htmlFor="movement-note">備註</label><input className="input" id="movement-note" name="note" placeholder="選填；每筆儲存後會清空" /></div>
-
-        <div className="field"><label htmlFor="movement-shipping-method">收送貨方式</label><input className="input" id="movement-shipping-method" name="shippingMethod" list="movement-shipping-methods" disabled={!shippingEnabled} placeholder={shippingEnabled ? "例如 7-11 / 黑貓；通路有預設會自動帶入" : "此事件不需物流"} /></div>
-        <div className="field"><label htmlFor="movement-shipping-fee">運費</label><input className="input" id="movement-shipping-fee" name="shippingFee" type="number" min="0" step="1" disabled={!shippingEnabled} placeholder={shippingEnabled ? "0" : "—"} /></div>
-        <div className="field"><label htmlFor="movement-shipping-payer">運費負擔</label><select className="select" id="movement-shipping-payer" name="shippingPayer" disabled={!shippingEnabled} defaultValue=""><option value="">自動（有運費時預設公司）</option><option value="COMPANY">公司負擔</option><option value="CUSTOMER">客戶負擔</option><option value="CHANNEL">通路負擔</option><option value="SUPPLIER">供應商負擔</option></select></div>
-        <div className="field"><label>財務同步</label><div className="input" style={{ display: "flex", alignItems: "center", color: "var(--muted)", cursor: "default" }}>{shippingEnabled ? "公司負擔且運費 > 0 時自動入帳" : "不產生物流支出"}</div></div>
-
-        <div className="wide"><button className="btn btn-primary" disabled={loading}>{loading ? "記錄中…" : "記錄異動"}</button> <span className="helper">同一箱有多個商品請用上方「批次登錄」，避免把同一筆運費重複計入。</span></div>
-      </form>
-    </details>}
 
     {canWrite && <details className="panel drawer"><summary><span className="btn btn-primary"><Minus size={16} />寄賣代發</span></summary>
       {fulfillmentMessage && <div className="form-error" style={{ background: "#fff8df", color: "#786b3d", borderColor: "#d3bd69" }}>{fulfillmentMessage}</div>}
