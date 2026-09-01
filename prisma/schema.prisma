@@ -46,8 +46,12 @@ enum BillingSourceType {
 }
 
 enum SettlementCycle {
+  PER_ORDER
+  DAILY
+  WEEKLY
   MONTHLY
   PER_SHIPMENT
+  PER_PAYOUT
   MANUAL
 }
 
@@ -55,6 +59,9 @@ enum BillingTrigger {
   EXTERNAL_STATEMENT
   DELIVERED
   SHIPPED
+  ORDER_COMPLETED
+  PAYOUT_RECEIVED
+  PAYMENT_RECEIVED
   MANUAL
 }
 
@@ -164,7 +171,7 @@ model LoginChallenge {
   ipAddress String?
   userAgent String?
   user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
-  createdAt DateTime  @default(now())
+  createdAt DateTime @default(now())
 
   @@index([userId, expiresAt])
 }
