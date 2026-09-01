@@ -5,8 +5,8 @@ import { assertSameOrigin, authErrorResponse, clientIp, requireApiUser } from "@
 import { prisma } from "@/lib/prisma";
 
 const shippingPayerSchema = z.enum(["COMPANY", "CUSTOMER", "CHANNEL", "SUPPLIER"]);
-const settlementCycleSchema = z.enum(["MONTHLY", "PER_SHIPMENT", "MANUAL"]);
-const billingTriggerSchema = z.enum(["EXTERNAL_STATEMENT", "DELIVERED", "SHIPPED", "MANUAL"]);
+const settlementCycleSchema = z.enum(["PER_ORDER", "DAILY", "WEEKLY", "MONTHLY", "PER_SHIPMENT", "PER_PAYOUT", "MANUAL"]);
+const billingTriggerSchema = z.enum(["EXTERNAL_STATEMENT", "DELIVERED", "SHIPPED", "ORDER_COMPLETED", "PAYOUT_RECEIVED", "PAYMENT_RECEIVED", "MANUAL"]);
 
 const updateSchema = z.object({
   active: z.boolean().optional(),
@@ -38,13 +38,20 @@ export async function PATCH(request: Request, context: { params: Promise<{ id: s
     const { id } = await context.params;
     const existing = await prisma.channel.findUnique({ where: { id }, select: { id: true, name: true, type: true, active: true } });
     if (!existing) return NextResponse.json({ error: "找不到通路" }, { status: 404 });
-    const billingKeys = [
+
+    const billingProfileKeys = [
       "companyName", "taxId", "contactName", "contactEmail", "contactPhone", "billingAddress",
-      "settlementRate", "taxRate", "paymentTermsDays", "settlementCycle", "billingTrigger",
-      "billingWithinDays", "includeShippingInBilling", "requiresSalesInvoice",
+      "settlementRate", "taxRate", "paymentTermsDays",
     ] as const;
-    if (billingKeys.some((key) => parsed.data[key] !== undefined) && !["CONSIGNMENT", "BUYOUT"].includes(existing.type)) {
-      return NextResponse.json({ error: "只有寄賣或買斷通路可設定請款資料" }, { status: 400 });
+    if (billingProfileKeys.some((key) => parsed.data[key] !== undefined) && !["CONSIGNMENT", "BUYOUT"].includes(existing.type)) {
+      return NextResponse.json({ error: "只有寄賣或買斷通路可設定客戶請款資料" }, { status: 400 });
+    }
+
+    const settlementPolicyKeys = [
+      "settlementCycle", "billingTrigger", "billingWithinDays", "includeShippingInBilling", "requiresSalesInvoice",
+    ] as const;
+    if (settlementPolicyKeys.some((key) => parsed.data[key] !== undefined) && !["DIRECT", "CONSIGNMENT", "BUYOUT"].includes(existing.type)) {
+      return NextResponse.json({ error: "此通路類型不支援銷售 / 結算規則" }, { status: 400 });
     }
 
     const channel = await prisma.$transaction(async (tx) => {
