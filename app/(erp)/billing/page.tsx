@@ -37,6 +37,11 @@ export default async function BillingPage() {
       settlementRate: channel.settlementRate == null ? null : Number(channel.settlementRate),
       taxRate: channel.taxRate == null ? null : Number(channel.taxRate),
       paymentTermsDays: channel.paymentTermsDays,
+      settlementCycle: channel.settlementCycle,
+      billingTrigger: channel.billingTrigger,
+      billingWithinDays: channel.billingWithinDays,
+      includeShippingInBilling: channel.includeShippingInBilling,
+      requiresSalesInvoice: channel.requiresSalesInvoice,
     }))}
     statements={statements.map((statement) => ({
       id: statement.id,
