@@ -5,6 +5,8 @@ import { assertSameOrigin, authErrorResponse, clientIp, requireApiUser } from "@
 import { prisma } from "@/lib/prisma";
 
 const shippingPayerSchema = z.enum(["COMPANY", "CUSTOMER", "CHANNEL", "SUPPLIER"]);
+const settlementCycleSchema = z.enum(["MONTHLY", "PER_SHIPMENT", "MANUAL"]);
+const billingTriggerSchema = z.enum(["EXTERNAL_STATEMENT", "DELIVERED", "SHIPPED", "MANUAL"]);
 
 const updateSchema = z.object({
   active: z.boolean().optional(),
@@ -17,6 +19,11 @@ const updateSchema = z.object({
   settlementRate: z.number().min(0).max(1).nullable().optional(),
   taxRate: z.number().min(0).max(1).nullable().optional(),
   paymentTermsDays: z.number().int().min(0).max(365).nullable().optional(),
+  settlementCycle: settlementCycleSchema.nullable().optional(),
+  billingTrigger: billingTriggerSchema.nullable().optional(),
+  billingWithinDays: z.number().int().min(0).max(365).nullable().optional(),
+  includeShippingInBilling: z.boolean().optional(),
+  requiresSalesInvoice: z.boolean().optional(),
   defaultShippingMethod: z.string().trim().max(120).nullable().optional(),
   defaultShippingFee: z.number().min(0).max(1_000_000).nullable().optional(),
   defaultShippingPayer: shippingPayerSchema.nullable().optional(),
@@ -31,7 +38,11 @@ export async function PATCH(request: Request, context: { params: Promise<{ id: s
     const { id } = await context.params;
     const existing = await prisma.channel.findUnique({ where: { id }, select: { id: true, name: true, type: true, active: true } });
     if (!existing) return NextResponse.json({ error: "找不到通路" }, { status: 404 });
-    const billingKeys = ["companyName", "taxId", "contactName", "contactEmail", "contactPhone", "billingAddress", "settlementRate", "taxRate", "paymentTermsDays"] as const;
+    const billingKeys = [
+      "companyName", "taxId", "contactName", "contactEmail", "contactPhone", "billingAddress",
+      "settlementRate", "taxRate", "paymentTermsDays", "settlementCycle", "billingTrigger",
+      "billingWithinDays", "includeShippingInBilling", "requiresSalesInvoice",
+    ] as const;
     if (billingKeys.some((key) => parsed.data[key] !== undefined) && !["CONSIGNMENT", "BUYOUT"].includes(existing.type)) {
       return NextResponse.json({ error: "只有寄賣或買斷通路可設定請款資料" }, { status: 400 });
     }
