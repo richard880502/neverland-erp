@@ -29,6 +29,11 @@ const updateSchema = z.object({
   defaultShippingPayer: shippingPayerSchema.nullable().optional(),
 }).strict().refine((value) => Object.values(value).some((item) => item !== undefined), { message: "沒有可更新欄位" });
 
+const directCycles = new Set(["PER_ORDER", "DAILY", "WEEKLY", "MONTHLY", "PER_PAYOUT", "MANUAL"]);
+const directTriggers = new Set(["ORDER_COMPLETED", "PAYOUT_RECEIVED", "PAYMENT_RECEIVED", "MANUAL"]);
+const b2bCycles = new Set(["MONTHLY", "PER_SHIPMENT", "MANUAL"]);
+const b2bTriggers = new Set(["EXTERNAL_STATEMENT", "DELIVERED", "SHIPPED", "MANUAL"]);
+
 export async function PATCH(request: Request, context: { params: Promise<{ id: string }> }) {
   try {
     assertSameOrigin(request);
@@ -52,6 +57,19 @@ export async function PATCH(request: Request, context: { params: Promise<{ id: s
     ] as const;
     if (settlementPolicyKeys.some((key) => parsed.data[key] !== undefined) && !["DIRECT", "CONSIGNMENT", "BUYOUT"].includes(existing.type)) {
       return NextResponse.json({ error: "此通路類型不支援銷售 / 結算規則" }, { status: 400 });
+    }
+
+    if (parsed.data.settlementCycle) {
+      const allowed = existing.type === "DIRECT" ? directCycles : b2bCycles;
+      if (!["DIRECT", "CONSIGNMENT", "BUYOUT"].includes(existing.type) || !allowed.has(parsed.data.settlementCycle)) {
+        return NextResponse.json({ error: "這個結算方式不適用目前的通路類型" }, { status: 400 });
+      }
+    }
+    if (parsed.data.billingTrigger) {
+      const allowed = existing.type === "DIRECT" ? directTriggers : b2bTriggers;
+      if (!["DIRECT", "CONSIGNMENT", "BUYOUT"].includes(existing.type) || !allowed.has(parsed.data.billingTrigger)) {
+        return NextResponse.json({ error: "這個結算觸發不適用目前的通路類型" }, { status: 400 });
+      }
     }
 
     const channel = await prisma.$transaction(async (tx) => {
