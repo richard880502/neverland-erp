@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { RefreshCw } from "lucide-react";
 
@@ -57,6 +57,16 @@ type Settlement = {
   status: "OPEN" | "RECONCILED" | "VOID";
 };
 
+type MergedProductRow = {
+  productId: string;
+  sku: string;
+  name: string;
+  salesQty: number;
+  salesAmount: number;
+  returnQty: number;
+  returnAmount: number;
+};
+
 const cycleLabels: Record<SettlementCycle, string> = {
   PER_ORDER: "每筆訂單",
   DAILY: "每日結算",
@@ -91,6 +101,37 @@ function roundMoney(value: number) {
   return Math.round((value + Number.EPSILON) * 100) / 100;
 }
 
+function mergeProductRows(preview: Preview | null): MergedProductRow[] {
+  if (!preview) return [];
+  const rows = new Map<string, MergedProductRow>();
+  for (const item of preview.sales) {
+    rows.set(item.productId, {
+      productId: item.productId,
+      sku: item.sku,
+      name: `${item.productName}${item.size ? ` · ${item.size}` : ""}`,
+      salesQty: item.quantity,
+      salesAmount: item.amount,
+      returnQty: 0,
+      returnAmount: 0,
+    });
+  }
+  for (const item of preview.returns) {
+    const row = rows.get(item.productId) ?? {
+      productId: item.productId,
+      sku: item.sku,
+      name: `${item.productName}${item.size ? ` · ${item.size}` : ""}`,
+      salesQty: 0,
+      salesAmount: 0,
+      returnQty: 0,
+      returnAmount: 0,
+    };
+    row.returnQty += item.quantity;
+    row.returnAmount = roundMoney(row.returnAmount + item.amount);
+    rows.set(item.productId, row);
+  }
+  return [...rows.values()].sort((a, b) => a.sku.localeCompare(b.sku, "zh-Hant", { numeric: true }));
+}
+
 export function DirectSettlementManager({ channels, settlements, canWrite }: { channels: DirectChannel[]; settlements: Settlement[]; canWrite: boolean }) {
   const router = useRouter();
   const initialRange = monthRange();
@@ -111,6 +152,7 @@ export function DirectSettlementManager({ channels, settlements, canWrite }: { c
   const [version, setVersion] = useState(0);
 
   const channel = channels.find((item) => item.id === channelId) ?? null;
+  const itemRows = mergeProductRows(preview);
 
   useEffect(() => {
     if (!channelId || !periodStart || !periodEnd || periodStart > periodEnd) {
@@ -148,7 +190,7 @@ export function DirectSettlementManager({ channels, settlements, canWrite }: { c
     && !loading && !saving;
 
   async function createSettlement() {
-    if (!canCreate || !preview) return;
+    if (!canCreate || !preview || actual === null) return;
     setSaving(true); setMessage("");
     const response = await fetch("/api/direct-settlements", {
       method: "POST",
@@ -235,17 +277,9 @@ export function DirectSettlementManager({ channels, settlements, canWrite }: { c
       </div>
     </section>}
 
-    {preview && (preview.sales.length > 0 || preview.returns.length > 0) && <div className="panel table-panel">
+    {itemRows.length > 0 && <div className="panel table-panel">
       <div className="billing-list-head"><div><span>ITEM SUMMARY</span><h3>本批商品彙總</h3></div></div>
-      <div className="table-wrap"><table><thead><tr><th>SKU</th><th>商品</th><th>銷售數量</th><th>銷售額</th><th>退貨數量</th><th>退款額</th></tr></thead><tbody>{useMemo(() => {
-        const rows = new Map<string, { sku: string; name: string; salesQty: number; salesAmount: number; returnQty: number; returnAmount: number }>();
-        for (const item of preview.sales) rows.set(item.productId, { sku: item.sku, name: `${item.productName}${item.size ? ` · ${item.size}` : ""}`, salesQty: item.quantity, salesAmount: item.amount, returnQty: 0, returnAmount: 0 });
-        for (const item of preview.returns) {
-          const row = rows.get(item.productId) ?? { sku: item.sku, name: `${item.productName}${item.size ? ` · ${item.size}` : ""}`, salesQty: 0, salesAmount: 0, returnQty: 0, returnAmount: 0 };
-          row.returnQty += item.quantity; row.returnAmount += item.amount; rows.set(item.productId, row);
-        }
-        return [...rows.values()];
-      }, [preview]).map((row) => <tr key={row.sku}><td className="mono">{row.sku}</td><td>{row.name}</td><td>{row.salesQty}</td><td>{money(row.salesAmount)}</td><td>{row.returnQty}</td><td>{money(row.returnAmount)}</td></tr>)}</tbody></table></div>
+      <div className="table-wrap"><table><thead><tr><th>SKU</th><th>商品</th><th>銷售數量</th><th>銷售額</th><th>退貨數量</th><th>退款額</th></tr></thead><tbody>{itemRows.map((row) => <tr key={row.productId}><td className="mono">{row.sku}</td><td>{row.name}</td><td>{row.salesQty}</td><td>{money(row.salesAmount)}</td><td>{row.returnQty}</td><td>{money(row.returnAmount)}</td></tr>)}</tbody></table></div>
     </div>}
 
     <div className="billing-list-head"><div><span>DIRECT HISTORY</span><h3>直營撥款結算紀錄</h3></div></div>
