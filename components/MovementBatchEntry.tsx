@@ -7,7 +7,14 @@ import { channelTypeLabels, isSale, movementLabels } from "@/lib/inventory";
 import type { ChannelType, MovementType } from "@prisma/client";
 
 type Product = { id: string; sku: string; name: string; size: string | null; listPrice: number | null };
-type Channel = { id: string; name: string; type: ChannelType };
+type Channel = {
+  id: string;
+  name: string;
+  type: ChannelType;
+  defaultShippingMethod: string | null;
+  defaultShippingFee: number | null;
+  defaultShippingPayer: string | null;
+};
 type BatchRow = {
   id: string;
   productKey: string;
@@ -18,6 +25,8 @@ type BatchRow = {
 };
 
 const channelRequiredTypes: MovementType[] = ["SHIP", "SALES_RETURN", "CONSIGN_OUT", "CONSIGN_RETURN", "CONSIGN_SOLD", "BUYOUT"];
+const shippingMovementTypes = new Set<MovementType>(["RECEIVE", "SHIP", "SALES_RETURN", "PURCHASE_RETURN", "CONSIGN_OUT", "CONSIGN_RETURN", "BUYOUT"]);
+const shippingMethods = ["7-11 店到店", "全家店到店", "郵局", "黑貓宅急便", "新竹物流", "Lalamove", "親送", "店取", "其他"];
 
 function productLabel(product: Product) {
   return `${product.sku} · ${product.name}${product.size ? ` · ${product.size}` : ""}`;
@@ -43,17 +52,44 @@ export function MovementBatchEntry({ products, channels }: { products: Product[]
   const [channelId, setChannelId] = useState("");
   const [referenceNo, setReferenceNo] = useState("");
   const [commonNote, setCommonNote] = useState("");
+  const [shippingMethod, setShippingMethod] = useState("");
+  const [shippingFee, setShippingFee] = useState("");
+  const [shippingPayer, setShippingPayer] = useState("");
+  const [shippingGroupKey, setShippingGroupKey] = useState(() => crypto.randomUUID());
   const [rows, setRows] = useState<BatchRow[]>([emptyRow("initial")]);
   const [message, setMessage] = useState("");
   const [loading, setLoading] = useState(false);
 
   const sortedProducts = useMemo(() => [...products].sort((a, b) => a.sku.localeCompare(b.sku, "zh-Hant", { numeric: true })), [products]);
   const activeRowCount = useMemo(() => rows.filter(rowHasContent).length, [rows]);
+  const shippingEnabled = shippingMovementTypes.has(type);
   const listId = "movement-batch-products";
 
   function resolveProduct(value: string) {
     const key = normalize(value);
     return products.find((product) => normalize(product.sku) === key || normalize(productLabel(product)) === key) ?? null;
+  }
+
+  function applyChannelShippingDefaults(nextChannelId: string) {
+    const channel = channels.find((item) => item.id === nextChannelId);
+    setShippingMethod(channel?.defaultShippingMethod ?? "");
+    setShippingFee(channel?.defaultShippingFee == null ? "" : String(channel.defaultShippingFee));
+    setShippingPayer(channel?.defaultShippingPayer ?? "");
+  }
+
+  function changeType(nextType: MovementType) {
+    setType(nextType);
+    if (shippingMovementTypes.has(nextType)) applyChannelShippingDefaults(channelId);
+    else {
+      setShippingMethod("");
+      setShippingFee("");
+      setShippingPayer("");
+    }
+  }
+
+  function changeChannel(nextChannelId: string) {
+    setChannelId(nextChannelId);
+    if (shippingMovementTypes.has(type)) applyChannelShippingDefaults(nextChannelId);
   }
 
   function updateRow(id: string, patch: Partial<BatchRow>) {
@@ -97,6 +133,7 @@ export function MovementBatchEntry({ products, channels }: { products: Product[]
     if (invalidQuantityIndex >= 0) return setMessage(`第 ${invalidQuantityIndex + 1} 筆數量不正確`);
     const missingPriceIndex = isSale(type) ? activeRows.findIndex((row) => row.unitPrice === "" || Number(row.unitPrice) < 0) : -1;
     if (missingPriceIndex >= 0) return setMessage(`第 ${missingPriceIndex + 1} 筆需要填成交單價`);
+    if (shippingEnabled && shippingFee !== "" && Number(shippingFee) < 0) return setMessage("共同運費不能小於 0");
 
     setLoading(true);
     let created = 0;
@@ -114,13 +151,17 @@ export function MovementBatchEntry({ products, channels }: { products: Product[]
           unitPrice: row.unitPrice,
           referenceNo,
           note: [commonNote, row.note].filter(Boolean).join("；"),
+          shippingMethod: shippingEnabled ? shippingMethod : "",
+          shippingFee: shippingEnabled ? shippingFee : "",
+          shippingPayer: shippingEnabled ? shippingPayer : "",
+          shippingGroupKey: shippingEnabled ? shippingGroupKey : "",
         }),
       });
       const result = await response.json();
       if (!response.ok) {
         setLoading(false);
         setRows(activeRows.slice(index));
-        setMessage(`已成功寫入 ${created} 筆；第 ${index + 1} 筆失敗：${result.error ?? "異動無法儲存"}。未寫入的資料已保留，可修正後繼續。`);
+        setMessage(`已成功寫入 ${created} 筆；第 ${index + 1} 筆失敗：${result.error ?? "異動無法儲存"}。未寫入的資料與同一筆運費識別已保留，可修正後繼續。`);
         router.refresh();
         return;
       }
@@ -129,7 +170,8 @@ export function MovementBatchEntry({ products, channels }: { products: Product[]
 
     setLoading(false);
     setRows([emptyRow()]);
-    setMessage(`已一次寫入 ${created} 筆；日期、事件、通路與單號已保留，可繼續下一批。`);
+    setShippingGroupKey(crypto.randomUUID());
+    setMessage(`已一次寫入 ${created} 筆；日期、事件、通路、單號與物流設定已保留。${shippingEnabled && Number(shippingFee || 0) > 0 && (shippingPayer || "COMPANY") === "COMPANY" ? "這一批只建立 1 筆運費財務支出。" : ""}`);
     router.refresh();
   }
 
@@ -141,9 +183,17 @@ export function MovementBatchEntry({ products, channels }: { products: Product[]
 
       <div className="form-grid" style={{ padding: 0 }}>
         <div className="field"><label>共同日期</label><input className="input" type="date" value={occurredAt} onChange={(event) => setOccurredAt(event.target.value)} /></div>
-        <div className="field"><label>共同事件</label><select className="select" value={type} onChange={(event) => setType(event.target.value as MovementType)}>{Object.entries(movementLabels).map(([value, label]) => <option value={value} key={value}>{label}</option>)}</select></div>
-        <div className="field"><label>共同通路</label><select className="select" value={channelId} onChange={(event) => setChannelId(event.target.value)}><option value="">不指定</option>{channels.map((channel) => <option key={channel.id} value={channel.id}>{channel.name} · {channelTypeLabels[channel.type]}</option>)}</select></div>
+        <div className="field"><label>共同事件</label><select className="select" value={type} onChange={(event) => changeType(event.target.value as MovementType)}>{Object.entries(movementLabels).map(([value, label]) => <option value={value} key={value}>{label}</option>)}</select></div>
+        <div className="field"><label>共同通路</label><select className="select" value={channelId} onChange={(event) => changeChannel(event.target.value)}><option value="">不指定</option>{channels.map((channel) => <option key={channel.id} value={channel.id}>{channel.name} · {channelTypeLabels[channel.type]}</option>)}</select></div>
         <div className="field"><label>共同單號 / 月結識別</label><input className="input" value={referenceNo} onChange={(event) => setReferenceNo(event.target.value)} placeholder="例如 Zipper 2026-07" /></div>
+      </div>
+
+      <datalist id="movement-batch-shipping-methods">{shippingMethods.map((name) => <option value={name} key={name} />)}</datalist>
+      <div className="form-grid" style={{ padding: 0, marginTop: 16 }}>
+        <div className="field"><label>共同收送貨方式</label><input className="input" list="movement-batch-shipping-methods" value={shippingMethod} onChange={(event) => setShippingMethod(event.target.value)} disabled={!shippingEnabled} placeholder={shippingEnabled ? "通路有預設時會自動帶入" : "此事件不需物流"} /></div>
+        <div className="field"><label>共同運費</label><input className="input" type="number" min="0" step="1" value={shippingFee} onChange={(event) => setShippingFee(event.target.value)} disabled={!shippingEnabled} placeholder={shippingEnabled ? "0" : "—"} /></div>
+        <div className="field"><label>共同運費負擔</label><select className="select" value={shippingPayer} onChange={(event) => setShippingPayer(event.target.value)} disabled={!shippingEnabled}><option value="">自動（有運費時預設公司）</option><option value="COMPANY">公司負擔</option><option value="CUSTOMER">客戶負擔</option><option value="CHANNEL">通路負擔</option><option value="SUPPLIER">供應商負擔</option></select></div>
+        <div className="field"><label>財務同步</label><div className="input" style={{ display: "flex", alignItems: "center", color: "var(--muted)", cursor: "default" }}>{shippingEnabled ? "同一批只會建立 1 筆運費支出" : "不產生物流支出"}</div></div>
       </div>
 
       <div style={{ display: "flex", alignItems: "flex-end", gap: 16, flexWrap: "wrap", marginTop: 16, marginBottom: 18 }}>
@@ -179,7 +229,7 @@ export function MovementBatchEntry({ products, channels }: { products: Product[]
       </div>
 
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
-        <span className="helper">同一批共同資料只設定一次；每列只填商品、數量、單價與備註。</span>
+        <span className="helper">同一批共同資料與物流只設定一次；不論下面有幾列商品，公司運費都只會同步 1 筆到財務。</span>
         <button className="btn btn-primary" type="button" disabled={loading || activeRowCount === 0} onClick={() => void submitBatch()}>{loading ? "批次寫入中…" : `一次寫入 ${activeRowCount} 筆`}</button>
       </div>
     </div>
