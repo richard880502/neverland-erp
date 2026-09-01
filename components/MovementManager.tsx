@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Minus, RotateCcw, Search } from "lucide-react";
+import { ChevronLeft, ChevronRight, Minus, RotateCcw, Search, X } from "lucide-react";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { MovementBatchEntry } from "@/components/MovementBatchEntry";
 import { movementLabels } from "@/lib/inventory";
@@ -34,6 +34,17 @@ type Movement = {
   createdBy: string;
   reversedAt: string | null;
   isReversal: boolean;
+};
+type MovementFilters = {
+  q: string;
+  type: string;
+  channel: string;
+  start: string;
+  end: string;
+  page: number;
+  pageSize: number;
+  total: number;
+  totalPages: number;
 };
 type ProductSort = "sku" | "name";
 
@@ -83,7 +94,7 @@ function setFormValue(form: HTMLFormElement, name: string, value: string) {
   if (control instanceof HTMLInputElement || control instanceof HTMLSelectElement) control.value = value;
 }
 
-export function MovementManager({ products, channels, movements, canWrite }: { products: Product[]; channels: Channel[]; movements: Movement[]; canWrite: boolean }) {
+export function MovementManager({ products, channels, movements, filters, canWrite }: { products: Product[]; channels: Channel[]; movements: Movement[]; filters: MovementFilters; canWrite: boolean }) {
   const router = useRouter();
   const [fulfillmentMessage, setFulfillmentMessage] = useState("");
   const [fulfillmentLoading, setFulfillmentLoading] = useState(false);
@@ -91,6 +102,36 @@ export function MovementManager({ products, channels, movements, canWrite }: { p
   const today = new Date().toLocaleDateString("en-CA");
   const consignmentChannels = channels.filter((channel) => channel.type === "CONSIGNMENT");
   const directChannels = channels.filter((channel) => channel.type === "DIRECT");
+  const filterKey = [filters.q, filters.type, filters.channel, filters.start, filters.end].join("|");
+  const firstResult = filters.total === 0 ? 0 : (filters.page - 1) * filters.pageSize + 1;
+  const lastResult = Math.min(filters.page * filters.pageSize, filters.total);
+
+  function currentSearchParams(nextPage?: number) {
+    const params = new URLSearchParams();
+    if (filters.q) params.set("q", filters.q);
+    if (filters.type) params.set("type", filters.type);
+    if (filters.channel) params.set("channel", filters.channel);
+    if (filters.start) params.set("start", filters.start);
+    if (filters.end) params.set("end", filters.end);
+    if (nextPage && nextPage > 1) params.set("page", String(nextPage));
+    return params;
+  }
+
+  function submitSearch(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const form = new FormData(event.currentTarget);
+    const params = new URLSearchParams();
+    for (const key of ["q", "type", "channel", "start", "end"]) {
+      const value = String(form.get(key) ?? "").trim();
+      if (value) params.set(key, value);
+    }
+    router.push(params.size ? `/movements?${params.toString()}` : "/movements");
+  }
+
+  function goToPage(page: number) {
+    const params = currentSearchParams(page);
+    router.push(params.size ? `/movements?${params.toString()}` : "/movements");
+  }
 
   async function submitFulfillment(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -129,7 +170,7 @@ export function MovementManager({ products, channels, movements, canWrite }: { p
   }
 
   return <>
-    <PageHeader eyebrow="Ledger" title="庫存異動" description="新增庫存異動統一使用同一個表格式入口：一列就是單筆，多列可一次寫入；收送貨運費也會依共同設定自動帶入財務。" />
+    <PageHeader eyebrow="Ledger" title="庫存異動" description="新增庫存異動統一使用同一個表格式入口：一列就是單筆，多列可一次寫入；歷史異動可依商品、事件、通路與日期直接查詢。" />
 
     {canWrite && <MovementBatchEntry products={products} channels={channels} />}
 
@@ -148,20 +189,35 @@ export function MovementManager({ products, channels, movements, canWrite }: { p
       </form>
     </details>}
 
+    <div className="panel" style={{ padding: 18 }}>
+      <form key={filterKey} onSubmit={submitSearch} style={{ display: "flex", gap: 10, alignItems: "flex-end", flexWrap: "wrap" }}>
+        <div className="field" style={{ flex: "2 1 300px", marginBottom: 0 }}><label htmlFor="movement-query">搜尋異動</label><div style={{ position: "relative" }}><Search size={15} style={{ position: "absolute", left: 11, top: "50%", transform: "translateY(-50%)", pointerEvents: "none" }} /><input className="input" id="movement-query" name="q" defaultValue={filters.q} placeholder="SKU、商品、尺寸、單號、備註、物流方式、建立者" style={{ width: "100%", paddingLeft: 34 }} /></div></div>
+        <div className="field" style={{ flex: "1 1 155px", marginBottom: 0 }}><label htmlFor="movement-filter-type">事件</label><select className="select" id="movement-filter-type" name="type" defaultValue={filters.type}><option value="">全部事件</option>{Object.entries(movementLabels).map(([value, label]) => <option value={value} key={value}>{label}</option>)}</select></div>
+        <div className="field" style={{ flex: "1 1 180px", marginBottom: 0 }}><label htmlFor="movement-filter-channel">通路</label><select className="select" id="movement-filter-channel" name="channel" defaultValue={filters.channel}><option value="">全部通路</option>{channels.map((channel) => <option key={channel.id} value={channel.id}>{channel.name}</option>)}</select></div>
+        <div className="field" style={{ flex: "1 1 145px", marginBottom: 0 }}><label htmlFor="movement-filter-start">開始日期</label><input className="input" id="movement-filter-start" name="start" type="date" defaultValue={filters.start} /></div>
+        <div className="field" style={{ flex: "1 1 145px", marginBottom: 0 }}><label htmlFor="movement-filter-end">結束日期</label><input className="input" id="movement-filter-end" name="end" type="date" defaultValue={filters.end} /></div>
+        <div style={{ display: "flex", gap: 8, alignItems: "center" }}><button className="btn btn-primary" type="submit"><Search size={15} />搜尋</button><button className="btn btn-secondary" type="button" onClick={() => router.push("/movements")}><X size={15} />清除</button></div>
+      </form>
+      <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "center", flexWrap: "wrap", marginTop: 14 }}>
+        <span className="helper">共 {filters.total.toLocaleString()} 筆；目前顯示第 {firstResult.toLocaleString()}–{lastResult.toLocaleString()} 筆。搜尋會直接查完整庫存異動紀錄，不受最新 100 筆限制。</span>
+        <div style={{ display: "flex", gap: 8, alignItems: "center" }}><button className="btn btn-secondary icon-btn" type="button" disabled={filters.page <= 1} onClick={() => goToPage(filters.page - 1)} title="上一頁"><ChevronLeft size={15} /></button><span className="helper">第 {filters.page} / {filters.totalPages} 頁</span><button className="btn btn-secondary icon-btn" type="button" disabled={filters.page >= filters.totalPages} onClick={() => goToPage(filters.page + 1)} title="下一頁"><ChevronRight size={15} /></button></div>
+      </div>
+    </div>
+
     <div className="panel table-panel"><div className="table-wrap"><table>
       <thead><tr><th>日期</th><th>事件</th><th>SKU</th><th>商品</th><th>通路</th><th className="number">數量</th><th className="number">成交／參考單價</th><th>物流 / 運費</th><th>單號／備註</th><th>建立者</th><th></th></tr></thead>
-      <tbody>{movements.map((m) => <tr key={m.id} style={{ opacity: m.reversedAt ? .5 : 1 }}>
-        <td>{new Date(m.occurredAt).toLocaleDateString("zh-TW")}</td><td><span className={`badge ${m.isReversal ? "warn" : ""}`}>{m.isReversal ? "沖銷 · " : ""}{movementLabels[m.type]}</span></td>
-        <td className="sku">{m.product.sku}</td><td>{m.product.name} {m.product.size ?? ""}</td><td>{m.channel?.name ?? (m.type === "RECEIVE" ? "倉庫" : "未指定")}</td>
-        <td className="number"><strong>{m.quantity}</strong></td><td className="number">{m.unitPrice != null
-          ? `NT$ ${m.unitPrice.toLocaleString()}`
-          : m.product.listPrice != null
-            ? <><span>NT$ {m.product.listPrice.toLocaleString()}</span><small className="price-kind">參考定價</small></>
+      <tbody>{movements.length ? movements.map((movement) => <tr key={movement.id} style={{ opacity: movement.reversedAt ? .5 : 1 }}>
+        <td>{new Date(movement.occurredAt).toLocaleDateString("zh-TW")}</td><td><span className={`badge ${movement.isReversal ? "warn" : ""}`}>{movement.isReversal ? "沖銷 · " : ""}{movementLabels[movement.type]}</span></td>
+        <td className="sku">{movement.product.sku}</td><td>{movement.product.name} {movement.product.size ?? ""}</td><td>{movement.channel?.name ?? (movement.type === "RECEIVE" ? "倉庫" : "未指定")}</td>
+        <td className="number"><strong>{movement.quantity}</strong></td><td className="number">{movement.unitPrice != null
+          ? `NT$ ${movement.unitPrice.toLocaleString()}`
+          : movement.product.listPrice != null
+            ? <><span>NT$ {movement.product.listPrice.toLocaleString()}</span><small className="price-kind">參考定價</small></>
             : "—"}</td>
-        <td>{m.shippingMethod || m.shippingFee != null ? <div style={{ display: "grid", gap: 3 }}><strong>{m.shippingMethod ?? "物流"}{m.shippingFee != null ? ` · NT$ ${m.shippingFee.toLocaleString()}` : ""}</strong><small className="price-kind">{m.shippingPayer ? `${payerLabels[m.shippingPayer] ?? m.shippingPayer}負擔` : "未指定負擔者"}{m.shippingPayer === "COMPANY" && (m.shippingFee ?? 0) > 0 ? " · 已同步財務" : ""}</small></div> : "—"}</td>
-        <td>{[m.referenceNo, m.note].filter(Boolean).join(" · ") || "—"}</td><td>{m.createdBy}</td>
-        <td>{canWrite && !m.reversedAt && !m.isReversal && <button className="btn btn-danger" onClick={() => reverse(m.id)} title="沖銷"><RotateCcw size={15} /></button>}</td>
-      </tr>)}</tbody>
+        <td>{movement.shippingMethod || movement.shippingFee != null ? <div style={{ display: "grid", gap: 3 }}><strong>{movement.shippingMethod ?? "物流"}{movement.shippingFee != null ? ` · NT$ ${movement.shippingFee.toLocaleString()}` : ""}</strong><small className="price-kind">{movement.shippingPayer ? `${payerLabels[movement.shippingPayer] ?? movement.shippingPayer}負擔` : "未指定負擔者"}{movement.shippingPayer === "COMPANY" && (movement.shippingFee ?? 0) > 0 ? " · 已同步財務" : ""}</small></div> : "—"}</td>
+        <td>{[movement.referenceNo, movement.note].filter(Boolean).join(" · ") || "—"}</td><td>{movement.createdBy}</td>
+        <td>{canWrite && !movement.reversedAt && !movement.isReversal && <button className="btn btn-danger" onClick={() => reverse(movement.id)} title="沖銷"><RotateCcw size={15} /></button>}</td>
+      </tr>) : <tr><td colSpan={11} style={{ textAlign: "center", padding: 28, color: "var(--muted)" }}>沒有符合目前條件的庫存異動。</td></tr>}</tbody>
     </table></div></div>
   </>;
 }
