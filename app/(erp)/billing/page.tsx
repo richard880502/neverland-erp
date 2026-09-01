@@ -6,6 +6,14 @@ function date(value: Date) {
   return new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Taipei", year: "numeric", month: "2-digit", day: "2-digit" }).format(value);
 }
 
+function b2bSettlementCycle(value: string | null) {
+  return value === "MONTHLY" || value === "PER_SHIPMENT" || value === "MANUAL" ? value : null;
+}
+
+function b2bBillingTrigger(value: string | null) {
+  return value === "EXTERNAL_STATEMENT" || value === "DELIVERED" || value === "SHIPPED" || value === "MANUAL" ? value : null;
+}
+
 export default async function BillingPage() {
   const [channels, products, statements, user] = await Promise.all([
     prisma.channel.findMany({ where: { active: true, type: { in: ["CONSIGNMENT", "BUYOUT"] } }, orderBy: { name: "asc" } }),
@@ -37,8 +45,8 @@ export default async function BillingPage() {
       settlementRate: channel.settlementRate == null ? null : Number(channel.settlementRate),
       taxRate: channel.taxRate == null ? null : Number(channel.taxRate),
       paymentTermsDays: channel.paymentTermsDays,
-      settlementCycle: channel.settlementCycle,
-      billingTrigger: channel.billingTrigger,
+      settlementCycle: b2bSettlementCycle(channel.settlementCycle),
+      billingTrigger: b2bBillingTrigger(channel.billingTrigger),
       billingWithinDays: channel.billingWithinDays,
       includeShippingInBilling: channel.includeShippingInBilling,
       requiresSalesInvoice: channel.requiresSalesInvoice,
