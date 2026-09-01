@@ -124,8 +124,8 @@ export function MovementBatchEntry({ products, channels }: { products: Product[]
   async function submitBatch() {
     setMessage("");
     const activeRows = rows.filter(rowHasContent);
-    if (!occurredAt) return setMessage("請選擇共同日期");
-    if (channelRequiredTypes.includes(type) && !channelId) return setMessage("這個事件需要先選擇共同通路");
+    if (!occurredAt) return setMessage("請選擇日期");
+    if (channelRequiredTypes.includes(type) && !channelId) return setMessage("這個事件需要先選擇通路");
     if (!activeRows.length) return setMessage("請至少加入一筆商品資料");
     const invalidProductIndex = activeRows.findIndex((row) => !row.productId);
     if (invalidProductIndex >= 0) return setMessage(`第 ${invalidProductIndex + 1} 筆商品尚未匹配，請選擇候選商品或輸入完整 SKU`);
@@ -133,7 +133,7 @@ export function MovementBatchEntry({ products, channels }: { products: Product[]
     if (invalidQuantityIndex >= 0) return setMessage(`第 ${invalidQuantityIndex + 1} 筆數量不正確`);
     const missingPriceIndex = isSale(type) ? activeRows.findIndex((row) => row.unitPrice === "" || Number(row.unitPrice) < 0) : -1;
     if (missingPriceIndex >= 0) return setMessage(`第 ${missingPriceIndex + 1} 筆需要填成交單價`);
-    if (shippingEnabled && shippingFee !== "" && Number(shippingFee) < 0) return setMessage("共同運費不能小於 0");
+    if (shippingEnabled && shippingFee !== "" && Number(shippingFee) < 0) return setMessage("運費不能小於 0");
 
     setLoading(true);
     let created = 0;
@@ -171,33 +171,33 @@ export function MovementBatchEntry({ products, channels }: { products: Product[]
     setLoading(false);
     setRows([emptyRow()]);
     setShippingGroupKey(crypto.randomUUID());
-    setMessage(`已一次寫入 ${created} 筆；日期、事件、通路、單號與物流設定已保留。${shippingEnabled && Number(shippingFee || 0) > 0 && (shippingPayer || "COMPANY") === "COMPANY" ? "這一批只建立 1 筆運費財務支出。" : ""}`);
+    setMessage(`已寫入 ${created} 筆；日期、事件、通路、單號與物流設定已保留。${shippingEnabled && Number(shippingFee || 0) > 0 && (shippingPayer || "COMPANY") === "COMPANY" ? "這次寫入只建立 1 筆運費財務支出。" : ""}`);
     router.refresh();
   }
 
   return <details className="panel drawer" open>
-    <summary><span className="btn btn-primary"><Plus size={16} />批次登錄</span></summary>
+    <summary><span className="btn btn-primary"><Plus size={16} />新增庫存異動</span></summary>
 
     <div style={{ padding: 18 }}>
       {message && <div className="form-error" style={{ background: "#fff8df", color: "#786b3d", borderColor: "#d3bd69" }}>{message}</div>}
 
       <div className="form-grid" style={{ padding: 0 }}>
-        <div className="field"><label>共同日期</label><input className="input" type="date" value={occurredAt} onChange={(event) => setOccurredAt(event.target.value)} /></div>
-        <div className="field"><label>共同事件</label><select className="select" value={type} onChange={(event) => changeType(event.target.value as MovementType)}>{Object.entries(movementLabels).map(([value, label]) => <option value={value} key={value}>{label}</option>)}</select></div>
-        <div className="field"><label>共同通路</label><select className="select" value={channelId} onChange={(event) => changeChannel(event.target.value)}><option value="">不指定</option>{channels.map((channel) => <option key={channel.id} value={channel.id}>{channel.name} · {channelTypeLabels[channel.type]}</option>)}</select></div>
-        <div className="field"><label>共同單號 / 月結識別</label><input className="input" value={referenceNo} onChange={(event) => setReferenceNo(event.target.value)} placeholder="例如 Zipper 2026-07" /></div>
+        <div className="field"><label>日期</label><input className="input" type="date" value={occurredAt} onChange={(event) => setOccurredAt(event.target.value)} /></div>
+        <div className="field"><label>事件</label><select className="select" value={type} onChange={(event) => changeType(event.target.value as MovementType)}>{Object.entries(movementLabels).map(([value, label]) => <option value={value} key={value}>{label}</option>)}</select></div>
+        <div className="field"><label>通路</label><select className="select" value={channelId} onChange={(event) => changeChannel(event.target.value)}><option value="">不指定</option>{channels.map((channel) => <option key={channel.id} value={channel.id}>{channel.name} · {channelTypeLabels[channel.type]}</option>)}</select></div>
+        <div className="field"><label>單號 / 月結識別</label><input className="input" value={referenceNo} onChange={(event) => setReferenceNo(event.target.value)} placeholder="例如 Zipper 2026-07" /></div>
       </div>
 
       <datalist id="movement-batch-shipping-methods">{shippingMethods.map((name) => <option value={name} key={name} />)}</datalist>
       <div className="form-grid" style={{ padding: 0, marginTop: 16 }}>
-        <div className="field"><label>共同收送貨方式</label><input className="input" list="movement-batch-shipping-methods" value={shippingMethod} onChange={(event) => setShippingMethod(event.target.value)} disabled={!shippingEnabled} placeholder={shippingEnabled ? "通路有預設時會自動帶入" : "此事件不需物流"} /></div>
-        <div className="field"><label>共同運費</label><input className="input" type="number" min="0" step="1" value={shippingFee} onChange={(event) => setShippingFee(event.target.value)} disabled={!shippingEnabled} placeholder={shippingEnabled ? "0" : "—"} /></div>
-        <div className="field"><label>共同運費負擔</label><select className="select" value={shippingPayer} onChange={(event) => setShippingPayer(event.target.value)} disabled={!shippingEnabled}><option value="">自動（有運費時預設公司）</option><option value="COMPANY">公司負擔</option><option value="CUSTOMER">客戶負擔</option><option value="CHANNEL">通路負擔</option><option value="SUPPLIER">供應商負擔</option></select></div>
-        <div className="field"><label>財務同步</label><div className="input" style={{ display: "flex", alignItems: "center", color: "var(--muted)", cursor: "default" }}>{shippingEnabled ? "同一批只會建立 1 筆運費支出" : "不產生物流支出"}</div></div>
+        <div className="field"><label>收送貨方式</label><input className="input" list="movement-batch-shipping-methods" value={shippingMethod} onChange={(event) => setShippingMethod(event.target.value)} disabled={!shippingEnabled} placeholder={shippingEnabled ? "通路有預設時會自動帶入" : "此事件不需物流"} /></div>
+        <div className="field"><label>運費</label><input className="input" type="number" min="0" step="1" value={shippingFee} onChange={(event) => setShippingFee(event.target.value)} disabled={!shippingEnabled} placeholder={shippingEnabled ? "0" : "—"} /></div>
+        <div className="field"><label>運費負擔</label><select className="select" value={shippingPayer} onChange={(event) => setShippingPayer(event.target.value)} disabled={!shippingEnabled}><option value="">自動（有運費時預設公司）</option><option value="COMPANY">公司負擔</option><option value="CUSTOMER">客戶負擔</option><option value="CHANNEL">通路負擔</option><option value="SUPPLIER">供應商負擔</option></select></div>
+        <div className="field"><label>財務同步</label><div className="input" style={{ display: "flex", alignItems: "center", color: "var(--muted)", cursor: "default" }}>{shippingEnabled ? "每次寫入只會建立 1 筆運費支出" : "不產生物流支出"}</div></div>
       </div>
 
       <div style={{ display: "flex", alignItems: "flex-end", gap: 16, flexWrap: "wrap", marginTop: 16, marginBottom: 18 }}>
-        <div className="field" style={{ flex: "1 1 420px", minWidth: 280, marginBottom: 0 }}><label>共同備註（選填）</label><input className="input" value={commonNote} onChange={(event) => setCommonNote(event.target.value)} placeholder="例如 7 月寄賣銷貨" /></div>
+        <div className="field" style={{ flex: "1 1 420px", minWidth: 280, marginBottom: 0 }}><label>整批備註（選填）</label><input className="input" value={commonNote} onChange={(event) => setCommonNote(event.target.value)} placeholder="例如 7 月寄賣銷貨" /></div>
         <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
           <button className="btn btn-secondary" style={{ height: 38 }} type="button" onClick={() => setRows((current) => [...current, emptyRow()])}><Plus size={14} />新增空白列</button>
           <button className="btn btn-secondary" style={{ height: 38 }} type="button" onClick={duplicateLastRow}><Copy size={14} />複製上一列</button>
@@ -229,8 +229,8 @@ export function MovementBatchEntry({ products, channels }: { products: Product[]
       </div>
 
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
-        <span className="helper">同一批共同資料與物流只設定一次；不論下面有幾列商品，公司運費都只會同步 1 筆到財務。</span>
-        <button className="btn btn-primary" type="button" disabled={loading || activeRowCount === 0} onClick={() => void submitBatch()}>{loading ? "批次寫入中…" : `一次寫入 ${activeRowCount} 筆`}</button>
+        <span className="helper">上方資料會套用到所有商品列；一列可當單筆使用，多列可一次批次寫入，公司運費每次只同步 1 筆到財務。</span>
+        <button className="btn btn-primary" type="button" disabled={loading || activeRowCount === 0} onClick={() => void submitBatch()}>{loading ? "寫入中…" : `寫入 ${activeRowCount} 筆`}</button>
       </div>
     </div>
   </details>;
