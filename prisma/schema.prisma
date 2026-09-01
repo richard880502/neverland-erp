@@ -45,6 +45,19 @@ enum BillingSourceType {
   BUYOUT
 }
 
+enum SettlementCycle {
+  MONTHLY
+  PER_SHIPMENT
+  MANUAL
+}
+
+enum BillingTrigger {
+  EXTERNAL_STATEMENT
+  DELIVERED
+  SHIPPED
+  MANUAL
+}
+
 model User {
   id           String          @id @default(cuid())
   email        String          @unique
@@ -323,6 +336,11 @@ model Channel {
   settlementRate Decimal?   @db.Decimal(6, 4)
   taxRate Decimal?          @db.Decimal(6, 4)
   paymentTermsDays Int?     @default(0)
+  settlementCycle SettlementCycle?
+  billingTrigger BillingTrigger?
+  billingWithinDays Int?
+  includeShippingInBilling Boolean @default(false)
+  requiresSalesInvoice Boolean @default(false)
   defaultShippingMethod String?
   defaultShippingFee Decimal? @db.Decimal(12, 2)
   defaultShippingPayer String?
