@@ -9,6 +9,8 @@ import { createFinanceTransaction, financeCreateSchema } from "../../lib/service
 const email = "mcp-finance-integration@example.com";
 const incomeCode = "mcp_finance_income";
 const expenseCode = "mcp_finance_expense";
+const periodStart = "2037-04-01";
+const periodEnd = "2037-04-30";
 
 type McpResult<T> = {
   content: Array<{ type: string; text: string }>;
@@ -61,7 +63,7 @@ test("finance MCP returns dashboard-consistent read-only finance data", async ()
   ]);
 
   const pending = await createFinanceTransaction(financeCreateSchema.parse({
-    occurredAt: "2026-08-05",
+    occurredAt: "2037-04-05",
     direction: "INCOME",
     amount: 1000,
     categoryId: incomeCategory.id,
@@ -75,7 +77,7 @@ test("finance MCP returns dashboard-consistent read-only finance data", async ()
   }), { userId: user.id, role: "STAFF" });
 
   await createFinanceTransaction(financeCreateSchema.parse({
-    occurredAt: "2026-08-10",
+    occurredAt: "2037-04-10",
     direction: "INCOME",
     amount: 500,
     categoryId: incomeCategory.id,
@@ -89,7 +91,7 @@ test("finance MCP returns dashboard-consistent read-only finance data", async ()
   }), { userId: user.id, role: "STAFF" });
 
   await createFinanceTransaction(financeCreateSchema.parse({
-    occurredAt: "2026-08-12",
+    occurredAt: "2037-04-12",
     direction: "EXPENSE",
     amount: 250,
     categoryId: expenseCategory.id,
@@ -105,8 +107,8 @@ test("finance MCP returns dashboard-consistent read-only finance data", async ()
   const readAuth = auth(user.id, ["finance:read"]);
 
   const summary = await callMcpTool("get_finance_summary", {
-    start: "2026-08-01",
-    end: "2026-08-31",
+    start: periodStart,
+    end: periodEnd,
   }, readAuth) as McpResult<{
     period: { start: string; end: string };
     dashboard: {
@@ -120,7 +122,7 @@ test("finance MCP returns dashboard-consistent read-only finance data", async ()
       missingExpenseInvoices: number;
     };
   }>;
-  assert.deepEqual(summary.structuredContent.period, { start: "2026-08-01", end: "2026-08-31" });
+  assert.deepEqual(summary.structuredContent.period, { start: periodStart, end: periodEnd });
   assert.equal(summary.structuredContent.dashboard.netRevenue, 1500);
   assert.equal(summary.structuredContent.dashboard.totalExpense, 250);
   assert.equal(summary.structuredContent.dashboard.receivable, 1000);
@@ -131,8 +133,8 @@ test("finance MCP returns dashboard-consistent read-only finance data", async ()
   assert.equal(summary.structuredContent.dashboard.missingExpenseInvoices, 1);
 
   const transactions = await callMcpTool("list_finance_transactions", {
-    start: "2026-08-01",
-    end: "2026-08-31",
+    start: periodStart,
+    end: periodEnd,
     query: "MCP Finance",
   }, readAuth) as McpResult<{
     total: number;
@@ -142,8 +144,8 @@ test("finance MCP returns dashboard-consistent read-only finance data", async ()
   assert.equal(transactions.structuredContent.transactions.length, 3);
 
   const receivables = await callMcpTool("list_finance_receivables", {
-    start: "2026-08-01",
-    end: "2026-08-31",
+    start: periodStart,
+    end: periodEnd,
   }, readAuth) as McpResult<{
     total: number;
     trackedReceivableAmount: number;
@@ -155,8 +157,8 @@ test("finance MCP returns dashboard-consistent read-only finance data", async ()
   assert.equal(receivables.structuredContent.receivables[0].paymentStatus, "PENDING");
 
   const missingInvoices = await callMcpTool("list_missing_expense_invoices", {
-    start: "2026-08-01",
-    end: "2026-08-31",
+    start: periodStart,
+    end: periodEnd,
   }, readAuth) as McpResult<{
     total: number;
     totalAmount: number;
