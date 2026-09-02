@@ -68,11 +68,39 @@ test("inventory write tools advertise confirmation-relevant annotations", () => 
     const definition = tools.find((tool) => tool.name === name);
     assert.deepEqual(definition?.annotations, { readOnlyHint: false, idempotentHint: false, destructiveHint: false });
     assert.ok(definition?.inputSchema.properties?.confirmationToken);
+    assert.deepEqual(definition?.inputSchema.properties?.occurredOn, {
+      type: "string",
+      format: "date",
+      description: "異動營運日期，格式 YYYY-MM-DD。使用者有指定日期時必須傳此欄位；未指定時才使用建立當下時間。",
+    });
   }
   const reverse = tools.find((tool) => tool.name === "reverse_inventory_movement");
   const sync = tools.find((tool) => tool.name === "run_sheet_sync");
   assert.equal(reverse?.annotations.destructiveHint, true);
   assert.equal(sync?.annotations.readOnlyHint, false);
+});
+
+test("inventory writes reject ambiguous or invalid explicit dates before execution", async () => {
+  const staff = auth("STAFF", ["inventory:write"]);
+  await assert.rejects(
+    callMcpTool("create_inventory_movement", {
+      sku: "ANY",
+      type: "RECEIVE",
+      quantity: 1,
+      occurredOn: "2026-08-31",
+      occurredAt: "2026-09-02T00:00:00Z",
+    }, staff),
+    /只能擇一/,
+  );
+  await assert.rejects(
+    callMcpTool("create_inventory_movement", {
+      sku: "ANY",
+      type: "RECEIVE",
+      quantity: 1,
+      occurredOn: "2026-02-31",
+    }, staff),
+    /有效的 YYYY-MM-DD/,
+  );
 });
 
 test("billing write tools require confirmation and advertise risk correctly", () => {
