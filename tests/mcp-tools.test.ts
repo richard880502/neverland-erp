@@ -43,7 +43,25 @@ test("billing discovery separates read and write scopes", () => {
   ]);
 });
 
-test("tool execution repeats the role check server-side", async () => {
+test("finance read scope exposes only read-only finance tools to every ERP role", () => {
+  const expected = [
+    "get_finance_summary",
+    "list_finance_transactions",
+    "get_finance_transaction",
+    "list_finance_receivables",
+    "list_missing_expense_invoices",
+    "list_finance_categories",
+  ];
+  for (const role of ["VIEWER", "STAFF", "ADMIN"] as const) {
+    const tools = listMcpTools(auth(role, ["finance:read"]));
+    assert.deepEqual(tools.map((tool) => tool.name), expected);
+    for (const definition of tools) {
+      assert.deepEqual(definition.annotations, { readOnlyHint: true, idempotentHint: true, destructiveHint: false });
+    }
+  }
+});
+
+test("tool execution repeats the role and scope checks server-side", async () => {
   await assert.rejects(
     callMcpTool("create_inventory_movement", {}, auth("VIEWER", ["inventory:write"])),
     /角色權限不足/,
@@ -58,6 +76,10 @@ test("tool execution repeats the role check server-side", async () => {
   );
   await assert.rejects(
     callMcpTool("create_billing_statement", {}, auth("STAFF", ["billing:read"])),
+    /scope 不足/,
+  );
+  await assert.rejects(
+    callMcpTool("get_finance_summary", {}, auth("STAFF", ["billing:read"])),
     /scope 不足/,
   );
 });
