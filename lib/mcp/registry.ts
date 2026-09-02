@@ -8,6 +8,11 @@ import {
   hasBillingMcpTool,
   listBillingMcpTools,
 } from "@/lib/mcp/billing-tools";
+import {
+  callFinanceMcpTool,
+  hasFinanceMcpTool,
+  listFinanceMcpTools,
+} from "@/lib/mcp/finance-tools";
 
 type McpToolResult = {
   content: Array<{ type: string; text: string }>;
@@ -95,12 +100,15 @@ export function listMcpTools(auth?: McpAuth) {
   return [
     ...listCoreMcpTools(auth).map(enhanceInventoryDateSchema),
     ...listBillingMcpTools(auth),
+    ...listFinanceMcpTools(auth),
   ];
 }
 
 export async function callMcpTool(name: string, input: unknown, auth: McpAuth) {
   const result = hasBillingMcpTool(name)
     ? await callBillingMcpTool(name, input, auth)
-    : await callCoreMcpTool(name, normalizeInventoryDateInput(name, input), auth);
+    : hasFinanceMcpTool(name)
+      ? await callFinanceMcpTool(name, input, auth)
+      : await callCoreMcpTool(name, normalizeInventoryDateInput(name, input), auth);
   return normalizeMcpToolResult(name, result);
 }
