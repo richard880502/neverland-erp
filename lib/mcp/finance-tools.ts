@@ -83,22 +83,32 @@ function resolvePeriod(start?: string, end?: string) {
   return { start: `${today.slice(0, 7)}-01`, end: today };
 }
 
-function transactionSearchWhere(query?: string) {
+function transactionSearchWhere(query?: string): Prisma.FinanceTransactionWhereInput {
   if (!query) return {};
   return {
     OR: [
-      { summary: { contains: query, mode: "insensitive" as const } },
-      { counterparty: { contains: query, mode: "insensitive" as const } },
-      { relatedParty: { contains: query, mode: "insensitive" as const } },
-      { salesChannel: { contains: query, mode: "insensitive" as const } },
-      { sourceRef: { contains: query, mode: "insensitive" as const } },
-      { note: { contains: query, mode: "insensitive" as const } },
+      { summary: { contains: query, mode: "insensitive" } },
+      { counterparty: { contains: query, mode: "insensitive" } },
+      { relatedParty: { contains: query, mode: "insensitive" } },
+      { salesChannel: { contains: query, mode: "insensitive" } },
+      { sourceRef: { contains: query, mode: "insensitive" } },
+      { note: { contains: query, mode: "insensitive" } },
       { items: { some: { OR: [
-        { productName: { contains: query, mode: "insensitive" as const } },
-        { sku: { contains: query, mode: "insensitive" as const } },
+        { productName: { contains: query, mode: "insensitive" } },
+        { sku: { contains: query, mode: "insensitive" } },
       ] } } },
     ],
   };
+}
+
+async function channelMapFor(rows: Array<{ channelId: string | null }>) {
+  const ids = [...new Set(rows.flatMap((row) => row.channelId ? [row.channelId] : []))];
+  if (!ids.length) return new Map<string, { id: string; name: string; type: string }>();
+  const channels = await prisma.channel.findMany({
+    where: { id: { in: ids } },
+    select: { id: true, name: true, type: true },
+  });
+  return new Map(channels.map((channel) => [channel.id, channel]));
 }
 
 const financeTools: Tool[] = [
@@ -164,7 +174,7 @@ const financeTools: Tool[] = [
         message: "開始日期不能晚於結束日期",
       }).parse(raw);
 
-      const where = {
+      const where: Prisma.FinanceTransactionWhereInput = {
         ...(input.start || input.end ? {
           occurredAt: {
             ...(input.start ? { gte: startOfTaipeiDate(input.start) } : {}),
@@ -186,7 +196,6 @@ const financeTools: Tool[] = [
           where,
           include: {
             category: { include: { parent: { select: { id: true, code: true, name: true } } } },
-            channel: { select: { id: true, name: true, type: true } },
             items: {
               select: { productId: true, sku: true, productName: true, size: true, quantity: true, lineAmount: true },
               take: 10,
@@ -201,6 +210,7 @@ const financeTools: Tool[] = [
         }),
         prisma.financeTransaction.count({ where }),
       ]);
+      const channelMap = await channelMapFor(rows);
 
       return {
         total,
@@ -218,7 +228,7 @@ const financeTools: Tool[] = [
             name: row.category.name,
             parent: row.category.parent,
           } : null,
-          channel: row.channel,
+          channel: row.channelId ? channelMap.get(row.channelId) ?? { id: row.channelId, name: row.channelId, type: "UNKNOWN" } : null,
           counterparty: row.counterparty,
           relatedParty: row.relatedParty,
           salesChannel: row.salesChannel,
@@ -289,9 +299,9 @@ const financeTools: Tool[] = [
         message: "開始日期不能晚於結束日期",
       }).parse(raw);
 
-      const where = {
-        direction: "INCOME" as const,
-        paymentStatus: { in: ["PENDING", "PARTIAL"] as const },
+      const where: Prisma.FinanceTransactionWhereInput = {
+        direction: "INCOME",
+        paymentStatus: { in: ["PENDING", "PARTIAL"] },
         ...(input.start || input.end ? {
           occurredAt: {
             ...(input.start ? { gte: startOfTaipeiDate(input.start) } : {}),
@@ -307,7 +317,6 @@ const financeTools: Tool[] = [
           where,
           include: {
             category: { select: { id: true, code: true, name: true } },
-            channel: { select: { id: true, name: true, type: true } },
           },
           orderBy: [{ occurredAt: "asc" }, { createdAt: "asc" }],
           take: input.limit,
@@ -316,6 +325,7 @@ const financeTools: Tool[] = [
         prisma.financeTransaction.count({ where }),
         prisma.financeTransaction.aggregate({ where, _sum: { amount: true } }),
       ]);
+      const channelMap = await channelMapFor(rows);
 
       return {
         total,
@@ -330,7 +340,7 @@ const financeTools: Tool[] = [
           amount: Number(row.amount),
           paymentStatus: row.paymentStatus,
           category: row.category,
-          channel: row.channel,
+          channel: row.channelId ? channelMap.get(row.channelId) ?? { id: row.channelId, name: row.channelId, type: "UNKNOWN" } : null,
           counterparty: row.counterparty,
           salesChannel: row.salesChannel,
           summary: row.summary,
@@ -368,10 +378,10 @@ const financeTools: Tool[] = [
         message: "開始日期不能晚於結束日期",
       }).parse(raw);
 
-      const where = {
-        direction: "EXPENSE" as const,
-        invoiceStatus: "MISSING" as const,
-        paymentStatus: { not: "VOID" as const },
+      const where: Prisma.FinanceTransactionWhereInput = {
+        direction: "EXPENSE",
+        invoiceStatus: "MISSING",
+        paymentStatus: { not: "VOID" },
         ...(input.start || input.end ? {
           occurredAt: {
             ...(input.start ? { gte: startOfTaipeiDate(input.start) } : {}),
