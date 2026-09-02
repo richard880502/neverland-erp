@@ -63,6 +63,8 @@ export function MovementBatchEntry({ products, channels }: { products: Product[]
   const sortedProducts = useMemo(() => [...products].sort((a, b) => a.sku.localeCompare(b.sku, "zh-Hant", { numeric: true })), [products]);
   const activeRowCount = useMemo(() => rows.filter(rowHasContent).length, [rows]);
   const shippingEnabled = shippingMovementTypes.has(type);
+  const selectedChannel = channels.find((channel) => channel.id === channelId) ?? null;
+  const supportsReimbursable = selectedChannel?.type === "CONSIGNMENT" || selectedChannel?.type === "BUYOUT";
   const listId = "movement-batch-products";
 
   function resolveProduct(value: string) {
@@ -134,6 +136,7 @@ export function MovementBatchEntry({ products, channels }: { products: Product[]
     const missingPriceIndex = isSale(type) ? activeRows.findIndex((row) => row.unitPrice === "" || Number(row.unitPrice) < 0) : -1;
     if (missingPriceIndex >= 0) return setMessage(`第 ${missingPriceIndex + 1} 筆需要填成交單價`);
     if (shippingEnabled && shippingFee !== "" && Number(shippingFee) < 0) return setMessage("運費不能小於 0");
+    if (shippingPayer === "REIMBURSABLE" && !supportsReimbursable) return setMessage("公司代墊運費只能用在寄賣或買斷通路");
 
     setLoading(true);
     let created = 0;
@@ -171,9 +174,21 @@ export function MovementBatchEntry({ products, channels }: { products: Product[]
     setLoading(false);
     setRows([emptyRow()]);
     setShippingGroupKey(crypto.randomUUID());
-    setMessage(`已寫入 ${created} 筆；日期、事件、通路、單號與物流設定已保留。${shippingEnabled && Number(shippingFee || 0) > 0 && (shippingPayer || "COMPANY") === "COMPANY" ? "這次寫入只建立 1 筆運費財務支出。" : ""}`);
+    const hasShippingExpense = shippingEnabled && Number(shippingFee || 0) > 0 && ["COMPANY", "REIMBURSABLE"].includes(shippingPayer || "COMPANY");
+    const shippingMessage = shippingPayer === "REIMBURSABLE"
+      ? "這次只建立 1 筆運費財務支出，並標記為後續 B2B 請款回收。"
+      : hasShippingExpense ? "這次寫入只建立 1 筆運費財務支出。" : "";
+    setMessage(`已寫入 ${created} 筆；日期、事件、通路、單號與物流設定已保留。${shippingMessage}`);
     router.refresh();
   }
+
+  const financeSyncText = !shippingEnabled
+    ? "不產生物流支出"
+    : shippingPayer === "REIMBURSABLE"
+      ? "先記支出，結算時再回收"
+      : (shippingPayer || "COMPANY") === "COMPANY"
+        ? "每批只建立 1 筆運費支出"
+        : "不建立公司物流支出";
 
   return <details className="panel drawer" open>
     <summary><span className="btn btn-primary"><Plus size={16} />新增庫存異動</span></summary>
@@ -192,8 +207,8 @@ export function MovementBatchEntry({ products, channels }: { products: Product[]
       <div className="form-grid" style={{ padding: 0, marginTop: 16 }}>
         <div className="field"><label>收送貨方式</label><input className="input" list="movement-batch-shipping-methods" value={shippingMethod} onChange={(event) => setShippingMethod(event.target.value)} disabled={!shippingEnabled} placeholder={shippingEnabled ? "通路有預設時會自動帶入" : "此事件不需物流"} /></div>
         <div className="field"><label>運費</label><input className="input" type="number" min="0" step="1" value={shippingFee} onChange={(event) => setShippingFee(event.target.value)} disabled={!shippingEnabled} placeholder={shippingEnabled ? "0" : "—"} /></div>
-        <div className="field"><label>運費負擔</label><select className="select" value={shippingPayer} onChange={(event) => setShippingPayer(event.target.value)} disabled={!shippingEnabled}><option value="">自動（有運費時預設公司）</option><option value="COMPANY">公司負擔</option><option value="CUSTOMER">客戶負擔</option><option value="CHANNEL">通路負擔</option><option value="SUPPLIER">供應商負擔</option></select></div>
-        <div className="field"><label>財務同步</label><div className="input" style={{ display: "flex", alignItems: "center", color: "var(--muted)", cursor: "default" }}>{shippingEnabled ? "每次寫入只會建立 1 筆運費支出" : "不產生物流支出"}</div></div>
+        <div className="field"><label>運費處理</label><select className="select" value={shippingPayer} onChange={(event) => setShippingPayer(event.target.value)} disabled={!shippingEnabled}><option value="">自動（依通路預設）</option><option value="COMPANY">公司負擔（公司吸收）</option>{supportsReimbursable && <option value="REIMBURSABLE">公司代墊（後續請款）</option>}<option value="CUSTOMER">客戶直接負擔</option><option value="CHANNEL">通路直接負擔</option><option value="SUPPLIER">供應商負擔</option></select></div>
+        <div className="field"><label>財務同步</label><div className="input" style={{ display: "flex", alignItems: "center", color: "var(--muted)", cursor: "default" }}>{financeSyncText}</div></div>
       </div>
 
       <div style={{ display: "flex", alignItems: "flex-end", gap: 16, flexWrap: "wrap", marginTop: 16, marginBottom: 18 }}>
@@ -229,7 +244,7 @@ export function MovementBatchEntry({ products, channels }: { products: Product[]
       </div>
 
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
-        <span className="helper">上方資料會套用到所有商品列；一列可當單筆使用，多列可一次批次寫入，公司運費每次只同步 1 筆到財務。</span>
+        <span className="helper">上方資料會套用到所有商品列；一列可當單筆使用，多列可一次批次寫入。公司負擔與公司代墊都只會依同一物流批次同步一筆支出。</span>
         <button className="btn btn-primary" type="button" disabled={loading || activeRowCount === 0} onClick={() => void submitBatch()}>{loading ? "寫入中…" : `寫入 ${activeRowCount} 筆`}</button>
       </div>
     </div>

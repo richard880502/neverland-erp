@@ -94,7 +94,6 @@ async function findUnsettledMovements(db: Db, input: BillingPreviewInput, moveme
 }
 
 async function getBillableShipping(db: Db, input: BillingPreviewInput, enabled: boolean) {
-  if (!enabled) return { fee: 0, groupCount: 0 };
   const rows = await db.stockMovement.findMany({
     where: {
       channelId: input.channelId,
@@ -102,19 +101,30 @@ async function getBillableShipping(db: Db, input: BillingPreviewInput, enabled: 
       reversedAt: null,
       reversalOfId: null,
       shippingFee: { gt: 0 },
-      shippingPayer: { in: ["CHANNEL", "CUSTOMER"] },
+      OR: [
+        { shippingPayer: "REIMBURSABLE" },
+        ...(enabled ? [{ shippingPayer: { in: ["CHANNEL", "CUSTOMER"] } }] : []),
+      ],
     },
-    select: { id: true, shippingFee: true, shippingGroupKey: true },
+    select: { id: true, shippingFee: true, shippingGroupKey: true, shippingPayer: true },
     orderBy: { occurredAt: "asc" },
   });
-  const groups = new Map<string, number>();
+  const groups = new Map<string, { fee: number; reimbursable: boolean }>();
   for (const row of rows) {
     const key = row.shippingGroupKey || row.id;
     const fee = Number(row.shippingFee ?? 0);
-    if (!groups.has(key)) groups.set(key, fee);
-    else groups.set(key, Math.max(groups.get(key) ?? 0, fee));
+    const current = groups.get(key);
+    if (!current) groups.set(key, { fee, reimbursable: row.shippingPayer === "REIMBURSABLE" });
+    else groups.set(key, { fee: Math.max(current.fee, fee), reimbursable: current.reimbursable || row.shippingPayer === "REIMBURSABLE" });
   }
-  return { fee: roundMoney([...groups.values()].reduce((sum, fee) => sum + fee, 0)), groupCount: groups.size };
+  const all = [...groups.values()];
+  const reimbursable = all.filter((group) => group.reimbursable);
+  return {
+    fee: roundMoney(all.reduce((sum, group) => sum + group.fee, 0)),
+    groupCount: all.length,
+    reimbursableFee: roundMoney(reimbursable.reduce((sum, group) => sum + group.fee, 0)),
+    reimbursableGroupCount: reimbursable.length,
+  };
 }
 
 function groupMovementQuantities(movements: Array<{ productId: string; quantity: number }>) {
@@ -175,6 +185,8 @@ async function buildPreview(db: Db, input: BillingPreviewInput) {
     sourceMovementIds: movements.map((movement) => movement.id),
     suggestedShippingFee: billableShipping.fee,
     suggestedShippingGroupCount: billableShipping.groupCount,
+    suggestedReimbursableShippingFee: billableShipping.reimbursableFee,
+    suggestedReimbursableShippingGroupCount: billableShipping.reimbursableGroupCount,
     policy: {
       settlementCycle: channel.settlementCycle,
       billingTrigger: channel.billingTrigger,
@@ -326,6 +338,7 @@ export async function createBillingStatement(input: BillingCreateInput, actor: A
               `請款單 ${statementNo}`,
               `期間 ${input.periodStart}～${input.periodEnd}`,
               settlementSources.length ? `來源銷貨 ${settlementSources.length} 筆` : "手動請款",
+              shippingFee > 0 ? `含運費 / 代墊回收 ${shippingFee}` : null,
               channel.requiresSalesInvoice ? "需開銷項發票" : null,
             ].filter(Boolean).join("；"),
             createdById: actor.userId,
@@ -355,6 +368,7 @@ export async function createBillingStatement(input: BillingCreateInput, actor: A
               statementNo,
               channelId: input.channelId,
               totalAmount,
+              shippingFee,
               entryMode: settlementSources.length ? "SETTLEMENT" : "MANUAL",
               itemCount: items.length,
               sourceMovementCount: settlementSources.length,

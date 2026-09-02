@@ -48,6 +48,8 @@ type AutofillResult = {
   sourceMovementIds: string[];
   suggestedShippingFee: number;
   suggestedShippingGroupCount: number;
+  suggestedReimbursableShippingFee: number;
+  suggestedReimbursableShippingGroupCount: number;
   policy: {
     settlementCycle: SettlementCycle | null;
     billingTrigger: BillingTrigger | null;
@@ -113,6 +115,8 @@ export function BillingManager({
   const [taxPercent, setTaxPercent] = useState(initialChannel?.taxRate == null ? "5" : String(initialChannel.taxRate * 100));
   const [shippingFee, setShippingFee] = useState("0");
   const [shippingSourceCount, setShippingSourceCount] = useState(0);
+  const [reimbursableShippingSourceCount, setReimbursableShippingSourceCount] = useState(0);
+  const [reimbursableShippingFee, setReimbursableShippingFee] = useState(0);
   const [note, setNote] = useState("");
   const [rows, setRows] = useState<ItemRow[]>([{ id: 1, productId: "", quantity: "1" }]);
   const [nextRowId, setNextRowId] = useState(2);
@@ -153,15 +157,20 @@ export function BillingManager({
         setNextRowId(nextRows.length + 1);
         setSourceMovementIds(result.sourceMovementIds ?? []);
         setAutofillSourceCount(result.sourceMovementCount);
-        setShippingSourceCount(result.suggestedShippingGroupCount ?? 0);
-        if (result.policy?.includeShippingInBilling) setShippingFee(String(result.suggestedShippingFee ?? 0));
-        else setShippingFee("0");
-        const shippingText = result.policy?.includeShippingInBilling
-          ? `；另帶入 ${result.suggestedShippingGroupCount} 批可請款運費 ${money(result.suggestedShippingFee)}`
+        const shippingGroups = result.suggestedShippingGroupCount ?? 0;
+        const reimbursableGroups = result.suggestedReimbursableShippingGroupCount ?? 0;
+        const reimbursableFee = result.suggestedReimbursableShippingFee ?? 0;
+        const shouldAutofillShipping = Boolean(result.policy?.includeShippingInBilling) || reimbursableGroups > 0;
+        setShippingSourceCount(shippingGroups);
+        setReimbursableShippingSourceCount(reimbursableGroups);
+        setReimbursableShippingFee(reimbursableFee);
+        setShippingFee(shouldAutofillShipping ? String(result.suggestedShippingFee ?? 0) : "0");
+        const shippingText = shouldAutofillShipping
+          ? `；另帶入 ${shippingGroups} 批可請款運費 ${money(result.suggestedShippingFee)}${reimbursableGroups > 0 ? `，其中 ${reimbursableGroups} 批為公司代墊 ${money(reimbursableFee)}` : ""}`
           : "";
         setAutofillMessage(result.items.length > 0
           ? `找到 ${result.sourceMovementCount} 筆尚未結算銷貨，已彙整成 ${result.items.length} 個 SKU${shippingText}。建立後會鎖定銷貨來源並同步一筆應收到收支。`
-          : "這個期間沒有尚未結算的銷貨；若是例外請款，仍可手動新增品項。 ");
+          : `這個期間沒有尚未結算的銷貨${shippingText}；若是例外請款，仍可手動新增品項。`);
       } catch (error) {
         if ((error as Error).name !== "AbortError") setAutofillMessage("讀取待結算銷貨失敗，你仍然可以手動建立請款。");
       } finally {
@@ -208,6 +217,8 @@ export function BillingManager({
     setTaxPercent(next?.taxRate == null ? "5" : String(next.taxRate * 100));
     setShippingFee("0");
     setShippingSourceCount(0);
+    setReimbursableShippingSourceCount(0);
+    setReimbursableShippingFee(0);
     setRows([{ id: 1, productId: "", quantity: "1" }]);
     setNextRowId(2);
     setAutofillSourceCount(0);
@@ -290,7 +301,9 @@ export function BillingManager({
           <div className="field"><label>請款 / 入帳日期</label><input className="input" type="date" value={issuedAt} onChange={(event) => setIssuedAt(event.target.value)} /></div>
           <div className="field"><label>結算比例 (%)</label><input className="input" type="number" min="0.01" max="100" step="0.01" placeholder="例如 60" value={settlementPercent} onChange={(event) => setSettlementPercent(event.target.value)} /></div>
           <div className="field"><label>營業稅 (%)</label><input className="input" type="number" min="0" max="100" step="0.01" value={taxPercent} onChange={(event) => setTaxPercent(event.target.value)} /></div>
-          <div className="field"><label>請款運費</label><input className="input" type="number" min="0" step="1" value={shippingFee} onChange={(event) => setShippingFee(event.target.value)} /><small className="helper">{channel?.includeShippingInBilling ? `依期間自動帶入 ${shippingSourceCount} 批通路負擔運費，可人工校正。` : "通路主檔未設定運費列入請款。"}</small></div>
+          <div className="field"><label>請款運費</label><input className="input" type="number" min="0" step="1" value={shippingFee} onChange={(event) => setShippingFee(event.target.value)} /><small className="helper">{reimbursableShippingSourceCount > 0
+            ? `已帶入 ${reimbursableShippingSourceCount} 批公司代墊運費 ${money(reimbursableShippingFee)}；本期共 ${shippingSourceCount} 批可請款運費，可人工校正。`
+            : channel?.includeShippingInBilling ? `依期間自動帶入 ${shippingSourceCount} 批通路 / 客戶負擔運費，可人工校正。` : "通路主檔未設定一般運費列入請款。"}</small></div>
         </div>
         <div className="billing-items-editor">
           <div className="billing-items-editor-head"><div><span>ITEMS</span><strong>{autoSettlement ? "待結算銷貨彙總" : "手動請款品項"}</strong></div><div className="billing-items-editor-actions"><button type="button" className="btn btn-secondary" disabled={autofillLoading || !channelId || periodStart > periodEnd} onClick={() => setAutofillVersion((value) => value + 1)}><RefreshCw size={14} />{autofillLoading ? "整理中…" : "重新整理待結算"}</button>{!autoSettlement && <button type="button" className="btn btn-secondary" onClick={addRow}><Plus size={14} />新增品項</button>}</div></div>
@@ -302,6 +315,7 @@ export function BillingManager({
           </div>)}
         </div>
         {autoSettlement && <p className="billing-hint">這批品項由 {autofillSourceCount} 筆尚未結算的庫存銷貨產生，為確保可追溯性，商品與數量在此鎖定；若資料不對，請先修正庫存異動再重新整理。</p>}
+        {reimbursableShippingSourceCount > 0 && <p className="billing-hint">本期包含公司先支付、之後向通路回收的代墊運費。這些金額已包含在請款運費中，不需要再另外手動加一次。</p>}
         {channel?.requiresSalesInvoice && <p className="billing-hint">此通路主檔設定「需開銷項發票」；建立後 Finance 會標記為待處理發票。</p>}
         <div className="field"><label>備註</label><textarea className="textarea" rows={3} value={note} onChange={(event) => setNote(event.target.value)} /></div>
         {channel && channel.settlementRate == null && <p className="billing-hint">此客戶尚未設定預設結算比例，本次可直接輸入；之後可到「通路主檔」保存。</p>}
@@ -310,11 +324,11 @@ export function BillingManager({
       <div className="panel billing-preview-panel">
         <div className="billing-section-head"><span>02 / PREVIEW</span><h2>結算預覽</h2></div>
         {autofillLoading && previewItems.length === 0 ? <div className="billing-empty"><strong>正在整理待結算銷貨…</strong><span>只會抓尚未被其他結算使用的庫存異動。</span></div> : previewItems.length === 0 ? <div className="billing-empty"><strong>目前沒有待結算品項</strong><span>若是沒有對應庫存銷貨的例外請款，可以手動新增商品與數量。</span></div> : <>
-          <div className="billing-preview-meta"><span>{previewItems.length} 個 SKU</span>{autoSettlement ? <span>{autofillSourceCount} 筆待結算銷貨</span> : <span>手動請款</span>}<span>{autoSettlement ? "建立後鎖定來源" : "無庫存來源連結"}</span>{channel?.requiresSalesInvoice && <span>需開發票</span>}</div>
+          <div className="billing-preview-meta"><span>{previewItems.length} 個 SKU</span>{autoSettlement ? <span>{autofillSourceCount} 筆待結算銷貨</span> : <span>手動請款</span>}<span>{autoSettlement ? "建立後鎖定來源" : "無庫存來源連結"}</span>{reimbursableShippingSourceCount > 0 && <span>{reimbursableShippingSourceCount} 批代墊運費</span>}{channel?.requiresSalesInvoice && <span>需開發票</span>}</div>
           <div className="table-wrap billing-items"><table><thead><tr><th>SKU</th><th>品項</th><th>售價</th><th>結算價</th><th>數量</th><th>小計</th></tr></thead><tbody>{previewItems.map((item) => <tr key={item.product.id}><td className="mono">{item.product.sku}</td><td>{item.product.name}{item.product.size ? ` · ${item.product.size}` : ""}</td><td>{item.product.listPrice == null ? "未設定" : money(item.listPrice)}</td><td>{item.product.listPrice == null ? "—" : money(item.settlementPrice)}</td><td>{item.quantity}</td><td>{item.product.listPrice == null ? "—" : money(item.subtotal)}</td></tr>)}</tbody></table></div>
           {hasMissingPrice && <div className="form-error billing-preview-error">有商品尚未設定建議售價，請先補上售價。</div>}
           <div className="billing-total-box">
-            <div><span>未稅金額</span><strong>{money(subtotal)}</strong></div><div><span>營業稅</span><strong>{money(taxAmount)}</strong></div><div><span>運費{channel?.includeShippingInBilling ? "（列入請款）" : ""}</span><strong>{money(Number.isFinite(shipping) ? shipping : 0)}</strong></div>
+            <div><span>未稅金額</span><strong>{money(subtotal)}</strong></div><div><span>營業稅</span><strong>{money(taxAmount)}</strong></div><div><span>運費{reimbursableShippingSourceCount > 0 ? "（含代墊回收）" : channel?.includeShippingInBilling ? "（列入請款）" : ""}</span><strong>{money(Number.isFinite(shipping) ? shipping : 0)}</strong></div>
             <div className="grand"><span>請款總額</span><strong>{money(totalAmount)}</strong></div>
           </div>
           <button className="btn btn-primary billing-create-button" disabled={saving || !canCreate} onClick={createStatement}>{saving ? "建立中…" : autoSettlement ? "確認並建立結算" : "建立手動請款"}</button>

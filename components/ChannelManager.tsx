@@ -56,7 +56,13 @@ type ChannelDraft = {
 };
 
 const shippingMethods = ["7-11 店到店", "全家店到店", "郵局", "黑貓宅急便", "新竹物流", "Lalamove", "親送", "店取", "其他"];
-const payerLabels: Record<string, string> = { COMPANY: "公司負擔", CUSTOMER: "客戶負擔", CHANNEL: "通路負擔", SUPPLIER: "供應商負擔" };
+const payerLabels: Record<string, string> = {
+  COMPANY: "公司負擔",
+  REIMBURSABLE: "公司代墊（後續請款）",
+  CUSTOMER: "客戶直接負擔",
+  CHANNEL: "通路直接負擔",
+  SUPPLIER: "供應商負擔",
+};
 const cycleLabels: Record<SettlementCycle, string> = {
   PER_ORDER: "每筆訂單",
   DAILY: "每日結算",
@@ -114,7 +120,7 @@ function toDraft(channel: Channel): ChannelDraft {
     settlementCycle: defaultCycle(channel),
     billingTrigger: defaultTrigger(channel),
     billingWithinDays: channel.billingWithinDays == null ? (channel.type === "BUYOUT" ? "7" : "") : String(channel.billingWithinDays),
-    includeShippingInBilling: channel.includeShippingInBilling,
+    includeShippingInBilling: channel.defaultShippingPayer === "REIMBURSABLE" ? true : channel.includeShippingInBilling,
     requiresSalesInvoice: channel.requiresSalesInvoice,
     defaultShippingMethod: channel.defaultShippingMethod ?? "",
     defaultShippingFee: channel.defaultShippingFee == null ? "" : String(channel.defaultShippingFee),
@@ -136,7 +142,11 @@ function settlementSummary(channel: Channel) {
   const cycle = channel.settlementCycle ? cycleLabels[channel.settlementCycle] : "結算規則未設定";
   const trigger = channel.billingTrigger ? triggerLabels[channel.billingTrigger] : null;
   const billingDays = channel.type === "DIRECT" || channel.billingWithinDays == null ? null : `${channel.billingWithinDays} 天內請款`;
-  const shipping = channel.type === "DIRECT" || !channel.includeShippingInBilling ? null : "運費列入請款";
+  const shipping = channel.type === "DIRECT"
+    ? null
+    : channel.defaultShippingPayer === "REIMBURSABLE"
+      ? "代墊運費自動列入請款"
+      : channel.includeShippingInBilling ? "運費列入請款" : null;
   const invoice = channel.requiresSalesInvoice ? "需開發票" : null;
   return [cycle, trigger, billingDays, shipping, invoice].filter(Boolean).join(" · ");
 }
@@ -212,7 +222,7 @@ export function ChannelManager({ channels, canWrite }: { channels: Channel[]; ca
         taxRate: draft.taxPercent === "" ? null : Number(draft.taxPercent) / 100,
         paymentTermsDays: Number(draft.paymentTermsDays || 0),
         billingWithinDays: draft.billingWithinDays === "" ? null : Number(draft.billingWithinDays),
-        includeShippingInBilling: draft.includeShippingInBilling,
+        includeShippingInBilling: draft.defaultShippingPayer === "REIMBURSABLE" ? true : draft.includeShippingInBilling,
       });
     }
     if (supportsSettlementPolicy(editing)) {
@@ -313,19 +323,23 @@ export function ChannelManager({ channels, canWrite }: { channels: Channel[]; ca
                         <div className="field"><label>結算方式</label><select className="select" value={draft.settlementCycle} onChange={(event) => setDraft({ ...draft, settlementCycle: event.target.value })}><option value="MONTHLY">每月結算</option><option value="PER_SHIPMENT">每次出貨結算</option><option value="MANUAL">手動結算</option></select></div>
                         <div className="field"><label>請款觸發</label><select className="select" value={draft.billingTrigger} onChange={(event) => setDraft({ ...draft, billingTrigger: event.target.value })}><option value="EXTERNAL_STATEMENT">收到通路月結表</option><option value="DELIVERED">商品到貨</option><option value="SHIPPED">出貨完成</option><option value="MANUAL">由人員確認</option></select></div>
                         <div className="field"><label>觸發後幾天內請款</label><input className="input" type="number" min="0" max="365" placeholder="例如 7" value={draft.billingWithinDays} onChange={(event) => setDraft({ ...draft, billingWithinDays: event.target.value })} /></div>
-                        <div className="field"><label>運費列入請款</label><select className="select" value={draft.includeShippingInBilling ? "YES" : "NO"} onChange={(event) => setDraft({ ...draft, includeShippingInBilling: event.target.value === "YES" })}><option value="NO">否，我方吸收 / 不列入</option><option value="YES">是，結算時加總運費</option></select></div>
+                        <div className="field"><label>運費列入請款</label><select className="select" disabled={draft.defaultShippingPayer === "REIMBURSABLE"} value={draft.defaultShippingPayer === "REIMBURSABLE" ? "YES" : draft.includeShippingInBilling ? "YES" : "NO"} onChange={(event) => setDraft({ ...draft, includeShippingInBilling: event.target.value === "YES" })}><option value="NO">否，我方吸收 / 不列入</option><option value="YES">是，結算時加總運費</option></select></div>
                         <div className="field"><label>銷項發票</label><select className="select" value={draft.requiresSalesInvoice ? "YES" : "NO"} onChange={(event) => setDraft({ ...draft, requiresSalesInvoice: event.target.value === "YES" })}><option value="NO">不固定要求</option><option value="YES">需要開發票</option></select></div>
                       </div>
+                      {draft.defaultShippingPayer === "REIMBURSABLE" && <p className="billing-hint">物流設定為「公司代墊（後續請款）」；運費列入請款會自動啟用，出貨時先記物流支出，結算時再帶入回收。</p>}
                       <p className="helper">「付款天數」是開出請款後對方多久付款；「幾天內請款」是觸發事件發生後，我們多久內要完成請款，兩者分開管理。</p>
                     </>}
                   </div>}
 
                   <div style={{ marginBottom: 22 }}>
-                    <div className="billing-list-head" style={{ marginBottom: 12 }}><div><span>SHIPPING</span><h3>物流 / 運費預設</h3><p className="helper">新增庫存異動時會自動帶入，當次仍可修改；通路主檔只保存預設。</p></div></div>
+                    <div className="billing-list-head" style={{ marginBottom: 12 }}><div><span>SHIPPING</span><h3>物流 / 運費預設</h3><p className="helper">新增庫存異動時會自動帶入，當次仍可修改；「公司代墊」會先記實際物流支出，再於 B2B 結算自動帶入待回收運費。</p></div></div>
                     <div className="billing-three-col">
                       <div className="field"><label>預設收送貨方式</label><input className="input" list="channel-shipping-methods" value={draft.defaultShippingMethod} onChange={(event) => setDraft({ ...draft, defaultShippingMethod: event.target.value })} placeholder="例如 7-11 店到店" /></div>
                       <div className="field"><label>預設運費</label><input className="input" type="number" min="0" step="1" value={draft.defaultShippingFee} onChange={(event) => setDraft({ ...draft, defaultShippingFee: event.target.value })} placeholder="0" /></div>
-                      <div className="field"><label>預設運費負擔</label><select className="select" value={draft.defaultShippingPayer} onChange={(event) => setDraft({ ...draft, defaultShippingPayer: event.target.value })}><option value="COMPANY">公司負擔</option><option value="CUSTOMER">客戶負擔</option><option value="CHANNEL">通路負擔</option><option value="SUPPLIER">供應商負擔</option></select></div>
+                      <div className="field"><label>預設運費處理</label><select className="select" value={draft.defaultShippingPayer} onChange={(event) => {
+                        const value = event.target.value;
+                        setDraft({ ...draft, defaultShippingPayer: value, includeShippingInBilling: value === "REIMBURSABLE" ? true : draft.includeShippingInBilling });
+                      }}><option value="COMPANY">公司負擔（公司吸收）</option>{supportsBillingProfile(editing) && <option value="REIMBURSABLE">公司代墊（後續請款）</option>}<option value="CUSTOMER">客戶直接負擔</option><option value="CHANNEL">通路直接負擔</option><option value="SUPPLIER">供應商負擔</option></select></div>
                     </div>
                   </div>
 

@@ -48,7 +48,13 @@ type MovementFilters = {
 };
 type ProductSort = "sku" | "name";
 
-const payerLabels: Record<string, string> = { COMPANY: "公司", CUSTOMER: "客戶", CHANNEL: "通路", SUPPLIER: "供應商" };
+const payerLabels: Record<string, string> = { COMPANY: "公司", REIMBURSABLE: "公司代墊", CUSTOMER: "客戶", CHANNEL: "通路", SUPPLIER: "供應商" };
+
+function shippingPayerLabel(payer: string | null) {
+  if (!payer) return "未指定負擔者";
+  if (payer === "REIMBURSABLE") return "公司代墊 · 後續請款";
+  return `${payerLabels[payer] ?? payer}負擔`;
+}
 
 function productLabel(product: Product) {
   return `${product.sku} · ${product.name}${product.size ? ` · ${product.size}` : ""}`;
@@ -214,7 +220,7 @@ export function MovementManager({ products, channels, movements, filters, canWri
           : movement.product.listPrice != null
             ? <><span>NT$ {movement.product.listPrice.toLocaleString()}</span><small className="price-kind">參考定價</small></>
             : "—"}</td>
-        <td>{movement.shippingMethod || movement.shippingFee != null ? <div style={{ display: "grid", gap: 3 }}><strong>{movement.shippingMethod ?? "物流"}{movement.shippingFee != null ? ` · NT$ ${movement.shippingFee.toLocaleString()}` : ""}</strong><small className="price-kind">{movement.shippingPayer ? `${payerLabels[movement.shippingPayer] ?? movement.shippingPayer}負擔` : "未指定負擔者"}{movement.shippingPayer === "COMPANY" && (movement.shippingFee ?? 0) > 0 ? " · 已同步財務" : ""}</small></div> : "—"}</td>
+        <td>{movement.shippingMethod || movement.shippingFee != null ? <div style={{ display: "grid", gap: 3 }}><strong>{movement.shippingMethod ?? "物流"}{movement.shippingFee != null ? ` · NT$ ${movement.shippingFee.toLocaleString()}` : ""}</strong><small className="price-kind">{shippingPayerLabel(movement.shippingPayer)}{["COMPANY", "REIMBURSABLE"].includes(movement.shippingPayer ?? "") && (movement.shippingFee ?? 0) > 0 ? " · 已同步財務" : ""}</small></div> : "—"}</td>
         <td>{[movement.referenceNo, movement.note].filter(Boolean).join(" · ") || "—"}</td><td>{movement.createdBy}</td>
         <td>{canWrite && !movement.reversedAt && !movement.isReversal && <button className="btn btn-danger" onClick={() => reverse(movement.id)} title="沖銷"><RotateCcw size={15} /></button>}</td>
       </tr>) : <tr><td colSpan={11} style={{ textAlign: "center", padding: 28, color: "var(--muted)" }}>沒有符合目前條件的庫存異動。</td></tr>}</tbody>

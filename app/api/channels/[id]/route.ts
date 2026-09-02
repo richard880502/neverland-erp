@@ -4,7 +4,7 @@ import { z } from "zod";
 import { assertSameOrigin, authErrorResponse, clientIp, requireApiUser } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 
-const shippingPayerSchema = z.enum(["COMPANY", "CUSTOMER", "CHANNEL", "SUPPLIER"]);
+const shippingPayerSchema = z.enum(["COMPANY", "REIMBURSABLE", "CUSTOMER", "CHANNEL", "SUPPLIER"]);
 const settlementCycleSchema = z.enum(["PER_ORDER", "DAILY", "WEEKLY", "MONTHLY", "PER_SHIPMENT", "PER_PAYOUT", "MANUAL"]);
 const billingTriggerSchema = z.enum(["EXTERNAL_STATEMENT", "DELIVERED", "SHIPPED", "ORDER_COMPLETED", "PAYOUT_RECEIVED", "PAYMENT_RECEIVED", "MANUAL"]);
 
@@ -59,6 +59,10 @@ export async function PATCH(request: Request, context: { params: Promise<{ id: s
       return NextResponse.json({ error: "此通路類型不支援銷售 / 結算規則" }, { status: 400 });
     }
 
+    if (parsed.data.defaultShippingPayer === "REIMBURSABLE" && !["CONSIGNMENT", "BUYOUT"].includes(existing.type)) {
+      return NextResponse.json({ error: "公司代墊運費目前只適用寄賣與買斷通路" }, { status: 400 });
+    }
+
     if (parsed.data.settlementCycle) {
       const allowed = existing.type === "DIRECT" ? directCycles : b2bCycles;
       if (!["DIRECT", "CONSIGNMENT", "BUYOUT"].includes(existing.type) || !allowed.has(parsed.data.settlementCycle)) {
@@ -72,16 +76,20 @@ export async function PATCH(request: Request, context: { params: Promise<{ id: s
       }
     }
 
+    const updateData = {
+      ...parsed.data,
+      ...(parsed.data.defaultShippingPayer === "REIMBURSABLE" ? { includeShippingInBilling: true } : {}),
+    };
     const channel = await prisma.$transaction(async (tx) => {
-      const updated = await tx.channel.update({ where: { id }, data: parsed.data });
-      const activeOnly = Object.keys(parsed.data).length === 1 && parsed.data.active !== undefined;
+      const updated = await tx.channel.update({ where: { id }, data: updateData });
+      const activeOnly = Object.keys(updateData).length === 1 && updateData.active !== undefined;
       await tx.auditLog.create({
         data: {
           userId: auth.user.id,
-          action: activeOnly ? (parsed.data.active ? "CHANNEL_ENABLED" : "CHANNEL_DISABLED") : "CHANNEL_SETTINGS_UPDATED",
+          action: activeOnly ? (updateData.active ? "CHANNEL_ENABLED" : "CHANNEL_DISABLED") : "CHANNEL_SETTINGS_UPDATED",
           entityType: "Channel",
           entityId: id,
-          metadata: { name: existing.name, updatedFields: Object.keys(parsed.data) },
+          metadata: { name: existing.name, updatedFields: Object.keys(updateData) },
           ipAddress: clientIp(request),
         },
       });
