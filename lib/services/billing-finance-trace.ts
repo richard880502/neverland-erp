@@ -7,9 +7,15 @@ const movementLabels: Record<string, string> = {
   SALES_RETURN: "銷貨退回",
 };
 
+function statementIdFromSourceRef(sourceRef: string | null) {
+  if (!sourceRef) return null;
+  if (sourceRef.startsWith("BILLING:")) return sourceRef.slice("BILLING:".length) || null;
+  if (sourceRef.startsWith("BILLING_SHIPPING_REIMBURSEMENT:")) return sourceRef.slice("BILLING_SHIPPING_REIMBURSEMENT:".length) || null;
+  return null;
+}
+
 export async function getBillingFinanceTrace(sourceRef: string | null) {
-  if (!sourceRef?.startsWith("BILLING:")) return null;
-  const statementId = sourceRef.slice("BILLING:".length);
+  const statementId = statementIdFromSourceRef(sourceRef);
   if (!statementId) return null;
 
   const statement = await prisma.billingStatement.findUnique({

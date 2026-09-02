@@ -4,6 +4,7 @@ import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 
 const datePattern = /^\d{4}-\d{2}-\d{2}$/;
+const reimbursementSourceRef = (statementId: string) => `BILLING_SHIPPING_REIMBURSEMENT:${statementId}`;
 
 export const billingPreviewSchema = z.object({
   channelId: z.string().min(1),
@@ -233,16 +234,19 @@ export async function createBillingStatement(input: BillingCreateInput, actor: A
         const products = await tx.product.findMany({ where: { id: { in: productIds }, active: true } });
         if (products.length !== productIds.length) throw new Error("請款品項包含不存在或已停用的商品");
 
-        const eligibleMovements = await findUnsettledMovements(tx, input, source.movementType) as SettlementSource[];
+        const [eligibleMovements, billableShipping] = await Promise.all([
+          findUnsettledMovements(tx, input, source.movementType) as Promise<SettlementSource[]>,
+          getBillableShipping(tx, input, channel.includeShippingInBilling),
+        ]);
         const requestedIds = [...new Set(input.sourceMovementIds)];
         let settlementSources: SettlementSource[] = [];
 
         if (requestedIds.length > 0) {
           const requested = new Set(requestedIds);
           settlementSources = eligibleMovements.filter((movement) => requested.has(movement.id));
-          if (settlementSources.length !== requestedIds.length) throw new Error("部分銷貨已被其他結算使用或已不符合條件，請重新帶入後再建立");
+          if (settlementSources.length !== requestedIds.length) throw new Error("部分銷貨已被其他結算使用或已不符合條件，請重新整理後再建立");
           if (!quantitiesMatch(groupMovementQuantities(settlementSources), quantities)) {
-            throw new Error("結算品項與來源銷貨數量不一致，請重新帶入後再建立");
+            throw new Error("結算品項與來源銷貨數量不一致，請重新整理後再建立");
           }
         } else if (eligibleMovements.length > 0 && quantitiesMatch(groupMovementQuantities(eligibleMovements), quantities)) {
           settlementSources = eligibleMovements;
@@ -271,7 +275,10 @@ export async function createBillingStatement(input: BillingCreateInput, actor: A
         const subtotal = roundMoney(items.reduce((sum, item) => sum + item.subtotal, 0));
         const taxAmount = roundMoney(subtotal * input.taxRate);
         const shippingFee = roundMoney(input.shippingFee);
-        const totalAmount = roundMoney(subtotal + taxAmount + shippingFee);
+        const reimbursableShippingFee = roundMoney(Math.min(shippingFee, billableShipping.reimbursableFee));
+        const regularShippingFee = roundMoney(shippingFee - reimbursableShippingFee);
+        const revenueAmount = roundMoney(subtotal + taxAmount + regularShippingFee);
+        const totalAmount = roundMoney(revenueAmount + reimbursableShippingFee);
         if (totalAmount <= 0) throw new Error("結算金額必須大於 0");
 
         const statementNo = await nextStatementNo(tx, input.issuedAt);
@@ -314,16 +321,22 @@ export async function createBillingStatement(input: BillingCreateInput, actor: A
           });
         }
 
-        const category = await tx.financeCategory.findUnique({ where: { code: source.financeCategoryCode }, select: { id: true } });
-        if (!category) throw new Error(`找不到財務收入分類 ${source.financeCategoryCode}`);
+        const categoryCodes = [source.financeCategoryCode, ...(reimbursableShippingFee > 0 ? ["shipping_reimbursement"] : [])];
+        const categories = await tx.financeCategory.findMany({ where: { code: { in: categoryCodes } }, select: { id: true, code: true } });
+        const categoryByCode = new Map(categories.map((category) => [category.code, category.id]));
+        const revenueCategoryId = categoryByCode.get(source.financeCategoryCode);
+        if (!revenueCategoryId) throw new Error(`找不到財務收入分類 ${source.financeCategoryCode}`);
+        const reimbursementCategoryId = reimbursableShippingFee > 0 ? categoryByCode.get("shipping_reimbursement") : null;
+        if (reimbursableShippingFee > 0 && !reimbursementCategoryId) throw new Error("找不到財務分類 shipping_reimbursement，請先套用資料庫 migration");
+
         const financeId = randomUUID();
         await tx.financeTransaction.create({
           data: {
             id: financeId,
             occurredAt: issuedAt,
             direction: "INCOME",
-            amount: totalAmount,
-            categoryId: category.id,
+            amount: revenueAmount,
+            categoryId: revenueCategoryId,
             counterparty: channel.companyName ?? channel.name,
             relatedParty: channel.name,
             salesChannel: channel.name,
@@ -338,7 +351,8 @@ export async function createBillingStatement(input: BillingCreateInput, actor: A
               `請款單 ${statementNo}`,
               `期間 ${input.periodStart}～${input.periodEnd}`,
               settlementSources.length ? `來源銷貨 ${settlementSources.length} 筆` : "手動請款",
-              shippingFee > 0 ? `含運費 / 代墊回收 ${shippingFee}` : null,
+              regularShippingFee > 0 ? `一般請款運費 ${regularShippingFee}` : null,
+              reimbursableShippingFee > 0 ? `代墊運費 ${reimbursableShippingFee} 另列 Finance 回收項目` : null,
               channel.requiresSalesInvoice ? "需開銷項發票" : null,
             ].filter(Boolean).join("；"),
             createdById: actor.userId,
@@ -358,6 +372,32 @@ export async function createBillingStatement(input: BillingCreateInput, actor: A
           },
         });
 
+        let reimbursementFinanceId: string | null = null;
+        if (reimbursableShippingFee > 0 && reimbursementCategoryId) {
+          reimbursementFinanceId = randomUUID();
+          await tx.financeTransaction.create({
+            data: {
+              id: reimbursementFinanceId,
+              occurredAt: issuedAt,
+              direction: "INCOME",
+              amount: reimbursableShippingFee,
+              categoryId: reimbursementCategoryId,
+              counterparty: channel.companyName ?? channel.name,
+              relatedParty: channel.name,
+              salesChannel: channel.name,
+              summary: `${channel.name} · 運費代墊回收`,
+              channelId: channel.id,
+              source: "BILLING",
+              sourceRef: reimbursementSourceRef(statement.id),
+              paymentStatus: "PENDING",
+              reconciliationStatus: "UNMATCHED",
+              invoiceStatus: channel.requiresSalesInvoice ? "MISSING" : "NOT_REQUIRED",
+              note: `請款單 ${statementNo}；期間 ${input.periodStart}～${input.periodEnd}；公司先付物流費，本期向通路回收`,
+              createdById: actor.userId,
+            },
+          });
+        }
+
         await tx.auditLog.create({
           data: {
             userId: actor.userId,
@@ -369,10 +409,13 @@ export async function createBillingStatement(input: BillingCreateInput, actor: A
               channelId: input.channelId,
               totalAmount,
               shippingFee,
+              reimbursableShippingFee,
+              regularShippingFee,
               entryMode: settlementSources.length ? "SETTLEMENT" : "MANUAL",
               itemCount: items.length,
               sourceMovementCount: settlementSources.length,
               financeTransactionId: financeId,
+              reimbursementFinanceTransactionId: reimbursementFinanceId,
               settlementCycle: channel.settlementCycle,
               billingTrigger: channel.billingTrigger,
               requiresSalesInvoice: channel.requiresSalesInvoice,
@@ -387,7 +430,7 @@ export async function createBillingStatement(input: BillingCreateInput, actor: A
             action: "BILLING_FINANCE_CREATED",
             entityType: "FinanceTransaction",
             entityId: financeId,
-            metadata: { statementId: statement.id, statementNo, sourceMovementCount: settlementSources.length, amount: totalAmount },
+            metadata: { statementId: statement.id, statementNo, sourceMovementCount: settlementSources.length, amount: revenueAmount, reimbursableShippingFee, reimbursementFinanceTransactionId: reimbursementFinanceId },
             ipAddress: actor.ipAddress ?? null,
           },
         });
@@ -422,7 +465,7 @@ export async function markBillingStatementPaid(
       },
     });
     await tx.financeTransaction.updateMany({
-      where: { sourceRef: `BILLING:${id}`, paymentStatus: { not: "VOID" } },
+      where: { sourceRef: { in: [`BILLING:${id}`, reimbursementSourceRef(id)] }, paymentStatus: { not: "VOID" } },
       data: { paymentStatus: "PAID" },
     });
     await tx.auditLog.create({
@@ -454,7 +497,10 @@ export async function voidBillingStatement(id: string, actor: Actor) {
     const movementIds = existing.sources.map((source) => source.movementId);
     if (movementIds.length > 0) await tx.billingStatementSource.deleteMany({ where: { statementId: id } });
     const updated = await tx.billingStatement.update({ where: { id }, data: { status: "VOID" } });
-    await tx.financeTransaction.updateMany({ where: { sourceRef: `BILLING:${id}` }, data: { paymentStatus: "VOID" } });
+    await tx.financeTransaction.updateMany({
+      where: { sourceRef: { in: [`BILLING:${id}`, reimbursementSourceRef(id)] } },
+      data: { paymentStatus: "VOID" },
+    });
     await tx.auditLog.create({
       data: {
         userId: actor.userId,

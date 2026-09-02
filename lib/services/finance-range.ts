@@ -2,6 +2,7 @@ import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 
 const datePattern = /^\d{4}-\d{2}-\d{2}$/;
+const SHIPPING_REIMBURSEMENT_REF = "BILLING_SHIPPING_REIMBURSEMENT:%";
 
 function monthIndex(month: string) {
   const match = month.match(/^(\d{4})-(\d{2})$/);
@@ -88,11 +89,17 @@ export async function getFinanceDashboardByDates(startDate: string, endDate: str
       SELECT
         COALESCE(SUM(CASE
           WHEN t."direction" = 'INCOME' AND t."paymentStatus" <> 'VOID'
+            AND COALESCE(t."sourceRef", '') NOT LIKE ${SHIPPING_REIMBURSEMENT_REF}
             AND NOT (t."paymentStatus" = 'REFUNDED' AND COALESCE(t."sourceRef", '') LIKE 'RETURN:%')
           THEN t."amount" ELSE 0 END), 0) AS "grossRevenue",
-        COALESCE(SUM(CASE WHEN t."direction" = 'INCOME' AND t."paymentStatus" = 'REFUNDED' THEN t."amount" ELSE 0 END), 0) AS "refunds",
         COALESCE(SUM(CASE
-          WHEN t."direction" = 'INCOME' AND t."paymentStatus" NOT IN ('VOID','REFUNDED') THEN t."amount"
+          WHEN t."direction" = 'INCOME' AND t."paymentStatus" = 'REFUNDED'
+            AND COALESCE(t."sourceRef", '') NOT LIKE ${SHIPPING_REIMBURSEMENT_REF}
+          THEN t."amount" ELSE 0 END), 0) AS "refunds",
+        COALESCE(SUM(CASE
+          WHEN t."direction" = 'INCOME' AND t."paymentStatus" NOT IN ('VOID','REFUNDED')
+            AND COALESCE(t."sourceRef", '') NOT LIKE ${SHIPPING_REIMBURSEMENT_REF}
+          THEN t."amount"
           WHEN t."direction" = 'INCOME' AND t."paymentStatus" = 'REFUNDED' AND COALESCE(t."sourceRef", '') LIKE 'RETURN:%' THEN -t."amount"
           ELSE 0 END), 0) AS "netRevenue",
         COALESCE(SUM(CASE WHEN t."direction" = 'EXPENSE' AND t."paymentStatus" NOT IN ('VOID','REFUNDED') THEN t."amount" ELSE 0 END), 0) AS "totalExpense",
@@ -108,14 +115,25 @@ export async function getFinanceDashboardByDates(startDate: string, endDate: str
     `),
     prisma.$queryRaw<Array<{ inventorySpend: Prisma.Decimal; operatingExpense: Prisma.Decimal }>>(Prisma.sql`
       SELECT
-        COALESCE(SUM(CASE WHEN COALESCE(p."code", c."code") = 'expense_product_cost' THEN t."amount" ELSE 0 END), 0) AS "inventorySpend",
-        COALESCE(SUM(CASE WHEN COALESCE(p."code", c."code") <> 'expense_product_cost' OR COALESCE(p."code", c."code") IS NULL THEN t."amount" ELSE 0 END), 0) AS "operatingExpense"
+        COALESCE(SUM(CASE
+          WHEN t."direction" = 'EXPENSE' AND COALESCE(p."code", c."code") = 'expense_product_cost' THEN t."amount"
+          ELSE 0 END), 0) AS "inventorySpend",
+        COALESCE(SUM(CASE
+          WHEN t."direction" = 'EXPENSE'
+            AND (COALESCE(p."code", c."code") <> 'expense_product_cost' OR COALESCE(p."code", c."code") IS NULL)
+          THEN t."amount"
+          WHEN t."direction" = 'INCOME' AND COALESCE(t."sourceRef", '') LIKE ${SHIPPING_REIMBURSEMENT_REF}
+          THEN -t."amount"
+          ELSE 0 END), 0) AS "operatingExpense"
       FROM "FinanceTransaction" t
       LEFT JOIN "FinanceCategory" c ON c."id" = t."categoryId"
       LEFT JOIN "FinanceCategory" p ON p."id" = c."parentId"
       WHERE t."occurredAt" >= ${start} AND t."occurredAt" < ${end}
-        AND t."direction" = 'EXPENSE'
         AND t."paymentStatus" NOT IN ('VOID','REFUNDED')
+        AND (
+          t."direction" = 'EXPENSE'
+          OR (t."direction" = 'INCOME' AND COALESCE(t."sourceRef", '') LIKE ${SHIPPING_REIMBURSEMENT_REF})
+        )
     `),
     prisma.$queryRaw<Array<{ cogs: Prisma.Decimal; costedRevenue: Prisma.Decimal }>>(Prisma.sql`
       SELECT
@@ -175,6 +193,7 @@ export async function getFinanceDashboardByDates(startDate: string, endDate: str
       WHERE t."occurredAt" >= ${start} AND t."occurredAt" < ${end}
         AND t."direction" = 'INCOME'
         AND t."paymentStatus" <> 'VOID'
+        AND COALESCE(t."sourceRef", '') NOT LIKE ${SHIPPING_REIMBURSEMENT_REF}
       GROUP BY COALESCE(NULLIF(t."salesChannel", ''), '未指定')
       ORDER BY "amount" DESC
       LIMIT 8
@@ -190,19 +209,25 @@ export async function getFinanceDashboardByDates(startDate: string, endDate: str
       WHERE t."occurredAt" >= ${start} AND t."occurredAt" < ${end}
         AND t."direction" = 'INCOME'
         AND t."paymentStatus" <> 'VOID'
+        AND COALESCE(t."sourceRef", '') NOT LIKE ${SHIPPING_REIMBURSEMENT_REF}
       GROUP BY 1 ORDER BY 1
     `),
     prisma.$queryRaw<Array<{ month: string; operatingExpense: Prisma.Decimal }>>(Prisma.sql`
       SELECT
         to_char(date_trunc('month', t."occurredAt" AT TIME ZONE 'Asia/Taipei'), 'YYYY-MM') AS "month",
-        COALESCE(SUM(t."amount"), 0) AS "operatingExpense"
+        COALESCE(SUM(CASE
+          WHEN t."direction" = 'EXPENSE' THEN t."amount"
+          WHEN t."direction" = 'INCOME' AND COALESCE(t."sourceRef", '') LIKE ${SHIPPING_REIMBURSEMENT_REF} THEN -t."amount"
+          ELSE 0 END), 0) AS "operatingExpense"
       FROM "FinanceTransaction" t
       LEFT JOIN "FinanceCategory" c ON c."id" = t."categoryId"
       LEFT JOIN "FinanceCategory" p ON p."id" = c."parentId"
       WHERE t."occurredAt" >= ${start} AND t."occurredAt" < ${end}
-        AND t."direction" = 'EXPENSE'
         AND t."paymentStatus" NOT IN ('VOID','REFUNDED')
-        AND (COALESCE(p."code", c."code") <> 'expense_product_cost' OR COALESCE(p."code", c."code") IS NULL)
+        AND (
+          (t."direction" = 'EXPENSE' AND (COALESCE(p."code", c."code") <> 'expense_product_cost' OR COALESCE(p."code", c."code") IS NULL))
+          OR (t."direction" = 'INCOME' AND COALESCE(t."sourceRef", '') LIKE ${SHIPPING_REIMBURSEMENT_REF})
+        )
       GROUP BY 1 ORDER BY 1
     `),
     prisma.$queryRaw<Array<{ month: string; cogs: Prisma.Decimal }>>(Prisma.sql`
