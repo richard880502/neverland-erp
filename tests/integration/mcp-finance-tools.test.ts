@@ -112,22 +112,22 @@ test("finance MCP returns dashboard-consistent read-only finance data", async ()
   }, readAuth) as McpResult<{
     period: { start: string; end: string };
     dashboard: {
+      income: number;
+      expense: number;
+      cashFlow: number;
       netRevenue: number;
-      totalExpense: number;
       receivable: number;
-      cashIncome: number;
-      cashExpense: number;
       grossProfit: number;
       estimatedNetProfit: number;
       missingExpenseInvoices: number;
     };
   }>;
   assert.deepEqual(summary.structuredContent.period, { start: periodStart, end: periodEnd });
+  assert.equal(summary.structuredContent.dashboard.income, 1500);
+  assert.equal(summary.structuredContent.dashboard.expense, 250);
+  assert.equal(summary.structuredContent.dashboard.cashFlow, 250);
   assert.equal(summary.structuredContent.dashboard.netRevenue, 1500);
-  assert.equal(summary.structuredContent.dashboard.totalExpense, 250);
   assert.equal(summary.structuredContent.dashboard.receivable, 1000);
-  assert.equal(summary.structuredContent.dashboard.cashIncome, 500);
-  assert.equal(summary.structuredContent.dashboard.cashExpense, 250);
   assert.equal(summary.structuredContent.dashboard.grossProfit, 1500);
   assert.equal(summary.structuredContent.dashboard.estimatedNetProfit, 1250);
   assert.equal(summary.structuredContent.dashboard.missingExpenseInvoices, 1);
