@@ -14,6 +14,16 @@ const pricingUpdateSchema = z.object({
 }).strict();
 const updateSchema = z.union([statusUpdateSchema, pricingUpdateSchema]);
 
+async function removeUnreferencedProductImages(paths: Array<string | null | undefined>) {
+  for (const path of [...new Set(paths.filter((value): value is string => Boolean(value)))]) {
+    const referenced = await prisma.product.findFirst({
+      where: { OR: [{ imagePath: path }, { imageThumbPath: path }] },
+      select: { id: true },
+    });
+    if (!referenced) await removeProductImages([path]);
+  }
+}
+
 export async function PATCH(request: Request, context: { params: Promise<{ id: string }> }) {
   try {
     assertSameOrigin(request);
@@ -99,7 +109,7 @@ export async function DELETE(request: Request, context: { params: Promise<{ id: 
       }),
     ]);
     try {
-      await removeProductImages([product.imagePath, product.imageThumbPath]);
+      await removeUnreferencedProductImages([product.imagePath, product.imageThumbPath]);
     } catch (error) {
       console.error("商品已刪除，但 MinIO 圖片清理失敗", error);
     }
