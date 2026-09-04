@@ -4,6 +4,19 @@
   align-items: start;
 }
 
+.product-image-editor .file-input {
+  box-sizing: border-box;
+  height: 46px;
+  min-height: 46px;
+  padding: 6px 8px;
+}
+
+.product-image-editor .file-input::file-selector-button {
+  height: 32px;
+  margin-top: 0;
+  margin-bottom: 0;
+}
+
 .product-image-editor > .product-image-scope {
   position: relative;
   box-sizing: border-box;
