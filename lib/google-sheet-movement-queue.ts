@@ -1,5 +1,6 @@
 import { randomUUID } from "crypto";
 import type { MovementType, Prisma } from "@prisma/client";
+import { processGoogleSheetProductQueue } from "@/lib/google-sheet-product-queue";
 import { getGoogleSheetConnectionSetting, getGoogleSheetsApiClient, getGoogleSheetSyncConfig } from "@/lib/google-sheet-source";
 import { prisma } from "@/lib/prisma";
 
@@ -97,29 +98,32 @@ async function writeMovementsToGoogleSheet(spreadsheetId: string, timeZone: stri
 }
 
 export async function processGoogleSheetMovementQueue(limit = 100) {
+  // Product master must land first so a newly created SKU is visible to the Sheet
+  // summary formulas before any movement for that SKU is appended.
+  const productQueue = await processGoogleSheetProductQueue(limit);
   const config = getGoogleSheetSyncConfig();
   const connection = await getGoogleSheetConnectionSetting();
   await prisma.googleSheetMovementQueue.updateMany({ where: { status: "PROCESSING", updatedAt: { lt: new Date(Date.now() - 10 * 60_000) } }, data: { status: "FAILED", processingToken: null, lastError: "上次同步程序中斷，已重新排入等待區", nextAttemptAt: new Date() } });
   const pendingCount = await prisma.googleSheetMovementQueue.count({ where: { status: { in: ["PENDING", "FAILED"] }, attempts: { lt: 10 } } });
-  if (!config.hasCredentials) return { processed: 0, failed: 0, pending: pendingCount, demo: true, message: "目前是本地 Demo；Queue 已保留，設定可寫入的 Service Account 後才會送出" };
+  if (!config.hasCredentials) return { processed: 0, failed: 0, pending: pendingCount, demo: true, message: "目前是本地 Demo；Queue 已保留，設定可寫入的 Service Account 後才會送出", productQueue };
 
   const processingToken = randomUUID();
   const candidates = await prisma.googleSheetMovementQueue.findMany({ where: { status: { in: ["PENDING", "FAILED"] }, attempts: { lt: 10 }, nextAttemptAt: { lte: new Date() } }, orderBy: { createdAt: "asc" }, take: Math.min(Math.max(limit, 1), 100), select: { id: true } });
-  if (!candidates.length) return { processed: 0, failed: 0, pending: pendingCount, demo: false };
+  if (!candidates.length) return { processed: 0, failed: 0, pending: pendingCount, demo: false, productQueue };
   await prisma.googleSheetMovementQueue.updateMany({ where: { id: { in: candidates.map((item) => item.id) }, status: { in: ["PENDING", "FAILED"] } }, data: { status: "PROCESSING", processingToken, lastError: null } });
   const claimed = await prisma.googleSheetMovementQueue.findMany({ where: { processingToken }, include: { movement: { include: { product: { select: { sku: true } }, channel: { select: { name: true } } } } }, orderBy: { createdAt: "asc" } });
-  if (!claimed.length) return { processed: 0, failed: 0, pending: pendingCount, demo: false };
+  if (!claimed.length) return { processed: 0, failed: 0, pending: pendingCount, demo: false, productQueue };
 
   try {
     const sheetRows = await writeMovementsToGoogleSheet(connection.spreadsheetId, connection.syncTimeZone, claimed);
     const syncedAt = new Date();
     await prisma.$transaction(claimed.map((item) => prisma.googleSheetMovementQueue.update({ where: { id: item.id }, data: { status: "SYNCED", attempts: { increment: 1 }, processingToken: null, spreadsheetId: connection.spreadsheetId, sheetRow: sheetRows.get(item.movementId) ?? null, syncedAt, lastError: null } })));
-    return { processed: claimed.length, failed: 0, pending: Math.max(0, pendingCount - claimed.length), demo: false };
+    return { processed: claimed.length, failed: 0, pending: Math.max(0, pendingCount - claimed.length), demo: false, productQueue };
   } catch (error) {
     const message = error instanceof Error ? error.message : "Google Sheet 庫存異動同步失敗";
     const retryAt = new Date(Date.now() + 15 * 60_000);
     await prisma.googleSheetMovementQueue.updateMany({ where: { processingToken }, data: { status: "FAILED", attempts: { increment: 1 }, processingToken: null, lastError: message.slice(0, 1000), nextAttemptAt: retryAt } });
-    return { processed: 0, failed: claimed.length, pending: pendingCount, demo: false, message };
+    return { processed: 0, failed: claimed.length, pending: pendingCount, demo: false, message, productQueue };
   }
 }
 
