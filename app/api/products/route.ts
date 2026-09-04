@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { Prisma } from "@prisma/client";
 import { z } from "zod";
 import { assertSameOrigin, authErrorResponse, clientIp, requireApiUser } from "@/lib/auth";
+import { enqueueGoogleSheetProduct } from "@/lib/google-sheet-product-queue";
 import { prisma } from "@/lib/prisma";
 import { removeProductImages, saveProductImage } from "@/lib/uploads";
 
@@ -116,13 +117,14 @@ export async function POST(request: Request) {
             imageThumbPath: storedImage?.imageThumbPath ?? null,
           },
         });
+        await enqueueGoogleSheetProduct(tx, product);
         await tx.auditLog.create({
           data: {
             userId: auth.user.id,
             action: "PRODUCT_CREATED",
             entityType: "Product",
             entityId: product.id,
-            metadata: { sku: product.sku, batchSize: variants.length },
+            metadata: { sku: product.sku, batchSize: variants.length, googleSheetSyncQueued: true },
             ipAddress: clientIp(request),
           },
         });
