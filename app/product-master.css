@@ -1,6 +1,7 @@
 /* Product master layout refinements. Keep inline editor controls on one visual baseline. */
 
 .product-image-editor {
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto;
   align-items: start;
 }
 
@@ -70,6 +71,10 @@
 }
 
 @media (max-width: 980px) {
+  .product-image-editor {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
   .product-image-editor > .product-price-editor-actions {
     min-height: 46px;
     padding-top: 0;
@@ -78,6 +83,10 @@
 }
 
 @media (max-width: 640px) {
+  .product-image-editor {
+    grid-template-columns: 1fr;
+  }
+
   .product-image-editor > .product-image-scope {
     margin-top: 0;
   }
