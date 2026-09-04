@@ -19,7 +19,7 @@ export async function enqueueGoogleSheetProduct(
   });
 }
 
-type QueueEntry = Prisma.GoogleSheetProductQueueGetPayload<{}>;
+type QueueEntry = { id: string; sku: string; operation: string };
 type CurrentProduct = { sku: string; name: string; size: string | null; safetyStock: number };
 
 async function writeProductsToGoogleSheet(
