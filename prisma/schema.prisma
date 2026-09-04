@@ -275,7 +275,7 @@ model OAuthRefreshToken {
   rotatedAt    DateTime?
   revokedAt    DateTime?
   connection   McpConnection @relation(fields: [connectionId], references: [id], onDelete: Cascade)
-  createdAt    DateTime @default(now())
+  createdAt   DateTime @default(now())
 
   @@index([tokenHash])
   @@index([connectionId, revokedAt])
@@ -325,6 +325,7 @@ model Product {
   active      Boolean         @default(true)
   movements   StockMovement[]
   billingItems BillingStatementItem[]
+  googleSheetQueues GoogleSheetProductQueue[]
   createdAt   DateTime        @default(now())
   updatedAt   DateTime        @updatedAt
 }
@@ -414,6 +415,30 @@ model GoogleSheetMovementQueue {
   createdAt       DateTime      @default(now())
   updatedAt       DateTime      @updatedAt
 
+  @@index([status, nextAttemptAt])
+  @@index([processingToken])
+  @@index([createdAt])
+}
+
+model GoogleSheetProductQueue {
+  id              String    @id @default(cuid())
+  productId       String?
+  product         Product?  @relation(fields: [productId], references: [id], onDelete: SetNull)
+  sku             String
+  operation       String    @default("UPSERT")
+  status          String    @default("PENDING")
+  attempts        Int       @default(0)
+  nextAttemptAt   DateTime  @default(now())
+  processingToken String?
+  lastError       String?
+  spreadsheetId   String?
+  sheetRow        Int?
+  syncedAt        DateTime?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  @@index([productId])
+  @@index([sku, createdAt])
   @@index([status, nextAttemptAt])
   @@index([processingToken])
   @@index([createdAt])
