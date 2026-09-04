@@ -200,9 +200,20 @@ export function ProductManager({ products, canWrite, canEditPricing }: { product
         {imageEditingId === p.id && <tr className="product-price-editor-row"><td colSpan={10}>
           <form className="product-price-editor product-image-editor" onSubmit={(event) => updateImage(event, p)}>
             <div className="product-price-editor-heading"><div><strong>{p.imageThumbPath ? "更換商品圖片" : "補上商品圖片"}</strong><span>{p.sku} · {p.name}</span></div><span className="badge">商品圖片</span></div>
-            <div className="field"><label htmlFor={`product-image-${p.id}`}>新圖片</label><input className="input file-input" id={`product-image-${p.id}`} name="image" type="file" accept="image/jpeg,image/png,image/webp" required /><span className="helper">JPEG、PNG 或 WebP，最大 8 MB。</span></div>
-            <label className="product-image-scope"><input type="checkbox" name="applyToSameName" defaultChecked /><span><strong>套用到同商品名稱的所有 SKU</strong><small>適合同一款不同尺寸共用同一張商品圖；若此 SKU 需要獨立圖片可取消勾選。</small></span></label>
-            <div className="product-price-editor-actions"><button className="btn btn-secondary" type="button" disabled={loadingId === p.id} onClick={() => setImageEditingId("")}>取消</button><button className="btn btn-primary" disabled={loadingId === p.id}>{loadingId === p.id ? "上傳中…" : "儲存圖片"}</button></div>
+            <div className="product-image-editor-shell">
+              <div className="product-image-editor-shell-title">新圖片</div>
+              <div className="product-image-editor-grid">
+                <div className="product-image-control">
+                  <input className="input file-input" id={`product-image-${p.id}`} name="image" type="file" accept="image/jpeg,image/png,image/webp" aria-label="新圖片" required />
+                  <span className="helper">JPEG、PNG 或 WebP，最大 8 MB。</span>
+                </div>
+                <div className="product-image-control">
+                  <label className="product-image-scope"><input type="checkbox" name="applyToSameName" defaultChecked /><span><strong>套用到同商品名稱的所有 SKU</strong></span></label>
+                  <span className="helper">適合同一款不同尺寸共用同一張商品圖；若此 SKU 需要獨立圖片可取消勾選。</span>
+                </div>
+                <div className="product-price-editor-actions"><button className="btn btn-secondary" type="button" disabled={loadingId === p.id} onClick={() => setImageEditingId("")}>取消</button><button className="btn btn-primary" disabled={loadingId === p.id}>{loadingId === p.id ? "上傳中…" : "儲存圖片"}</button></div>
+              </div>
+            </div>
           </form>
         </td></tr>}
         {canEditPricing && editingId === p.id && <tr className="product-price-editor-row"><td colSpan={10}>
