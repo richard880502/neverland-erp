@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { Prisma } from "@prisma/client";
 import { z } from "zod";
 import { assertSameOrigin, authErrorResponse, clientIp, requireApiUser } from "@/lib/auth";
+import { enqueueGoogleSheetProduct } from "@/lib/google-sheet-product-queue";
 import { prisma } from "@/lib/prisma";
 import { removeProductImages } from "@/lib/uploads";
 
@@ -102,12 +103,20 @@ export async function DELETE(request: Request, context: { params: Promise<{ id: 
       return NextResponse.json({ error: "商品已有庫存異動紀錄，請改用停用以保留帳務歷史" }, { status: 409 });
     }
 
-    await prisma.$transaction([
-      prisma.product.delete({ where: { id } }),
-      prisma.auditLog.create({
-        data: { userId: auth.user.id, action: "PRODUCT_DELETED", entityType: "Product", entityId: id, metadata: { sku: product.sku }, ipAddress: clientIp(request) },
-      }),
-    ]);
+    await prisma.$transaction(async (tx) => {
+      await enqueueGoogleSheetProduct(tx, product, "DELETE");
+      await tx.product.delete({ where: { id } });
+      await tx.auditLog.create({
+        data: {
+          userId: auth.user.id,
+          action: "PRODUCT_DELETED",
+          entityType: "Product",
+          entityId: id,
+          metadata: { sku: product.sku, googleSheetSyncQueued: true },
+          ipAddress: clientIp(request),
+        },
+      });
+    });
     try {
       await removeUnreferencedProductImages([product.imagePath, product.imageThumbPath]);
     } catch (error) {
