@@ -2,13 +2,14 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { BarChart3, Bot, Boxes, DatabaseZap, KeyRound, LogOut, PackagePlus, ReceiptText, Route, ShieldCheck, ShoppingBag, Users } from "lucide-react";
+import { BarChart3, Bot, Boxes, CircleDollarSign, DatabaseZap, KeyRound, LogOut, PackagePlus, ReceiptText, Route, ShieldCheck, ShoppingBag, Users } from "lucide-react";
 
 const workspaceLinks = [
   { href: "/", label: "營運儀表板", icon: BarChart3 },
   { href: "/inventory", label: "即時庫存", icon: Boxes },
   { href: "/movements", label: "庫存異動", icon: Route },
   { href: "/billing", label: "請款管理", icon: ReceiptText },
+  { href: "/finance", label: "財務管理", icon: CircleDollarSign },
   { href: "/products", label: "商品主檔", icon: ShoppingBag },
   { href: "/channels", label: "通路主檔", icon: PackagePlus },
 ];

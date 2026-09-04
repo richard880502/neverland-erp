@@ -4,6 +4,10 @@ import { z } from "zod";
 import { assertSameOrigin, authErrorResponse, clientIp, requireApiUser } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 
+const shippingPayerSchema = z.enum(["COMPANY", "REIMBURSABLE", "CUSTOMER", "CHANNEL", "SUPPLIER"]);
+const settlementCycleSchema = z.enum(["PER_ORDER", "DAILY", "WEEKLY", "MONTHLY", "PER_SHIPMENT", "PER_PAYOUT", "MANUAL"]);
+const billingTriggerSchema = z.enum(["EXTERNAL_STATEMENT", "DELIVERED", "SHIPPED", "ORDER_COMPLETED", "PAYOUT_RECEIVED", "PAYMENT_RECEIVED", "MANUAL"]);
+
 const updateSchema = z.object({
   active: z.boolean().optional(),
   companyName: z.string().trim().max(160).nullable().optional(),
@@ -15,32 +19,77 @@ const updateSchema = z.object({
   settlementRate: z.number().min(0).max(1).nullable().optional(),
   taxRate: z.number().min(0).max(1).nullable().optional(),
   paymentTermsDays: z.number().int().min(0).max(365).nullable().optional(),
+  settlementCycle: settlementCycleSchema.nullable().optional(),
+  billingTrigger: billingTriggerSchema.nullable().optional(),
+  billingWithinDays: z.number().int().min(0).max(365).nullable().optional(),
+  includeShippingInBilling: z.boolean().optional(),
+  requiresSalesInvoice: z.boolean().optional(),
+  defaultShippingMethod: z.string().trim().max(120).nullable().optional(),
+  defaultShippingFee: z.number().min(0).max(1_000_000).nullable().optional(),
+  defaultShippingPayer: shippingPayerSchema.nullable().optional(),
 }).strict().refine((value) => Object.values(value).some((item) => item !== undefined), { message: "沒有可更新欄位" });
+
+const directCycles = new Set(["PER_ORDER", "DAILY", "WEEKLY", "MONTHLY", "PER_PAYOUT", "MANUAL"]);
+const directTriggers = new Set(["ORDER_COMPLETED", "PAYOUT_RECEIVED", "PAYMENT_RECEIVED", "MANUAL"]);
+const b2bCycles = new Set(["MONTHLY", "PER_SHIPMENT", "MANUAL"]);
+const b2bTriggers = new Set(["EXTERNAL_STATEMENT", "DELIVERED", "SHIPPED", "MANUAL"]);
 
 export async function PATCH(request: Request, context: { params: Promise<{ id: string }> }) {
   try {
     assertSameOrigin(request);
     const auth = await requireApiUser({ roles: ["ADMIN", "STAFF"] });
     const parsed = updateSchema.safeParse(await request.json().catch(() => null));
-    if (!parsed.success) return NextResponse.json({ error: "請檢查通路或請款設定欄位" }, { status: 400 });
+    if (!parsed.success) return NextResponse.json({ error: "請檢查通路設定欄位" }, { status: 400 });
     const { id } = await context.params;
     const existing = await prisma.channel.findUnique({ where: { id }, select: { id: true, name: true, type: true, active: true } });
     if (!existing) return NextResponse.json({ error: "找不到通路" }, { status: 404 });
-    const billingKeys = ["companyName", "taxId", "contactName", "contactEmail", "contactPhone", "billingAddress", "settlementRate", "taxRate", "paymentTermsDays"] as const;
-    if (billingKeys.some((key) => parsed.data[key] !== undefined) && !["CONSIGNMENT", "BUYOUT"].includes(existing.type)) {
-      return NextResponse.json({ error: "只有寄賣或買斷通路可設定請款資料" }, { status: 400 });
+
+    const billingProfileKeys = [
+      "companyName", "taxId", "contactName", "contactEmail", "contactPhone", "billingAddress",
+      "settlementRate", "taxRate", "paymentTermsDays",
+    ] as const;
+    if (billingProfileKeys.some((key) => parsed.data[key] !== undefined) && !["CONSIGNMENT", "BUYOUT"].includes(existing.type)) {
+      return NextResponse.json({ error: "只有寄賣或買斷通路可設定客戶請款資料" }, { status: 400 });
     }
 
+    const settlementPolicyKeys = [
+      "settlementCycle", "billingTrigger", "billingWithinDays", "includeShippingInBilling", "requiresSalesInvoice",
+    ] as const;
+    if (settlementPolicyKeys.some((key) => parsed.data[key] !== undefined) && !["DIRECT", "CONSIGNMENT", "BUYOUT"].includes(existing.type)) {
+      return NextResponse.json({ error: "此通路類型不支援銷售 / 結算規則" }, { status: 400 });
+    }
+
+    if (parsed.data.defaultShippingPayer === "REIMBURSABLE" && !["CONSIGNMENT", "BUYOUT"].includes(existing.type)) {
+      return NextResponse.json({ error: "公司代墊運費目前只適用寄賣與買斷通路" }, { status: 400 });
+    }
+
+    if (parsed.data.settlementCycle) {
+      const allowed = existing.type === "DIRECT" ? directCycles : b2bCycles;
+      if (!["DIRECT", "CONSIGNMENT", "BUYOUT"].includes(existing.type) || !allowed.has(parsed.data.settlementCycle)) {
+        return NextResponse.json({ error: "這個結算方式不適用目前的通路類型" }, { status: 400 });
+      }
+    }
+    if (parsed.data.billingTrigger) {
+      const allowed = existing.type === "DIRECT" ? directTriggers : b2bTriggers;
+      if (!["DIRECT", "CONSIGNMENT", "BUYOUT"].includes(existing.type) || !allowed.has(parsed.data.billingTrigger)) {
+        return NextResponse.json({ error: "這個結算觸發不適用目前的通路類型" }, { status: 400 });
+      }
+    }
+
+    const updateData = {
+      ...parsed.data,
+      ...(parsed.data.defaultShippingPayer === "REIMBURSABLE" ? { includeShippingInBilling: true } : {}),
+    };
     const channel = await prisma.$transaction(async (tx) => {
-      const updated = await tx.channel.update({ where: { id }, data: parsed.data });
-      const activeOnly = Object.keys(parsed.data).length === 1 && parsed.data.active !== undefined;
+      const updated = await tx.channel.update({ where: { id }, data: updateData });
+      const activeOnly = Object.keys(updateData).length === 1 && updateData.active !== undefined;
       await tx.auditLog.create({
         data: {
           userId: auth.user.id,
-          action: activeOnly ? (parsed.data.active ? "CHANNEL_ENABLED" : "CHANNEL_DISABLED") : "CHANNEL_BILLING_PROFILE_UPDATED",
+          action: activeOnly ? (updateData.active ? "CHANNEL_ENABLED" : "CHANNEL_DISABLED") : "CHANNEL_SETTINGS_UPDATED",
           entityType: "Channel",
           entityId: id,
-          metadata: { name: existing.name, updatedFields: Object.keys(parsed.data) },
+          metadata: { name: existing.name, updatedFields: Object.keys(updateData) },
           ipAddress: clientIp(request),
         },
       });

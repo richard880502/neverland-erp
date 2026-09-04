@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { Prisma, type UserRole } from "@prisma/client";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
@@ -5,12 +6,21 @@ import { deltas, isSale, sumInventory } from "@/lib/inventory";
 import { enqueueGoogleSheetMovement } from "@/lib/google-sheet-movement-queue";
 
 export const movementTypeSchema = z.enum(["RECEIVE", "SHIP", "SALES_RETURN", "PURCHASE_RETURN", "CONSIGN_OUT", "CONSIGN_RETURN", "CONSIGN_SOLD", "BUYOUT", "DEFECT", "ADJUSTMENT"]);
+const shippingPayerSchema = z.enum(["COMPANY", "REIMBURSABLE", "CUSTOMER", "CHANNEL", "SUPPLIER"]);
 
 export const movementInputSchema = z.object({
   occurredAt: z.coerce.date().optional(),
   type: movementTypeSchema,
-  productId: z.string().min(1), channelId: z.string().optional(), quantity: z.coerce.number().int().positive(),
-  unitPrice: z.union([z.literal(""), z.coerce.number().min(0)]).optional(), referenceNo: z.string().trim().max(120).optional(), note: z.string().trim().max(500).optional(),
+  productId: z.string().min(1),
+  channelId: z.string().optional(),
+  quantity: z.coerce.number().int().positive(),
+  unitPrice: z.union([z.literal(""), z.coerce.number().min(0)]).optional(),
+  referenceNo: z.string().trim().max(120).optional(),
+  note: z.string().trim().max(500).optional(),
+  shippingMethod: z.string().trim().max(120).optional(),
+  shippingFee: z.union([z.literal(""), z.coerce.number().min(0).max(1_000_000)]).optional(),
+  shippingPayer: z.union([z.literal(""), shippingPayerSchema]).optional(),
+  shippingGroupKey: z.string().trim().max(120).optional(),
 });
 
 export const consignmentDirectFulfillmentSchema = z.object({
@@ -28,7 +38,30 @@ export type MovementInput = z.infer<typeof movementInputSchema>;
 export type ConsignmentDirectFulfillmentInput = z.infer<typeof consignmentDirectFulfillmentSchema>;
 export type MovementActor = { userId: string; role: UserRole; ipAddress?: string | null; source?: "WEB" | "MCP"; connectionId?: string; clientId?: string };
 
+type ShippingDefaultsRow = {
+  defaultShippingMethod: string | null;
+  defaultShippingFee: Prisma.Decimal | null;
+  defaultShippingPayer: string | null;
+};
+
+type ShippingMovementRow = {
+  shippingGroupKey: string | null;
+};
+
 const SERIALIZABLE_RETRY_LIMIT = 4;
+const SHIPPING_MOVEMENT_TYPES = new Set<z.infer<typeof movementTypeSchema>>(["RECEIVE", "SHIP", "SALES_RETURN", "PURCHASE_RETURN", "CONSIGN_OUT", "CONSIGN_RETURN", "BUYOUT"]);
+const movementFinanceLabels: Record<z.infer<typeof movementTypeSchema>, string> = {
+  RECEIVE: "進貨",
+  SHIP: "出貨",
+  SALES_RETURN: "銷貨退回",
+  PURCHASE_RETURN: "進貨退出",
+  CONSIGN_OUT: "寄賣出貨",
+  CONSIGN_RETURN: "寄賣退回",
+  CONSIGN_SOLD: "寄賣售出",
+  BUYOUT: "買斷",
+  DEFECT: "瑕疵",
+  ADJUSTMENT: "庫存調整",
+};
 
 function assertCanWrite(actor: MovementActor) {
   if (actor.role !== "ADMIN" && actor.role !== "STAFF") throw new Error("FORBIDDEN");
@@ -50,6 +83,92 @@ async function serializableTransaction<T>(work: (tx: Prisma.TransactionClient) =
   throw new Error("庫存交易重試失敗");
 }
 
+function hasExplicitShipping(input: MovementInput) {
+  return Boolean(
+    input.shippingMethod?.trim()
+      || (input.shippingFee !== undefined && input.shippingFee !== "")
+      || (input.shippingPayer !== undefined && input.shippingPayer !== "")
+  );
+}
+
+async function resolveMovementShipping(tx: Prisma.TransactionClient, input: MovementInput) {
+  const supportsShipping = SHIPPING_MOVEMENT_TYPES.has(input.type);
+  if (!supportsShipping && hasExplicitShipping(input)) throw new Error("這個庫存事件不會產生收送貨物流，請清除物流欄位");
+  if (!supportsShipping) return null;
+
+  const defaults = input.channelId
+    ? (await tx.$queryRaw<ShippingDefaultsRow[]>(Prisma.sql`
+        SELECT "defaultShippingMethod", "defaultShippingFee", "defaultShippingPayer"
+        FROM "Channel"
+        WHERE "id" = ${input.channelId}
+        LIMIT 1
+      `))[0]
+    : undefined;
+
+  const explicitFee = input.shippingFee === undefined || input.shippingFee === "" ? undefined : Number(input.shippingFee);
+  const defaultFee = defaults?.defaultShippingFee == null ? undefined : Number(defaults.defaultShippingFee);
+  const fee = explicitFee ?? defaultFee ?? 0;
+  const method = input.shippingMethod?.trim() || defaults?.defaultShippingMethod?.trim() || null;
+  const payer = input.shippingPayer
+    ? input.shippingPayer
+    : defaults?.defaultShippingPayer || (fee > 0 ? "COMPANY" : null);
+  const hasShipping = Boolean(method || fee > 0 || payer);
+  if (!hasShipping) return null;
+
+  return {
+    method,
+    fee,
+    payer,
+    groupKey: input.shippingGroupKey?.trim() || randomUUID(),
+  };
+}
+
+async function syncShippingExpense(tx: Prisma.TransactionClient, input: MovementInput, actor: MovementActor, movement: { id: string; occurredAt: Date; channelId: string | null }, productName: string, channelName: string | null, shipping: NonNullable<Awaited<ReturnType<typeof resolveMovementShipping>>>) {
+  if (shipping.fee <= 0 || !["COMPANY", "REIMBURSABLE"].includes(shipping.payer ?? "")) return null;
+  const sourceRef = `MOVEMENT_SHIPPING:${shipping.groupKey}`;
+  const existing = await tx.financeTransaction.findFirst({ where: { sourceRef }, select: { id: true } });
+  if (existing) return existing.id;
+
+  const categoryCode = input.type === "RECEIVE" || input.type === "PURCHASE_RETURN" ? "inbound_shipping" : "shipping";
+  const category = await tx.financeCategory.findUnique({ where: { code: categoryCode }, select: { id: true } });
+  if (!category) throw new Error(`找不到財務運費分類 ${categoryCode}`);
+
+  const financeId = randomUUID();
+  await tx.financeTransaction.create({ data: {
+    id: financeId,
+    occurredAt: movement.occurredAt,
+    direction: "EXPENSE",
+    amount: shipping.fee,
+    categoryId: category.id,
+    counterparty: shipping.method ?? "物流費",
+    relatedParty: channelName,
+    salesChannel: null,
+    summary: `${channelName ? `${channelName} · ` : ""}${movementFinanceLabels[input.type]}運費`,
+    channelId: movement.channelId,
+    source: "OTHER",
+    sourceRef,
+    paymentStatus: "PAID",
+    reconciliationStatus: "UNMATCHED",
+    invoiceStatus: "MISSING",
+    note: [
+      `由庫存異動自動建立`,
+      shipping.payer === "REIMBURSABLE" ? "公司代墊，後續列入通路請款" : null,
+      `商品：${productName}`,
+      input.referenceNo ? `單號：${input.referenceNo}` : null,
+    ].filter(Boolean).join("；"),
+    createdById: actor.userId,
+  } });
+  await tx.auditLog.create({ data: {
+    userId: actor.userId,
+    action: "MOVEMENT_SHIPPING_FINANCE_CREATED",
+    entityType: "FinanceTransaction",
+    entityId: financeId,
+    metadata: { movementId: movement.id, shippingGroupKey: shipping.groupKey, shippingMethod: shipping.method, shippingFee: shipping.fee, shippingPayer: shipping.payer, channelId: movement.channelId },
+    ipAddress: actor.ipAddress ?? null,
+  }});
+  return financeId;
+}
+
 export async function createInventoryMovement(input: MovementInput, actor: MovementActor) {
   assertCanWrite(actor);
   const requiresChannel = ["SHIP", "SALES_RETURN", "CONSIGN_OUT", "CONSIGN_RETURN", "CONSIGN_SOLD", "BUYOUT"].includes(input.type);
@@ -65,6 +184,9 @@ export async function createInventoryMovement(input: MovementInput, actor: Movem
     if (!product) throw new Error("找不到商品");
     if (input.channelId && !channel) throw new Error("找不到通路");
     if (["CONSIGN_OUT", "CONSIGN_RETURN", "CONSIGN_SOLD"].includes(input.type) && channel?.type !== "CONSIGNMENT") throw new Error("寄賣事件只能選擇寄賣通路");
+    const configuredShippingPayer = input.shippingPayer || channel?.defaultShippingPayer;
+    if (configuredShippingPayer === "REIMBURSABLE" && !channel) throw new Error("公司代墊運費必須指定後續請款通路");
+    if (configuredShippingPayer === "REIMBURSABLE" && channel && !["CONSIGNMENT", "BUYOUT"].includes(channel.type)) throw new Error("公司代墊運費目前只適用寄賣與買斷通路");
     const total = sumInventory(existing);
     if (["SHIP", "PURCHASE_RETURN", "CONSIGN_OUT", "BUYOUT", "DEFECT"].includes(input.type) && total.warehouse < input.quantity) throw new Error(`倉庫庫存不足，目前只有 ${total.warehouse} 件`);
     if (input.type === "SALES_RETURN") {
@@ -75,14 +197,38 @@ export async function createInventoryMovement(input: MovementInput, actor: Movem
       const atChannel = existing.filter((m) => m.channelId === input.channelId).reduce((sum, m) => sum + deltas(m.type, m.quantity).consignment, 0);
       if (atChannel < input.quantity) throw new Error(`${channel?.name} 的寄賣庫存不足，目前只有 ${atChannel} 件`);
     }
+
+    const shipping = await resolveMovementShipping(tx, input);
     const created = await tx.stockMovement.create({ data: {
       occurredAt: input.occurredAt ?? new Date(), type: input.type, productId: input.productId, channelId: input.channelId || null,
       quantity: input.quantity, unitPrice: input.unitPrice === "" ? null : input.unitPrice, referenceNo: input.referenceNo || null,
       note: input.note || null, createdById: actor.userId,
     } });
+
+    if (shipping) {
+      await tx.$executeRaw(Prisma.sql`
+        UPDATE "StockMovement"
+        SET
+          "shippingMethod" = ${shipping.method},
+          "shippingFee" = ${shipping.fee},
+          "shippingPayer" = ${shipping.payer},
+          "shippingGroupKey" = ${shipping.groupKey}
+        WHERE "id" = ${created.id}
+      `);
+      await syncShippingExpense(tx, input, actor, created, product.name, channel?.name ?? null, shipping);
+    }
+
     await enqueueGoogleSheetMovement(tx, created.id);
     await tx.auditLog.create({ data: { userId: actor.userId, action: "MOVEMENT_CREATED", entityType: "StockMovement", entityId: created.id,
-      metadata: { type: created.type, quantity: created.quantity, productId: created.productId, source: actor.source ?? "WEB", connectionId: actor.connectionId, clientId: actor.clientId }, ipAddress: actor.ipAddress ?? null } });
+      metadata: {
+        type: created.type,
+        quantity: created.quantity,
+        productId: created.productId,
+        source: actor.source ?? "WEB",
+        connectionId: actor.connectionId,
+        clientId: actor.clientId,
+        shipping: shipping ? { method: shipping.method, fee: shipping.fee, payer: shipping.payer, groupKey: shipping.groupKey } : null,
+      }, ipAddress: actor.ipAddress ?? null } });
     return created;
   });
 }
@@ -134,6 +280,17 @@ export async function reverseInventoryMovement(id: string, actor: MovementActor)
     const original = await tx.stockMovement.findUnique({ where: { id }, include: { reversal: true, channel: true } });
     if (!original) throw new Error("找不到這筆異動");
     if (original.reversal || original.reversedAt || original.reversalOfId) throw new Error("這筆異動已沖銷或不可再次沖銷");
+
+    const [billingLock, directLock] = await Promise.all([
+      tx.billingStatementSource.findUnique({ where: { movementId: id }, select: { statementId: true } }),
+      tx.directSettlementSource.findUnique({ where: { movementId: id }, select: { settlementId: true } }),
+    ]);
+    if (billingLock) throw new Error("這筆銷貨已納入請款結算，請先作廢結算後再修正庫存異動");
+    if (directLock) throw new Error("這筆銷貨已納入直營撥款結算，請先作廢該結算後再修正庫存異動");
+
+    const shippingRow = (await tx.$queryRaw<ShippingMovementRow[]>(Prisma.sql`
+      SELECT "shippingGroupKey" FROM "StockMovement" WHERE "id" = ${id} LIMIT 1
+    `))[0];
     const existing = await tx.stockMovement.findMany({ where: { productId: original.productId } });
     const current = sumInventory(existing); const reverseDelta = deltas(original.type, -original.quantity);
     if (current.warehouse + reverseDelta.warehouse < 0) throw new Error("沖銷後倉庫會出現負庫存，請先處理後續交易");
@@ -147,9 +304,28 @@ export async function reverseInventoryMovement(id: string, actor: MovementActor)
     const reversal = await tx.stockMovement.create({ data: { occurredAt: now, type: original.type, quantity: -original.quantity, unitPrice: original.unitPrice,
       referenceNo: original.referenceNo, note: `沖銷：${original.note ?? original.id}`, productId: original.productId, channelId: original.channelId,
       createdById: actor.userId, reversalOfId: original.id } });
+
+    let shippingFinanceVoided = false;
+    if (shippingRow?.shippingGroupKey) {
+      const remaining = (await tx.$queryRaw<Array<{ count: bigint }>>(Prisma.sql`
+        SELECT COUNT(*)::bigint AS "count"
+        FROM "StockMovement"
+        WHERE "shippingGroupKey" = ${shippingRow.shippingGroupKey}
+          AND "reversalOfId" IS NULL
+          AND "reversedAt" IS NULL
+      `))[0];
+      if (Number(remaining?.count ?? 0) === 0) {
+        const result = await tx.financeTransaction.updateMany({
+          where: { sourceRef: `MOVEMENT_SHIPPING:${shippingRow.shippingGroupKey}`, paymentStatus: { not: "VOID" } },
+          data: { paymentStatus: "VOID" },
+        });
+        shippingFinanceVoided = result.count > 0;
+      }
+    }
+
     await enqueueGoogleSheetMovement(tx, reversal.id);
     await tx.auditLog.create({ data: { userId: actor.userId, action: "MOVEMENT_REVERSED", entityType: "StockMovement", entityId: original.id,
-      metadata: { type: original.type, quantity: original.quantity, source: actor.source ?? "WEB", connectionId: actor.connectionId, clientId: actor.clientId }, ipAddress: actor.ipAddress ?? null } });
+      metadata: { type: original.type, quantity: original.quantity, shippingFinanceVoided, source: actor.source ?? "WEB", connectionId: actor.connectionId, clientId: actor.clientId }, ipAddress: actor.ipAddress ?? null } });
     return reversal;
   });
 }

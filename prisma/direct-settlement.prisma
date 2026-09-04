@@ -1,0 +1,41 @@
+enum DirectSettlementStatus {
+  OPEN
+  RECONCILED
+  VOID
+}
+
+model DirectSettlement {
+  id              String                 @id @default(cuid())
+  settlementNo    String                 @unique
+  channelId       String
+  periodStart     DateTime
+  periodEnd       DateTime
+  settledAt       DateTime
+  grossSales      Decimal                @db.Decimal(14, 2)
+  shippingIncome  Decimal                @default(0) @db.Decimal(14, 2)
+  refundAmount    Decimal                @default(0) @db.Decimal(14, 2)
+  platformFee     Decimal                @default(0) @db.Decimal(14, 2)
+  paymentFee      Decimal                @default(0) @db.Decimal(14, 2)
+  otherFee        Decimal                @default(0) @db.Decimal(14, 2)
+  expectedPayout  Decimal                @db.Decimal(14, 2)
+  actualPayout    Decimal?               @db.Decimal(14, 2)
+  discrepancy     Decimal?               @db.Decimal(14, 2)
+  payoutReference String?
+  status          DirectSettlementStatus @default(OPEN)
+  note            String?
+  createdById     String
+  createdAt       DateTime               @default(now())
+  updatedAt       DateTime               @updatedAt
+
+  @@index([channelId, periodStart, periodEnd])
+  @@index([status, settledAt])
+}
+
+model DirectSettlementSource {
+  id           String   @id @default(cuid())
+  settlementId String
+  movementId   String   @unique
+  createdAt    DateTime @default(now())
+
+  @@index([settlementId])
+}

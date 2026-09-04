@@ -45,6 +45,26 @@ enum BillingSourceType {
   BUYOUT
 }
 
+enum SettlementCycle {
+  PER_ORDER
+  DAILY
+  WEEKLY
+  MONTHLY
+  PER_SHIPMENT
+  PER_PAYOUT
+  MANUAL
+}
+
+enum BillingTrigger {
+  EXTERNAL_STATEMENT
+  DELIVERED
+  SHIPPED
+  ORDER_COMPLETED
+  PAYOUT_RECEIVED
+  PAYMENT_RECEIVED
+  MANUAL
+}
+
 model User {
   id           String          @id @default(cuid())
   email        String          @unique
@@ -151,7 +171,7 @@ model LoginChallenge {
   ipAddress String?
   userAgent String?
   user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
-  createdAt DateTime  @default(now())
+  createdAt DateTime @default(now())
 
   @@index([userId, expiresAt])
 }
@@ -323,6 +343,14 @@ model Channel {
   settlementRate Decimal?   @db.Decimal(6, 4)
   taxRate Decimal?          @db.Decimal(6, 4)
   paymentTermsDays Int?     @default(0)
+  settlementCycle SettlementCycle?
+  billingTrigger BillingTrigger?
+  billingWithinDays Int?
+  includeShippingInBilling Boolean @default(false)
+  requiresSalesInvoice Boolean @default(false)
+  defaultShippingMethod String?
+  defaultShippingFee Decimal? @db.Decimal(12, 2)
+  defaultShippingPayer String?
   movements StockMovement[]
   billingStatements BillingStatement[]
   createdAt DateTime        @default(now())
@@ -337,6 +365,10 @@ model StockMovement {
   unitPrice    Decimal?        @db.Decimal(12, 2)
   referenceNo  String?
   note         String?
+  shippingMethod String?
+  shippingFee Decimal?         @db.Decimal(12, 2)
+  shippingPayer String?
+  shippingGroupKey String?
   productId    String
   channelId    String?
   createdById  String
@@ -354,6 +386,7 @@ model StockMovement {
   @@index([productId, occurredAt])
   @@index([channelId, occurredAt])
   @@index([type, occurredAt])
+  @@index([shippingGroupKey])
 }
 
 model ApiKey {

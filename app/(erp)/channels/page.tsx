@@ -10,10 +10,13 @@ export default async function ChannelsPage() {
     }),
     getCurrentUser(),
   ]);
-  return <ChannelManager canWrite={user?.role !== "VIEWER"} channels={channels.map(({ _count, settlementRate, taxRate, ...channel }) => ({
+  const canWrite = user?.role !== "VIEWER";
+
+  return <ChannelManager canWrite={canWrite} channels={channels.map(({ _count, settlementRate, taxRate, defaultShippingFee, ...channel }) => ({
     ...channel,
     settlementRate: settlementRate == null ? null : Number(settlementRate),
     taxRate: taxRate == null ? null : Number(taxRate),
+    defaultShippingFee: defaultShippingFee == null ? null : Number(defaultShippingFee),
     movementCount: _count.movements,
     billingCount: _count.billingStatements,
   }))} />;

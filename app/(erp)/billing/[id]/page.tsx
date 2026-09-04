@@ -7,18 +7,28 @@ import { PageHeader } from "@/components/ui/PageHeader";
 import { BillingDetailActions } from "@/components/BillingDetailActions";
 
 const statusLabels = { DRAFT: "草稿", ISSUED: "待收款", PAID: "已收款", VOID: "已作廢" } as const;
+const movementLabels: Record<string, string> = { CONSIGN_SOLD: "寄賣售出", BUYOUT: "買斷", SHIP: "出貨", SALES_RETURN: "銷貨退回" };
 function date(value: Date | null) { return value ? new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Taipei", year: "numeric", month: "2-digit", day: "2-digit" }).format(value) : "—"; }
 function money(value: number) { return new Intl.NumberFormat("zh-TW", { style: "currency", currency: "TWD", maximumFractionDigits: 2 }).format(value); }
 
 export default async function BillingDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   const [statement, user] = await Promise.all([
-    prisma.billingStatement.findUnique({ where: { id }, include: { channel: true, items: { orderBy: { sku: "asc" } }, createdBy: { select: { name: true } } } }),
+    prisma.billingStatement.findUnique({
+      where: { id },
+      include: {
+        channel: true,
+        items: { orderBy: { sku: "asc" } },
+        createdBy: { select: { name: true } },
+        sources: { include: { movement: { include: { product: true } } } },
+      },
+    }),
     getCurrentUser(),
   ]);
   if (!statement) notFound();
+  const sourceMovements = statement.sources.map((source) => source.movement).sort((a, b) => a.occurredAt.getTime() - b.occurredAt.getTime());
   return <div className="billing-detail">
-    <Link className="inventory-back" href="/billing"><ArrowLeft size={15} />返回請款管理</Link>
+    <Link className="inventory-back" href="/billing"><ArrowLeft size={15} />返回請款 / 結算管理</Link>
     <PageHeader eyebrow={statement.statementNo} title={statement.companyName} description={`${date(statement.periodStart)} ～ ${date(statement.periodEnd)} · ${statement.sourceType === "CONSIGNMENT" ? "寄賣結算" : "買斷結算"}`} actions={<BillingDetailActions id={statement.id} totalAmount={Number(statement.totalAmount)} status={statement.status} canWrite={user?.role !== "VIEWER"} />} />
     <div className="billing-detail-meta">
       <div><span>狀態</span><strong><span className={`badge billing-status-${statement.status.toLowerCase()}`}>{statusLabels[statement.status]}</span></strong></div>
@@ -30,7 +40,8 @@ export default async function BillingDetailPage({ params }: { params: Promise<{ 
       <section className="panel"><div className="billing-section-head"><span>CUSTOMER SNAPSHOT</span><h2>客戶資料</h2></div><dl className="billing-snapshot"><div><dt>通路</dt><dd>{statement.channel.name}</dd></div><div><dt>公司名稱</dt><dd>{statement.companyName}</dd></div><div><dt>統一編號</dt><dd>{statement.taxId || "—"}</dd></div><div><dt>聯絡人</dt><dd>{statement.contactName || "—"}</dd></div><div><dt>電話</dt><dd>{statement.contactPhone || "—"}</dd></div><div><dt>Email</dt><dd>{statement.contactEmail || "—"}</dd></div><div className="wide"><dt>地址</dt><dd>{statement.billingAddress || "—"}</dd></div></dl></section>
       <section className="panel"><div className="billing-section-head"><span>SETTLEMENT</span><h2>結算資訊</h2></div><div className="billing-total-box compact"><div><span>結算比例</span><strong>{Number(statement.settlementRate) * 100}%</strong></div><div><span>未稅金額</span><strong>{money(Number(statement.subtotal))}</strong></div><div><span>營業稅 {Number(statement.taxRate) * 100}%</span><strong>{money(Number(statement.taxAmount))}</strong></div><div><span>運費</span><strong>{money(Number(statement.shippingFee))}</strong></div><div className="grand"><span>請款總額</span><strong>{money(Number(statement.totalAmount))}</strong></div></div></section>
     </div>
-    <section className="billing-list-section"><div className="billing-list-head"><div><span>ITEM SNAPSHOT</span><h2>請款明細</h2></div><small>建立人：{statement.createdBy.name}</small></div><div className="panel table-panel"><div className="table-wrap"><table><thead><tr><th>SKU</th><th>品項名稱</th><th>尺寸</th><th>建議售價</th><th>結算價</th><th>數量</th><th>小計</th></tr></thead><tbody>{statement.items.map((item) => <tr key={item.id}><td className="mono">{item.sku}</td><td>{item.productName}</td><td>{item.size || "—"}</td><td>{money(Number(item.listPrice))}</td><td>{money(Number(item.settlementPrice))}</td><td>{item.quantity}</td><td>{money(Number(item.subtotal))}</td></tr>)}</tbody></table></div></div></section>
+    <section className="billing-list-section"><div className="billing-list-head"><div><span>ITEM SNAPSHOT</span><h2>結算商品彙總</h2></div><small>建立人：{statement.createdBy.name}</small></div><div className="panel table-panel"><div className="table-wrap"><table><thead><tr><th>SKU</th><th>品項名稱</th><th>尺寸</th><th>建議售價</th><th>結算價</th><th>數量</th><th>小計</th></tr></thead><tbody>{statement.items.map((item) => <tr key={item.id}><td className="mono">{item.sku}</td><td>{item.productName}</td><td>{item.size || "—"}</td><td>{money(Number(item.listPrice))}</td><td>{money(Number(item.settlementPrice))}</td><td>{item.quantity}</td><td>{money(Number(item.subtotal))}</td></tr>)}</tbody></table></div></div></section>
+    {sourceMovements.length > 0 && <section className="billing-list-section"><div className="billing-list-head"><div><span>SOURCE MOVEMENTS</span><h2>原始銷貨紀錄</h2></div><small>{sourceMovements.length} 筆已鎖定來源</small></div><div className="panel table-panel"><div className="table-wrap"><table><thead><tr><th>日期</th><th>事件</th><th>SKU</th><th>品項</th><th>尺寸</th><th>數量</th><th>成交單價</th><th>單號</th></tr></thead><tbody>{sourceMovements.map((movement) => <tr key={movement.id}><td className="mono">{date(movement.occurredAt)}</td><td>{movementLabels[movement.type] ?? movement.type}</td><td className="mono">{movement.product.sku}</td><td>{movement.product.name}</td><td>{movement.product.size || "—"}</td><td>{movement.quantity}</td><td>{movement.unitPrice == null ? "—" : money(Number(movement.unitPrice))}</td><td className="mono">{movement.referenceNo || "—"}</td></tr>)}</tbody></table></div></div></section>}
     {statement.status === "PAID" && <section className="panel billing-payment-record"><div className="billing-section-head"><span>PAYMENT</span><h2>收款紀錄</h2></div><div className="billing-detail-meta"><div><span>收款日期</span><strong>{date(statement.paidAt)}</strong></div><div><span>收款金額</span><strong>{money(Number(statement.paidAmount ?? 0))}</strong></div><div><span>付款方式</span><strong>{statement.paymentMethod || "—"}</strong></div><div><span>參考號</span><strong>{statement.paymentReference || "—"}</strong></div></div></section>}
   </div>;
 }

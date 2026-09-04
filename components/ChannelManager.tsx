@@ -1,10 +1,13 @@
 "use client";
 
-import { useState } from "react";
+import { Fragment, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Power, PowerOff, Plus, ReceiptText, Trash2, X } from "lucide-react";
+import { Power, PowerOff, Plus, Settings2, Trash2 } from "lucide-react";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { channelTypeLabels } from "@/lib/inventory";
+
+type SettlementCycle = "PER_ORDER" | "DAILY" | "WEEKLY" | "MONTHLY" | "PER_SHIPMENT" | "PER_PAYOUT" | "MANUAL";
+type BillingTrigger = "EXTERNAL_STATEMENT" | "DELIVERED" | "SHIPPED" | "ORDER_COMPLETED" | "PAYOUT_RECEIVED" | "PAYMENT_RECEIVED" | "MANUAL";
 
 type Channel = {
   id: string;
@@ -22,9 +25,17 @@ type Channel = {
   settlementRate: number | null;
   taxRate: number | null;
   paymentTermsDays: number | null;
+  settlementCycle: SettlementCycle | null;
+  billingTrigger: BillingTrigger | null;
+  billingWithinDays: number | null;
+  includeShippingInBilling: boolean;
+  requiresSalesInvoice: boolean;
+  defaultShippingMethod: string | null;
+  defaultShippingFee: number | null;
+  defaultShippingPayer: string | null;
 };
 
-type BillingDraft = {
+type ChannelDraft = {
   companyName: string;
   taxId: string;
   contactName: string;
@@ -34,9 +45,68 @@ type BillingDraft = {
   settlementPercent: string;
   taxPercent: string;
   paymentTermsDays: string;
+  settlementCycle: string;
+  billingTrigger: string;
+  billingWithinDays: string;
+  includeShippingInBilling: boolean;
+  requiresSalesInvoice: boolean;
+  defaultShippingMethod: string;
+  defaultShippingFee: string;
+  defaultShippingPayer: string;
 };
 
-function toDraft(channel: Channel): BillingDraft {
+const shippingMethods = ["7-11 店到店", "全家店到店", "郵局", "黑貓宅急便", "新竹物流", "Lalamove", "親送", "店取", "其他"];
+const payerLabels: Record<string, string> = {
+  COMPANY: "公司負擔",
+  REIMBURSABLE: "公司代墊（後續請款）",
+  CUSTOMER: "客戶直接負擔",
+  CHANNEL: "通路直接負擔",
+  SUPPLIER: "供應商負擔",
+};
+const cycleLabels: Record<SettlementCycle, string> = {
+  PER_ORDER: "每筆訂單",
+  DAILY: "每日結算",
+  WEEKLY: "每週結算",
+  MONTHLY: "每月結算",
+  PER_SHIPMENT: "每次出貨結算",
+  PER_PAYOUT: "平台 / 金流撥款批次",
+  MANUAL: "手動結算",
+};
+const triggerLabels: Record<BillingTrigger, string> = {
+  EXTERNAL_STATEMENT: "收到通路月結表",
+  DELIVERED: "商品到貨",
+  SHIPPED: "出貨完成",
+  ORDER_COMPLETED: "訂單完成",
+  PAYOUT_RECEIVED: "收到平台 / 金流撥款",
+  PAYMENT_RECEIVED: "收到款項",
+  MANUAL: "由人員確認",
+};
+
+function supportsBillingProfile(channel: Channel) {
+  return channel.type === "CONSIGNMENT" || channel.type === "BUYOUT";
+}
+
+function supportsSettlementPolicy(channel: Channel) {
+  return channel.type === "DIRECT" || channel.type === "CONSIGNMENT" || channel.type === "BUYOUT";
+}
+
+function defaultCycle(channel: Channel): SettlementCycle {
+  if (channel.settlementCycle) return channel.settlementCycle;
+  if (channel.type === "DIRECT") return "PER_PAYOUT";
+  if (channel.type === "BUYOUT") return "PER_SHIPMENT";
+  if (channel.type === "CONSIGNMENT") return "MONTHLY";
+  return "MANUAL";
+}
+
+function defaultTrigger(channel: Channel): BillingTrigger {
+  if (channel.billingTrigger) return channel.billingTrigger;
+  if (channel.type === "DIRECT") return "PAYOUT_RECEIVED";
+  if (channel.type === "BUYOUT") return "DELIVERED";
+  if (channel.type === "CONSIGNMENT") return "EXTERNAL_STATEMENT";
+  return "MANUAL";
+}
+
+function toDraft(channel: Channel): ChannelDraft {
   return {
     companyName: channel.companyName ?? channel.name,
     taxId: channel.taxId ?? "",
@@ -47,7 +117,38 @@ function toDraft(channel: Channel): BillingDraft {
     settlementPercent: channel.settlementRate == null ? "" : String(channel.settlementRate * 100),
     taxPercent: channel.taxRate == null ? "5" : String(channel.taxRate * 100),
     paymentTermsDays: String(channel.paymentTermsDays ?? 0),
+    settlementCycle: defaultCycle(channel),
+    billingTrigger: defaultTrigger(channel),
+    billingWithinDays: channel.billingWithinDays == null ? (channel.type === "BUYOUT" ? "7" : "") : String(channel.billingWithinDays),
+    includeShippingInBilling: channel.defaultShippingPayer === "REIMBURSABLE" ? true : channel.includeShippingInBilling,
+    requiresSalesInvoice: channel.requiresSalesInvoice,
+    defaultShippingMethod: channel.defaultShippingMethod ?? "",
+    defaultShippingFee: channel.defaultShippingFee == null ? "" : String(channel.defaultShippingFee),
+    defaultShippingPayer: channel.defaultShippingPayer ?? "COMPANY",
   };
+}
+
+function shippingSummary(channel: Channel) {
+  if (!channel.defaultShippingMethod && channel.defaultShippingFee == null && !channel.defaultShippingPayer) return "物流未設定";
+  return [
+    channel.defaultShippingMethod || "未指定方式",
+    channel.defaultShippingFee == null ? null : `NT$ ${channel.defaultShippingFee.toLocaleString("zh-TW")}`,
+    channel.defaultShippingPayer ? payerLabels[channel.defaultShippingPayer] ?? channel.defaultShippingPayer : null,
+  ].filter(Boolean).join(" · ");
+}
+
+function settlementSummary(channel: Channel) {
+  if (!supportsSettlementPolicy(channel)) return null;
+  const cycle = channel.settlementCycle ? cycleLabels[channel.settlementCycle] : "結算規則未設定";
+  const trigger = channel.billingTrigger ? triggerLabels[channel.billingTrigger] : null;
+  const billingDays = channel.type === "DIRECT" || channel.billingWithinDays == null ? null : `${channel.billingWithinDays} 天內請款`;
+  const shipping = channel.type === "DIRECT"
+    ? null
+    : channel.defaultShippingPayer === "REIMBURSABLE"
+      ? "代墊運費自動列入請款"
+      : channel.includeShippingInBilling ? "運費列入請款" : null;
+  const invoice = channel.requiresSalesInvoice ? "需開發票" : null;
+  return [cycle, trigger, billingDays, shipping, invoice].filter(Boolean).join(" · ");
 }
 
 export function ChannelManager({ channels, canWrite }: { channels: Channel[]; canWrite: boolean }) {
@@ -56,7 +157,7 @@ export function ChannelManager({ channels, canWrite }: { channels: Channel[]; ca
   const [loading, setLoading] = useState(false);
   const [loadingId, setLoadingId] = useState("");
   const [editing, setEditing] = useState<Channel | null>(null);
-  const [draft, setDraft] = useState<BillingDraft | null>(null);
+  const [draft, setDraft] = useState<ChannelDraft | null>(null);
 
   async function submit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault(); setLoading(true); setMessage(""); const formElement = event.currentTarget; const form = new FormData(formElement);
@@ -83,19 +184,34 @@ export function ChannelManager({ channels, canWrite }: { channels: Channel[]; ca
     router.refresh();
   }
 
-  function editBilling(channel: Channel) {
-    setEditing(channel); setDraft(toDraft(channel)); setMessage("");
+  function editSettings(channel: Channel) {
+    if (editing?.id === channel.id) {
+      setEditing(null);
+      setDraft(null);
+      return;
+    }
+    setEditing(channel);
+    setDraft(toDraft(channel));
+    setMessage("");
   }
 
-  async function saveBilling(event: React.FormEvent) {
+  function closeSettings() {
+    setEditing(null);
+    setDraft(null);
+  }
+
+  async function saveSettings(event: React.FormEvent) {
     event.preventDefault();
     if (!editing || !draft) return;
     setLoadingId(editing.id); setMessage("");
     const nullable = (value: string) => value.trim() || null;
-    const response = await fetch(`/api/channels/${editing.id}`, {
-      method: "PATCH",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({
+    const payload: Record<string, unknown> = {
+      defaultShippingMethod: nullable(draft.defaultShippingMethod),
+      defaultShippingFee: draft.defaultShippingFee === "" ? null : Number(draft.defaultShippingFee),
+      defaultShippingPayer: nullable(draft.defaultShippingPayer),
+    };
+    if (supportsBillingProfile(editing)) {
+      Object.assign(payload, {
         companyName: nullable(draft.companyName),
         taxId: nullable(draft.taxId),
         contactName: nullable(draft.contactName),
@@ -105,15 +221,30 @@ export function ChannelManager({ channels, canWrite }: { channels: Channel[]; ca
         settlementRate: draft.settlementPercent === "" ? null : Number(draft.settlementPercent) / 100,
         taxRate: draft.taxPercent === "" ? null : Number(draft.taxPercent) / 100,
         paymentTermsDays: Number(draft.paymentTermsDays || 0),
-      }),
+        billingWithinDays: draft.billingWithinDays === "" ? null : Number(draft.billingWithinDays),
+        includeShippingInBilling: draft.defaultShippingPayer === "REIMBURSABLE" ? true : draft.includeShippingInBilling,
+      });
+    }
+    if (supportsSettlementPolicy(editing)) {
+      Object.assign(payload, {
+        settlementCycle: nullable(draft.settlementCycle),
+        billingTrigger: nullable(draft.billingTrigger),
+        requiresSalesInvoice: draft.requiresSalesInvoice,
+      });
+    }
+    const response = await fetch(`/api/channels/${editing.id}`, {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(payload),
     });
     const result = await response.json(); setLoadingId("");
-    if (!response.ok) return setMessage(result.error ?? "請款設定儲存失敗");
-    setEditing(null); setDraft(null); router.refresh();
+    if (!response.ok) return setMessage(result.error ?? "通路設定儲存失敗");
+    closeSettings();
+    router.refresh();
   }
 
   return <>
-    <PageHeader eyebrow="Master data" title="通路主檔" description="設定直營、寄賣與買斷通路；寄賣 / 買斷客戶可另存請款資料與預設結算條件。" />
+    <PageHeader eyebrow="Master data" title="通路主檔" description="直接在列表展開設定；直營的銷售 / 撥款規則、B2B 結算請款規則與物流預設集中管理。" />
     {message && <div className="form-error">{message}</div>}
     {canWrite && <details className="panel drawer"><summary><span className="btn btn-primary"><Plus size={16} />新增通路</span></summary>
       <form className="inline-form" onSubmit={submit}>
@@ -123,26 +254,102 @@ export function ChannelManager({ channels, canWrite }: { channels: Channel[]; ca
       </form>
     </details>}
     {canWrite && <p className="master-note">已有庫存異動或請款單的通路不可永久刪除，請改用停用以保留帳務歷史。</p>}
-    <div className="panel table-panel"><div className="table-wrap"><table><thead><tr><th>通路名稱</th><th>類型</th><th>請款資料</th><th>狀態</th>{canWrite && <th>操作</th>}</tr></thead><tbody>{channels.map((channel) => <tr key={channel.id} className={channel.active ? undefined : "inactive-row"}><td>{channel.name}</td><td><span className="badge">{channelTypeLabels[channel.type]}</span></td><td>{channel.type === "CONSIGNMENT" || channel.type === "BUYOUT" ? <div className="channel-billing-summary"><strong>{channel.companyName || "尚未設定公司資料"}</strong><span>{channel.settlementRate == null ? "比例未設定" : `${channel.settlementRate * 100}%`} · 稅 {channel.taxRate == null ? "未設定" : `${channel.taxRate * 100}%`}</span></div> : <span className="muted">—</span>}</td><td><span className={`badge ${channel.active ? "green" : ""}`}>{channel.active ? "啟用" : "停用"}</span></td>{canWrite && <td><div className="row-actions">{(channel.type === "CONSIGNMENT" || channel.type === "BUYOUT") && <button className="btn btn-secondary icon-btn" onClick={() => editBilling(channel)} title="編輯請款設定" aria-label={`編輯 ${channel.name} 請款設定`}><ReceiptText size={15} /></button>}<button className="btn btn-secondary icon-btn" disabled={loadingId === channel.id} onClick={() => toggleChannel(channel)} title={channel.active ? "停用通路" : "啟用通路"} aria-label={`${channel.active ? "停用" : "啟用"} ${channel.name}`}>{channel.active ? <PowerOff size={15} /> : <Power size={15} />}</button><button className="btn btn-danger icon-btn" disabled={loadingId === channel.id || channel.movementCount > 0 || channel.billingCount > 0} onClick={() => deleteChannel(channel)} title={channel.movementCount > 0 || channel.billingCount > 0 ? "已有關聯帳務，請改用停用" : "永久刪除通路"} aria-label={`刪除 ${channel.name}`}><Trash2 size={15} /></button></div></td>}</tr>)}</tbody></table></div></div>
 
-    {editing && draft && <section className="panel channel-billing-editor">
-      <div className="billing-list-head"><div><span>BILLING PROFILE</span><h2>{editing.name} · 請款設定</h2></div><button className="btn btn-secondary icon-btn" onClick={() => { setEditing(null); setDraft(null); }} aria-label="關閉"><X size={16} /></button></div>
-      <form onSubmit={saveBilling}>
-        <div className="billing-three-col">
-          <div className="field"><label>公司 / 客戶名稱</label><input className="input" value={draft.companyName} onChange={(event) => setDraft({ ...draft, companyName: event.target.value })} /></div>
-          <div className="field"><label>統一編號</label><input className="input" value={draft.taxId} onChange={(event) => setDraft({ ...draft, taxId: event.target.value })} /></div>
-          <div className="field"><label>聯絡人</label><input className="input" value={draft.contactName} onChange={(event) => setDraft({ ...draft, contactName: event.target.value })} /></div>
-          <div className="field"><label>Email</label><input className="input" type="email" value={draft.contactEmail} onChange={(event) => setDraft({ ...draft, contactEmail: event.target.value })} /></div>
-          <div className="field"><label>電話 / 手機</label><input className="input" value={draft.contactPhone} onChange={(event) => setDraft({ ...draft, contactPhone: event.target.value })} /></div>
-          <div className="field"><label>付款天數</label><input className="input" type="number" min="0" max="365" value={draft.paymentTermsDays} onChange={(event) => setDraft({ ...draft, paymentTermsDays: event.target.value })} /></div>
-        </div>
-        <div className="field"><label>公司地址</label><input className="input" value={draft.billingAddress} onChange={(event) => setDraft({ ...draft, billingAddress: event.target.value })} /></div>
-        <div className="billing-two-col">
-          <div className="field"><label>預設結算比例 (%)</label><input className="input" type="number" min="0" max="100" step="0.01" placeholder="例如 60" value={draft.settlementPercent} onChange={(event) => setDraft({ ...draft, settlementPercent: event.target.value })} /></div>
-          <div className="field"><label>預設營業稅 (%)</label><input className="input" type="number" min="0" max="100" step="0.01" value={draft.taxPercent} onChange={(event) => setDraft({ ...draft, taxPercent: event.target.value })} /></div>
-        </div>
-        <div className="header-actions"><button className="btn btn-primary" disabled={loadingId === editing.id}>{loadingId === editing.id ? "儲存中…" : "儲存請款設定"}</button><button type="button" className="btn btn-secondary" onClick={() => { setEditing(null); setDraft(null); }}>取消</button></div>
-      </form>
-    </section>}
+    <datalist id="channel-shipping-methods">{shippingMethods.map((name) => <option value={name} key={name} />)}</datalist>
+    <div className="panel table-panel"><div className="table-wrap"><table>
+      <thead><tr><th>通路名稱</th><th>類型</th><th>設定摘要</th><th>狀態</th>{canWrite && <th>操作</th>}</tr></thead>
+      <tbody>{channels.map((channel) => {
+        const expanded = editing?.id === channel.id && draft;
+        return <Fragment key={channel.id}>
+          <tr className={channel.active ? undefined : "inactive-row"}>
+            <td><strong>{channel.name}</strong></td>
+            <td><span className="badge">{channelTypeLabels[channel.type]}</span></td>
+            <td><div className="channel-billing-summary">
+              {supportsBillingProfile(channel) && <span>{channel.settlementRate == null ? "結算比例未設定" : `結算 ${channel.settlementRate * 100}%`} · 稅 {channel.taxRate == null ? "未設定" : `${channel.taxRate * 100}%`} · 付款 {channel.paymentTermsDays ?? 0} 天</span>}
+              {settlementSummary(channel) && <span>{settlementSummary(channel)}</span>}
+              <span>{shippingSummary(channel)}</span>
+            </div></td>
+            <td><span className={`badge ${channel.active ? "green" : ""}`}>{channel.active ? "啟用" : "停用"}</span></td>
+            {canWrite && <td><div className="row-actions">
+              <button className="btn btn-secondary icon-btn" onClick={() => editSettings(channel)} title={expanded ? "收起通路設定" : "展開通路設定"} aria-label={`${expanded ? "收起" : "展開"} ${channel.name} 通路設定`} aria-expanded={Boolean(expanded)}><Settings2 size={15} /></button>
+              <button className="btn btn-secondary icon-btn" disabled={loadingId === channel.id} onClick={() => toggleChannel(channel)} title={channel.active ? "停用通路" : "啟用通路"} aria-label={`${channel.active ? "停用" : "啟用"} ${channel.name}`}>{channel.active ? <PowerOff size={15} /> : <Power size={15} />}</button>
+              <button className="btn btn-danger icon-btn" disabled={loadingId === channel.id || channel.movementCount > 0 || channel.billingCount > 0} onClick={() => deleteChannel(channel)} title={channel.movementCount > 0 || channel.billingCount > 0 ? "已有關聯帳務，請改用停用" : "永久刪除通路"} aria-label={`刪除 ${channel.name}`}><Trash2 size={15} /></button>
+            </div></td>}
+          </tr>
+
+          {expanded && <tr>
+            <td colSpan={canWrite ? 5 : 4} style={{ padding: 0, background: "var(--surface-subtle)" }}>
+              <div style={{ padding: 20, borderTop: "1px solid var(--line)", borderBottom: "1px solid var(--line)" }}>
+                <div className="billing-list-head" style={{ marginBottom: 16 }}>
+                  <div><span>CHANNEL SETTINGS</span><h2>{editing.name} · 通路設定</h2><p className="helper">修改完成後直接儲存；打開其他通路時這一列會自動收起。</p></div>
+                </div>
+                <form onSubmit={saveSettings}>
+                  <div style={{ marginBottom: 22 }}>
+                    <div className="billing-list-head" style={{ marginBottom: 12 }}><div><span>CHANNEL</span><h3>通路資訊</h3></div></div>
+                    <div className="billing-two-col">
+                      <div className="field"><label>通路名稱</label><div className="input" style={{ display: "flex", alignItems: "center", background: "var(--surface)" }}>{editing.name}</div></div>
+                      <div className="field"><label>通路類型</label><div className="input" style={{ display: "flex", alignItems: "center", background: "var(--surface)" }}>{channelTypeLabels[editing.type]}</div></div>
+                    </div>
+                  </div>
+
+                  {supportsBillingProfile(editing) && <div style={{ marginBottom: 22 }}>
+                    <div className="billing-list-head" style={{ marginBottom: 12 }}><div><span>COMMERCIAL & BILLING</span><h3>商務 / 請款設定</h3></div></div>
+                    <div className="billing-three-col">
+                      <div className="field"><label>公司 / 客戶名稱</label><input className="input" value={draft.companyName} onChange={(event) => setDraft({ ...draft, companyName: event.target.value })} /></div>
+                      <div className="field"><label>統一編號</label><input className="input" value={draft.taxId} onChange={(event) => setDraft({ ...draft, taxId: event.target.value })} /></div>
+                      <div className="field"><label>聯絡人</label><input className="input" value={draft.contactName} onChange={(event) => setDraft({ ...draft, contactName: event.target.value })} /></div>
+                      <div className="field"><label>Email</label><input className="input" type="email" value={draft.contactEmail} onChange={(event) => setDraft({ ...draft, contactEmail: event.target.value })} /></div>
+                      <div className="field"><label>電話 / 手機</label><input className="input" value={draft.contactPhone} onChange={(event) => setDraft({ ...draft, contactPhone: event.target.value })} /></div>
+                      <div className="field"><label>付款天數</label><input className="input" type="number" min="0" max="365" value={draft.paymentTermsDays} onChange={(event) => setDraft({ ...draft, paymentTermsDays: event.target.value })} /></div>
+                    </div>
+                    <div className="field"><label>公司地址</label><input className="input" value={draft.billingAddress} onChange={(event) => setDraft({ ...draft, billingAddress: event.target.value })} /></div>
+                    <div className="billing-two-col">
+                      <div className="field"><label>預設結算比例 (%)</label><input className="input" type="number" min="0" max="100" step="0.01" placeholder="例如 60" value={draft.settlementPercent} onChange={(event) => setDraft({ ...draft, settlementPercent: event.target.value })} /></div>
+                      <div className="field"><label>預設營業稅 (%)</label><input className="input" type="number" min="0" max="100" step="0.01" value={draft.taxPercent} onChange={(event) => setDraft({ ...draft, taxPercent: event.target.value })} /></div>
+                    </div>
+                  </div>}
+
+                  {supportsSettlementPolicy(editing) && <div style={{ marginBottom: 22 }}>
+                    <div className="billing-list-head" style={{ marginBottom: 12 }}><div><span>SETTLEMENT POLICY</span><h3>{editing.type === "DIRECT" ? "銷售 / 撥款 / 對帳規則" : "結算 / 請款規則"}</h3><p className="helper">{editing.type === "DIRECT" ? "定義直營銷售要怎麼聚合與何時對帳；不會把平台淨撥款直接當成營收。" : "這裡定義平常怎麼結算；實際建立結算時由系統直接讀取，不需要每次重新設定。"}</p></div></div>
+                    {editing.type === "DIRECT" ? <>
+                      <div className="billing-three-col">
+                        <div className="field"><label>銷售結算方式</label><select className="select" value={draft.settlementCycle} onChange={(event) => setDraft({ ...draft, settlementCycle: event.target.value })}><option value="PER_PAYOUT">平台 / 金流撥款批次</option><option value="PER_ORDER">每筆訂單</option><option value="DAILY">每日結算</option><option value="WEEKLY">每週結算</option><option value="MONTHLY">每月結算</option><option value="MANUAL">手動結算</option></select></div>
+                        <div className="field"><label>收入 / 對帳觸發</label><select className="select" value={draft.billingTrigger} onChange={(event) => setDraft({ ...draft, billingTrigger: event.target.value })}><option value="PAYOUT_RECEIVED">收到平台 / 金流撥款</option><option value="ORDER_COMPLETED">訂單完成</option><option value="PAYMENT_RECEIVED">收到款項</option><option value="MANUAL">由人員確認</option></select></div>
+                        <div className="field"><label>銷項發票</label><select className="select" value={draft.requiresSalesInvoice ? "YES" : "NO"} onChange={(event) => setDraft({ ...draft, requiresSalesInvoice: event.target.value === "YES" })}><option value="NO">依訂單 / 平台處理</option><option value="YES">需要系統追蹤開票</option></select></div>
+                      </div>
+                      <p className="helper">平台手續費、活動費、退款與實際撥款金額屬於每一批結算資料，不在通路主檔寫固定金額；這樣蝦皮費率或活動變動時不會算錯。</p>
+                    </> : <>
+                      <div className="billing-three-col">
+                        <div className="field"><label>結算方式</label><select className="select" value={draft.settlementCycle} onChange={(event) => setDraft({ ...draft, settlementCycle: event.target.value })}><option value="MONTHLY">每月結算</option><option value="PER_SHIPMENT">每次出貨結算</option><option value="MANUAL">手動結算</option></select></div>
+                        <div className="field"><label>請款觸發</label><select className="select" value={draft.billingTrigger} onChange={(event) => setDraft({ ...draft, billingTrigger: event.target.value })}><option value="EXTERNAL_STATEMENT">收到通路月結表</option><option value="DELIVERED">商品到貨</option><option value="SHIPPED">出貨完成</option><option value="MANUAL">由人員確認</option></select></div>
+                        <div className="field"><label>觸發後幾天內請款</label><input className="input" type="number" min="0" max="365" placeholder="例如 7" value={draft.billingWithinDays} onChange={(event) => setDraft({ ...draft, billingWithinDays: event.target.value })} /></div>
+                        <div className="field"><label>運費列入請款</label><select className="select" disabled={draft.defaultShippingPayer === "REIMBURSABLE"} value={draft.defaultShippingPayer === "REIMBURSABLE" ? "YES" : draft.includeShippingInBilling ? "YES" : "NO"} onChange={(event) => setDraft({ ...draft, includeShippingInBilling: event.target.value === "YES" })}><option value="NO">否，我方吸收 / 不列入</option><option value="YES">是，結算時加總運費</option></select></div>
+                        <div className="field"><label>銷項發票</label><select className="select" value={draft.requiresSalesInvoice ? "YES" : "NO"} onChange={(event) => setDraft({ ...draft, requiresSalesInvoice: event.target.value === "YES" })}><option value="NO">不固定要求</option><option value="YES">需要開發票</option></select></div>
+                      </div>
+                      {draft.defaultShippingPayer === "REIMBURSABLE" && <p className="billing-hint">物流設定為「公司代墊（後續請款）」；運費列入請款會自動啟用，出貨時先記物流支出，結算時再帶入回收。</p>}
+                      <p className="helper">「付款天數」是開出請款後對方多久付款；「幾天內請款」是觸發事件發生後，我們多久內要完成請款，兩者分開管理。</p>
+                    </>}
+                  </div>}
+
+                  <div style={{ marginBottom: 22 }}>
+                    <div className="billing-list-head" style={{ marginBottom: 12 }}><div><span>SHIPPING</span><h3>物流 / 運費預設</h3><p className="helper">新增庫存異動時會自動帶入，當次仍可修改；「公司代墊」會先記實際物流支出，再於 B2B 結算自動帶入待回收運費。</p></div></div>
+                    <div className="billing-three-col">
+                      <div className="field"><label>預設收送貨方式</label><input className="input" list="channel-shipping-methods" value={draft.defaultShippingMethod} onChange={(event) => setDraft({ ...draft, defaultShippingMethod: event.target.value })} placeholder="例如 7-11 店到店" /></div>
+                      <div className="field"><label>預設運費</label><input className="input" type="number" min="0" step="1" value={draft.defaultShippingFee} onChange={(event) => setDraft({ ...draft, defaultShippingFee: event.target.value })} placeholder="0" /></div>
+                      <div className="field"><label>預設運費處理</label><select className="select" value={draft.defaultShippingPayer} onChange={(event) => {
+                        const value = event.target.value;
+                        setDraft({ ...draft, defaultShippingPayer: value, includeShippingInBilling: value === "REIMBURSABLE" ? true : draft.includeShippingInBilling });
+                      }}><option value="COMPANY">公司負擔（公司吸收）</option>{supportsBillingProfile(editing) && <option value="REIMBURSABLE">公司代墊（後續請款）</option>}<option value="CUSTOMER">客戶直接負擔</option><option value="CHANNEL">通路直接負擔</option><option value="SUPPLIER">供應商負擔</option></select></div>
+                    </div>
+                  </div>
+
+                  <div className="header-actions"><button className="btn btn-primary" disabled={loadingId === editing.id}>{loadingId === editing.id ? "儲存中…" : "儲存通路設定"}</button><button type="button" className="btn btn-secondary" onClick={closeSettings}>取消</button></div>
+                </form>
+              </div>
+            </td>
+          </tr>}
+        </Fragment>;
+      })}</tbody>
+    </table></div></div>
   </>;
 }
