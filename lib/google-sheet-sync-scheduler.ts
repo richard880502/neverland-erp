@@ -1,13 +1,16 @@
 import { getGoogleSheetConnectionSetting, getGoogleSheetSyncConfig } from "@/lib/google-sheet-source";
 import { processGoogleSheetMovementQueue } from "@/lib/google-sheet-movement-queue";
-import { enqueueGoogleSheetProductBackfill } from "@/lib/google-sheet-product-queue";
+import { enqueueGoogleSheetProductBackfill, processGoogleSheetProductQueue } from "@/lib/google-sheet-product-queue";
 
 const globalScheduler = globalThis as unknown as { googleSheetSchedulerStarted?: boolean };
 
 async function flushGoogleSheetQueues() {
   const backfilledProducts = await enqueueGoogleSheetProductBackfill();
-  const movementQueue = await processGoogleSheetMovementQueue();
-  return { backfilledProducts, movementQueue };
+  const [productQueue, movementQueue] = await Promise.all([
+    processGoogleSheetProductQueue(),
+    processGoogleSheetMovementQueue(),
+  ]);
+  return { backfilledProducts, productQueue, movementQueue };
 }
 
 export async function runGoogleSheetSyncIfDue() {
