@@ -24,6 +24,14 @@ export async function enqueueGoogleSheetProductBackfill() {
   return { queued: pending.length, alreadyQueued: products.length - pending.length };
 }
 
+/** An administrator-requested run retries failures immediately. */
+export async function retryGoogleSheetProductQueue() {
+  return prisma.googleSheetProductQueue.updateMany({
+    where: { status: "FAILED", attempts: { lt: 10 } },
+    data: { status: "PENDING", nextAttemptAt: new Date(), processingToken: null, lastError: null },
+  });
+}
+
 type QueueEntry = { id: string; sku: string; operation: string };
 type CurrentProduct = { sku: string; name: string; size: string | null; safetyStock: number; listPrice: number | null; wholesalePrice: number | null; unitCost: number | null; description: string | null };
 type CatalogRow = { row: number; skus: string[] };
