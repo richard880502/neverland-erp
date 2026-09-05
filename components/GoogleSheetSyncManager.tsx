@@ -68,7 +68,21 @@ type MovementQueue = {
     };
   }>;
 };
-type ProductQueue = { counts: Record<string, number> };
+type ProductQueue = {
+  counts: Record<string, number>;
+  recent: Array<{
+    id: string;
+    sku: string;
+    operation: string;
+    status: string;
+    attempts: number;
+    lastError: string | null;
+    masterSheetRow: number | null;
+    catalogSheetRow: number | null;
+    syncedAt: string | null;
+    createdAt: string;
+  }>;
+};
 
 const statusLabels: Record<SyncItemStatus, string> = {
   NEW: "新增",
@@ -233,6 +247,9 @@ export function GoogleSheetSyncManager({ config, connection, movementQueue, prod
     <section className="panel sync-queue-panel">
       <div className="panel-header sync-queue-header"><div><span>PRODUCT OUTBOX</span><h2>商品主檔等待區</h2><p>新增、改價與停用商品都會從 ERP 寫入商品主檔與商品總覽。</p></div><button className="btn btn-primary" onClick={runNow} disabled={Boolean(loading)}><RefreshCw size={15} className={loading === "run-now" ? "spin" : ""} />馬上同步</button></div>
       <div className="sync-queue-summary"><div><span>等待中</span><strong>{productQueue.counts.PENDING ?? 0}</strong></div><div><span>同步中</span><strong>{productQueue.counts.PROCESSING ?? 0}</strong></div><div><span>失敗待重試</span><strong>{productQueue.counts.FAILED ?? 0}</strong></div><div><span>已同步</span><strong>{productQueue.counts.SYNCED ?? 0}</strong></div></div>
+      <div className="table-wrap"><table><thead><tr><th>入列時間</th><th>狀態</th><th>SKU</th><th>操作</th><th>主檔／總覽列</th><th>結果</th></tr></thead><tbody>
+        {productQueue.recent.length ? productQueue.recent.map((item) => <tr key={item.id}><td>{formatTime(item.createdAt)}</td><td><span className={`sync-status queue-${item.status.toLowerCase()}`}>{queueStatusLabels[item.status] ?? item.status}</span></td><td><strong>{item.sku}</strong></td><td>{item.operation === "DELETE" ? "刪除" : "寫入"}</td><td>{item.masterSheetRow ?? "—"}／{item.catalogSheetRow ?? "—"}</td><td>{item.lastError ? <span className="sync-message">{item.lastError}</span> : item.syncedAt ? formatTime(item.syncedAt) : `已嘗試 ${item.attempts} 次`}</td></tr>) : <tr><td colSpan={6} className="empty-cell">目前沒有等待同步的商品。</td></tr>}
+      </tbody></table></div>
     </section>
 
     <section className="panel sync-queue-panel">

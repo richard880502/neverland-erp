@@ -70,7 +70,21 @@ export default async function GoogleSheetSyncPage() {
         },
       })),
     }}
-    productQueue={{ counts: productQueue.counts }}
+    productQueue={{
+      counts: productQueue.counts,
+      recent: productQueue.recent.map((item) => ({
+        id: item.id,
+        sku: item.sku,
+        operation: item.operation,
+        status: item.status,
+        attempts: item.attempts,
+        lastError: item.lastError,
+        masterSheetRow: item.sheetRow,
+        catalogSheetRow: item.catalogSheetRow,
+        syncedAt: item.syncedAt?.toISOString() ?? null,
+        createdAt: item.createdAt.toISOString(),
+      })),
+    }}
     history={runs.map((run) => ({
       ...run,
       sourceFetchedAt: run.sourceFetchedAt?.toISOString() ?? null,
