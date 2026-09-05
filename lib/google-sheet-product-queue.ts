@@ -24,11 +24,18 @@ export async function enqueueGoogleSheetProductBackfill() {
   return { queued: pending.length, alreadyQueued: products.length - pending.length };
 }
 
-/** An administrator-requested run retries failures immediately. */
+/**
+ * An administrator-requested run retries failures immediately.
+ *
+ * Automatic delivery keeps its retry ceiling so a persistent configuration
+ * problem cannot loop forever. A manual retry is intentionally different:
+ * an administrator may have corrected the Sheet layout or credentials after
+ * an item reached that ceiling, so reset its attempt count and let it run.
+ */
 export async function retryGoogleSheetProductQueue() {
   return prisma.googleSheetProductQueue.updateMany({
-    where: { status: "FAILED", attempts: { lt: 10 } },
-    data: { status: "PENDING", nextAttemptAt: new Date(), processingToken: null, lastError: null },
+    where: { status: "FAILED" },
+    data: { status: "PENDING", attempts: 0, nextAttemptAt: new Date(), processingToken: null, lastError: null },
   });
 }
 
