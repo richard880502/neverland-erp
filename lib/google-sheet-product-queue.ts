@@ -135,7 +135,7 @@ async function writeProductsToGoogleSheet(spreadsheetId: string, entries: QueueE
   await Promise.all([ensureRows(spreadsheetId, master, Math.max(1, nextMasterRow - 1)), ensureRows(spreadsheetId, catalog, Math.max(1, nextCatalogRow - 1))]);
   await Promise.all([copyRowFormat(spreadsheetId, master, newMasterRows, 5), copyRowFormat(spreadsheetId, catalog, newCatalogRows, 8)]);
   if (masterWrites.length || catalogWrites.length) await sheets.spreadsheets.values.batchUpdate({ spreadsheetId, requestBody: { valueInputOption: "RAW", data: [...masterWrites, ...catalogWrites] } });
-  if (masterClears.length || catalogClears.length) await sheets.spreadsheets.batchClear({ spreadsheetId, requestBody: { ranges: [...masterClears, ...catalogClears] } });
+  if (masterClears.length || catalogClears.length) await sheets.spreadsheets.values.batchClear({ spreadsheetId, requestBody: { ranges: [...masterClears, ...catalogClears] } });
 
   const verificationRanges: string[] = [];
   const expectations: string[] = [];

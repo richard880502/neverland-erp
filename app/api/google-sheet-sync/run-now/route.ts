@@ -6,7 +6,7 @@ import { enqueueGoogleSheetProductBackfill } from "@/lib/google-sheet-product-qu
 export async function POST(request: Request) {
   try {
     assertSameOrigin(request);
-    const auth = await requireApiUser({ roles: ["ADMIN"] });
+    await requireApiUser({ roles: ["ADMIN"] });
     const backfilledProducts = await enqueueGoogleSheetProductBackfill();
     const movementQueue = await processGoogleSheetMovementQueue();
     return NextResponse.json({ backfilledProducts, productQueue: movementQueue.productQueue, movementQueue });
