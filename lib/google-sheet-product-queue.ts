@@ -66,11 +66,13 @@ async function writeProductsToGoogleSheet(spreadsheetId: string, entries: QueueE
   ]);
   const masterRows = masterResponse.data.values ?? [];
   const catalogRows = catalogResponse.data.values ?? [];
+  // 商品總覽曾被人工維護成以商品名稱取代 SKU。Outbox 只需要定位本次
+  // ERP 要寫入的 SKU；忽略不在本批次中的舊格式資料，不能讓它阻塞新品同步。
+  const queuedSkus = new Set(entries.map((entry) => entry.sku));
   const masterBySku = new Map<string, number>();
   masterRows.forEach((row, index) => {
     const sku = String(row[0] ?? "").trim();
-    if (!sku) return;
-    if (masterBySku.has(sku)) throw new Error(`「商品主檔」SKU 重複：${sku}`);
+    if (!sku || !queuedSkus.has(sku) || masterBySku.has(sku)) return;
     masterBySku.set(sku, index + 2);
   });
   const catalogBySku = new Map<string, CatalogRow>();
@@ -78,7 +80,7 @@ async function writeProductsToGoogleSheet(spreadsheetId: string, entries: QueueE
     const skus = String(row[0] ?? "").trim().split(/\s+/).filter(Boolean);
     const catalogRow = { row: index + 2, skus };
     for (const sku of skus) {
-      if (catalogBySku.has(sku)) throw new Error(`「商品總覽」SKU 重複：${sku}`);
+      if (!queuedSkus.has(sku) || catalogBySku.has(sku)) continue;
       catalogBySku.set(sku, catalogRow);
     }
   });
