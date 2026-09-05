@@ -4,13 +4,14 @@ import { getCurrentUser } from "@/lib/auth";
 import { getGoogleSheetConnectionSetting, getGoogleSheetSyncConfig } from "@/lib/google-sheet-source";
 import { prisma } from "@/lib/prisma";
 import { getGoogleSheetMovementQueueSummary } from "@/lib/google-sheet-movement-queue";
+import { getGoogleSheetProductQueueSummary } from "@/lib/google-sheet-product-queue";
 
 export default async function GoogleSheetSyncPage() {
   const user = await getCurrentUser();
   if (!user || user.role !== "ADMIN") redirect("/");
 
   const connection = await getGoogleSheetConnectionSetting();
-  const [runs, stateCount, movementQueue] = await Promise.all([
+  const [runs, stateCount, movementQueue, productQueue] = await Promise.all([
     prisma.googleSheetSyncRun.findMany({
       orderBy: { createdAt: "desc" },
       take: 20,
@@ -29,6 +30,7 @@ export default async function GoogleSheetSyncPage() {
     }),
     prisma.googleSheetEntityState.count({ where: { spreadsheetId: connection.spreadsheetId } }),
     getGoogleSheetMovementQueueSummary(),
+    getGoogleSheetProductQueueSummary(),
   ]);
   const config = getGoogleSheetSyncConfig();
 
@@ -68,6 +70,7 @@ export default async function GoogleSheetSyncPage() {
         },
       })),
     }}
+    productQueue={{ counts: productQueue.counts }}
     history={runs.map((run) => ({
       ...run,
       sourceFetchedAt: run.sourceFetchedAt?.toISOString() ?? null,

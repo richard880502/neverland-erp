@@ -68,6 +68,7 @@ type MovementQueue = {
     };
   }>;
 };
+type ProductQueue = { counts: Record<string, number> };
 
 const statusLabels: Record<SyncItemStatus, string> = {
   NEW: "新增",
@@ -112,7 +113,7 @@ function formatTime(value: string | null) {
   return new Intl.DateTimeFormat("zh-TW", { dateStyle: "medium", timeStyle: "short", timeZone: "Asia/Taipei" }).format(new Date(value));
 }
 
-export function GoogleSheetSyncManager({ config, connection, movementQueue, history }: { config: Config; connection: Connection; movementQueue: MovementQueue; history: Run[] }) {
+export function GoogleSheetSyncManager({ config, connection, movementQueue, productQueue, history }: { config: Config; connection: Connection; movementQueue: MovementQueue; productQueue: ProductQueue; history: Run[] }) {
   const router = useRouter();
   const [run, setRun] = useState<Run | null>(null);
   const [loading, setLoading] = useState<"preview" | "apply" | "run-now" | "test" | "save" | "schedule" | "">("");
@@ -121,8 +122,8 @@ export function GoogleSheetSyncManager({ config, connection, movementQueue, hist
   const [sheetReference, setSheetReference] = useState(`https://docs.google.com/spreadsheets/d/${connection.spreadsheetId}/edit`);
   const [connectionTest, setConnectionTest] = useState<ConnectionTest | null>(null);
   const [scheduleEnabled, setScheduleEnabled] = useState(config.enabled);
-  const [scheduleTime, setScheduleTime] = useState(`${String(config.hour).padStart(2, "0")}:${String(config.minute).padStart(2, "0")}`);
-  const [scheduleTimeZone, setScheduleTimeZone] = useState(config.timeZone);
+  const scheduleTime = `${String(config.hour).padStart(2, "0")}:${String(config.minute).padStart(2, "0")}`;
+  const scheduleTimeZone = config.timeZone;
   const [filter, setFilter] = useState<SyncItemStatus | "CHANGED">("CHANGED");
   const items = useMemo(() => Array.isArray(run?.items) ? run.items as GoogleSheetSyncItem[] : [], [run]);
   const summary = asSummary(run?.summary);
@@ -148,14 +149,6 @@ export function GoogleSheetSyncManager({ config, connection, movementQueue, hist
     }
   }
 
-  async function requestPreview() {
-    setError(""); setLoading("preview");
-    const response = await fetch("/api/google-sheet-sync/preview", { method: "POST" });
-    const result = await response.json(); setLoading("");
-    if (!response.ok) return setError(result.error ?? "無法建立同步預覽");
-    setRun(result); setFilter("CHANGED");
-  }
-
   async function saveSchedule(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const [hour, minute] = scheduleTime.split(":").map(Number);
@@ -172,7 +165,7 @@ export function GoogleSheetSyncManager({ config, connection, movementQueue, hist
     });
     const result = await response.json(); setLoading("");
     if (!response.ok) return setError(result.error ?? "無法儲存定時同步設定");
-    setConnectionMessage(`定時同步已${result.automaticSyncEnabled ? "啟用" : "停用"}：${String(result.syncHour).padStart(2, "0")}:${String(result.syncMinute).padStart(2, "0")} ${result.syncTimeZone}`);
+    setConnectionMessage(`自動同步已${result.automaticSyncEnabled ? "啟用" : "停用"}；啟用時會持續處理 ERP 的同步等待區。`);
     router.refresh();
   }
 
@@ -190,24 +183,24 @@ export function GoogleSheetSyncManager({ config, connection, movementQueue, hist
   }
 
   async function runNow() {
-    if (!confirm("這會立即執行定時同步規則：自動寫入新增與安全修改，衝突及錯誤會略過。確定執行？")) return;
+    if (!confirm("這會立即把 ERP 商品主檔與庫存異動寫入 Google Sheet。確定執行？")) return;
     setError(""); setLoading("run-now");
     const response = await fetch("/api/google-sheet-sync/run-now", { method: "POST" });
     const result = await response.json(); setLoading("");
     if (!response.ok) return setError(result.error ?? "立即同步失敗");
-    setConnectionMessage(result.movementQueue?.message ?? `同步完成；庫存異動已送出 ${result.movementQueue?.processed ?? 0} 筆。`);
+    setConnectionMessage(result.movementQueue?.message ?? `同步完成；商品已處理 ${result.productQueue?.processed ?? 0} 筆，庫存異動已送出 ${result.movementQueue?.processed ?? 0} 筆。`);
     setRun(result); router.refresh();
   }
 
   return <>
     <header className="page-header sync-page-header">
-      <div><div className="eyebrow">Data bridge</div><h1>Google Sheet 同步</h1><p>先比對主檔，再確認寫入；定時同步只套用沒有衝突的安全變更。</p></div>
+      <div><div className="eyebrow">Data bridge</div><h1>Google Sheet 同步</h1><p>ERP 是商品主檔來源；商品、價格與庫存異動會由 ERP 單向寫入試算表。</p></div>
       <div className="header-actions"><span className={`badge ${config.hasCredentials ? "green" : "warn"}`}>{config.hasCredentials ? "Google API 已連線" : "本地 Demo 模式"}</span></div>
     </header>
 
     {error && <div className="form-error">{error}</div>}
     {connectionMessage && <div className="success-message">{connectionMessage}</div>}
-    {config.sourceMode === "LOCAL_DEMO" && <div className="sync-demo-notice"><FileWarning size={18} /><div><strong>目前使用本地快照測試</strong><span>可完整測試預覽、確認與資料庫寫入；設定 Service Account 後會改讀線上 Google Sheet。</span></div></div>}
+    {config.sourceMode === "LOCAL_DEMO" && <div className="sync-demo-notice"><FileWarning size={18} /><div><strong>目前使用本地快照測試</strong><span>同步工作已保留；設定可寫入的 Service Account 後才會寫入線上 Google Sheet。</span></div></div>}
 
     <section className="panel sync-connection-panel">
       <div className="panel-header sync-connection-header"><div><span>CONNECTION</span><h2>同步來源設定</h2><p>貼上完整 Google Sheet 網址或試算表 ID；儲存前會先檢查名稱與必要分頁。</p></div><a className="btn btn-secondary" href={`https://docs.google.com/spreadsheets/d/${connection.spreadsheetId}/edit`} target="_blank" rel="noreferrer"><ExternalLink size={15} />開啟目前試算表</a></div>
@@ -224,19 +217,22 @@ export function GoogleSheetSyncManager({ config, connection, movementQueue, hist
     </section>
 
     <section className="sync-config-grid">
-      <div className="panel sync-config-card"><div className="sync-card-icon"><Clock3 size={20} /></div><span>每日排程</span><strong>{config.scheduleLabel}</strong><small>{config.timeZone}（UTC+8）</small><em className={`badge ${config.enabled ? "green" : "warn"}`}>{config.enabled ? "已啟用" : "尚未啟用"}</em></div>
-      <div className="panel sync-config-card"><div className="sync-card-icon"><DatabaseZap size={20} /></div><span>同步內容</span><strong>商品＋價格＋通路</strong><small>空白價格不會覆蓋 ERP；不自動停用或刪除</small><em>{config.stateCount} 筆已建立比對基準</em></div>
-      <div className="panel sync-action-card"><div><span>同步控制</span><strong>預覽或馬上同步</strong><small>預覽只比較主檔；馬上同步會先處理主檔，再送出庫存異動 Queue。</small></div><button className="btn btn-primary" onClick={requestPreview} disabled={Boolean(loading)}><RefreshCw size={16} className={loading === "preview" ? "spin" : ""} />{loading === "preview" ? "讀取中…" : "從 Google Sheet 預覽主檔"}</button><button className="btn btn-secondary" onClick={runNow} disabled={Boolean(loading)}>{loading === "run-now" ? "同步中…" : "馬上同步全部"}</button></div>
+      <div className="panel sync-config-card"><div className="sync-card-icon"><Clock3 size={20} /></div><span>自動同步</span><strong>ERP Outbox</strong><small>啟用後持續處理商品與庫存同步等待區</small><em className={`badge ${config.enabled ? "green" : "warn"}`}>{config.enabled ? "已啟用" : "尚未啟用"}</em></div>
+      <div className="panel sync-config-card"><div className="sync-card-icon"><DatabaseZap size={20} /></div><span>同步內容</span><strong>ERP 商品＋價格＋庫存</strong><small>Google Sheet 商品資料不會回寫或覆蓋 ERP</small><em>ERP 為唯一主檔來源</em></div>
+      <div className="panel sync-action-card"><div><span>同步控制</span><strong>立即推送 ERP 資料</strong><small>先處理商品主檔與商品總覽，再送出庫存異動 Queue。</small></div><button className="btn btn-primary" onClick={runNow} disabled={Boolean(loading)}>{loading === "run-now" ? "同步中…" : "馬上同步全部"}</button></div>
     </section>
 
     <section className="panel sync-schedule-panel">
-      <div className="panel-header"><div><span>AUTOMATION</span><h2>定時同步設定</h2><p>每天在指定時區執行一次：先同步商品與通路，再送出庫存異動等待區。</p></div></div>
+      <div className="panel-header"><div><span>AUTOMATION</span><h2>自動同步設定</h2><p>啟用後會持續將 ERP 商品主檔、商品總覽資料與庫存異動寫入 Google Sheet。</p></div></div>
       <form className="sync-schedule-form" onSubmit={saveSchedule}>
-        <label className="sync-toggle"><input type="checkbox" checked={scheduleEnabled} onChange={(event) => setScheduleEnabled(event.target.checked)} /><span><strong>啟用每日定時同步</strong><small>關閉後仍可使用「馬上同步全部」。</small></span></label>
-        <div className="field"><label htmlFor="sync-time">執行時間</label><input className="input" id="sync-time" type="time" value={scheduleTime} onChange={(event) => setScheduleTime(event.target.value)} required /></div>
-        <div className="field"><label htmlFor="sync-time-zone">IANA 時區</label><input className="input" id="sync-time-zone" value={scheduleTimeZone} onChange={(event) => setScheduleTimeZone(event.target.value)} placeholder="Asia/Taipei" required /></div>
+        <label className="sync-toggle"><input type="checkbox" checked={scheduleEnabled} onChange={(event) => setScheduleEnabled(event.target.checked)} /><span><strong>啟用 ERP 自動同步</strong><small>關閉後仍可使用「馬上同步全部」。</small></span></label>
         <button className="btn btn-primary" disabled={Boolean(loading)}><Save size={15} />{loading === "schedule" ? "儲存中…" : "儲存定時設定"}</button>
       </form>
+    </section>
+
+    <section className="panel sync-queue-panel">
+      <div className="panel-header sync-queue-header"><div><span>PRODUCT OUTBOX</span><h2>商品主檔等待區</h2><p>新增、改價與停用商品都會從 ERP 寫入商品主檔與商品總覽。</p></div><button className="btn btn-primary" onClick={runNow} disabled={Boolean(loading)}><RefreshCw size={15} className={loading === "run-now" ? "spin" : ""} />馬上同步</button></div>
+      <div className="sync-queue-summary"><div><span>等待中</span><strong>{productQueue.counts.PENDING ?? 0}</strong></div><div><span>同步中</span><strong>{productQueue.counts.PROCESSING ?? 0}</strong></div><div><span>失敗待重試</span><strong>{productQueue.counts.FAILED ?? 0}</strong></div><div><span>已同步</span><strong>{productQueue.counts.SYNCED ?? 0}</strong></div></div>
     </section>
 
     <section className="panel sync-queue-panel">

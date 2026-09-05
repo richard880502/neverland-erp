@@ -411,6 +411,7 @@ model GoogleSheetMovementQueue {
   lastError       String?
   spreadsheetId   String?
   sheetRow        Int?
+  catalogSheetRow Int?
   syncedAt        DateTime?
   createdAt       DateTime      @default(now())
   updatedAt       DateTime      @updatedAt

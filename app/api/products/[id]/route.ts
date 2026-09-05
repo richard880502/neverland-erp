@@ -47,6 +47,7 @@ export async function PATCH(request: Request, context: { params: Promise<{ id: s
     const product = await prisma.$transaction(async (tx) => {
       if ("active" in parsed.data) {
         const updated = await tx.product.update({ where: { id }, data: { active: parsed.data.active } });
+        await enqueueGoogleSheetProduct(tx, updated);
         await tx.auditLog.create({
           data: {
             userId: auth.user.id,
@@ -61,6 +62,7 @@ export async function PATCH(request: Request, context: { params: Promise<{ id: s
       }
 
       const updated = await tx.product.update({ where: { id }, data: parsed.data });
+      await enqueueGoogleSheetProduct(tx, updated);
       await tx.auditLog.create({
         data: {
           userId: auth.user.id,

@@ -1,15 +1,15 @@
 import { NextResponse } from "next/server";
 import { assertSameOrigin, authErrorResponse, requireApiUser } from "@/lib/auth";
-import { runScheduledGoogleSheetSync } from "@/lib/google-sheet-sync";
 import { processGoogleSheetMovementQueue } from "@/lib/google-sheet-movement-queue";
+import { enqueueGoogleSheetProductBackfill } from "@/lib/google-sheet-product-queue";
 
 export async function POST(request: Request) {
   try {
     assertSameOrigin(request);
     const auth = await requireApiUser({ roles: ["ADMIN"] });
-    const run = await runScheduledGoogleSheetSync(undefined, auth.user.id);
+    const backfilledProducts = await enqueueGoogleSheetProductBackfill();
     const movementQueue = await processGoogleSheetMovementQueue();
-    return NextResponse.json({ ...run, movementQueue });
+    return NextResponse.json({ backfilledProducts, productQueue: movementQueue.productQueue, movementQueue });
   } catch (error) {
     const authError = authErrorResponse(error);
     if (authError) return NextResponse.json({ error: authError.error }, { status: authError.status });
