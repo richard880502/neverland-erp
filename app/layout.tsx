@@ -4,6 +4,7 @@ import "./medusa-theme.css";
 import "./medusa-fixes.css";
 import "./billing.css";
 import "./ui-polish.css";
+import "./product-master.css";
 
 export const metadata: Metadata = {
   title: "Neverland Operations",

@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { Prisma } from "@prisma/client";
 import { z } from "zod";
 import { assertSameOrigin, authErrorResponse, clientIp, requireApiUser } from "@/lib/auth";
+import { enqueueGoogleSheetProduct } from "@/lib/google-sheet-product-queue";
 import { prisma } from "@/lib/prisma";
 import { removeProductImages } from "@/lib/uploads";
 
@@ -13,6 +14,16 @@ const pricingUpdateSchema = z.object({
   unitCost: nullableAmount,
 }).strict();
 const updateSchema = z.union([statusUpdateSchema, pricingUpdateSchema]);
+
+async function removeUnreferencedProductImages(paths: Array<string | null | undefined>) {
+  for (const path of [...new Set(paths.filter((value): value is string => Boolean(value)))]) {
+    const referenced = await prisma.product.findFirst({
+      where: { OR: [{ imagePath: path }, { imageThumbPath: path }] },
+      select: { id: true },
+    });
+    if (!referenced) await removeProductImages([path]);
+  }
+}
 
 export async function PATCH(request: Request, context: { params: Promise<{ id: string }> }) {
   try {
@@ -36,6 +47,7 @@ export async function PATCH(request: Request, context: { params: Promise<{ id: s
     const product = await prisma.$transaction(async (tx) => {
       if ("active" in parsed.data) {
         const updated = await tx.product.update({ where: { id }, data: { active: parsed.data.active } });
+        await enqueueGoogleSheetProduct(tx, updated);
         await tx.auditLog.create({
           data: {
             userId: auth.user.id,
@@ -50,6 +62,7 @@ export async function PATCH(request: Request, context: { params: Promise<{ id: s
       }
 
       const updated = await tx.product.update({ where: { id }, data: parsed.data });
+      await enqueueGoogleSheetProduct(tx, updated);
       await tx.auditLog.create({
         data: {
           userId: auth.user.id,
@@ -92,14 +105,22 @@ export async function DELETE(request: Request, context: { params: Promise<{ id: 
       return NextResponse.json({ error: "商品已有庫存異動紀錄，請改用停用以保留帳務歷史" }, { status: 409 });
     }
 
-    await prisma.$transaction([
-      prisma.product.delete({ where: { id } }),
-      prisma.auditLog.create({
-        data: { userId: auth.user.id, action: "PRODUCT_DELETED", entityType: "Product", entityId: id, metadata: { sku: product.sku }, ipAddress: clientIp(request) },
-      }),
-    ]);
+    await prisma.$transaction(async (tx) => {
+      await enqueueGoogleSheetProduct(tx, product, "DELETE");
+      await tx.product.delete({ where: { id } });
+      await tx.auditLog.create({
+        data: {
+          userId: auth.user.id,
+          action: "PRODUCT_DELETED",
+          entityType: "Product",
+          entityId: id,
+          metadata: { sku: product.sku, googleSheetSyncQueued: true },
+          ipAddress: clientIp(request),
+        },
+      });
+    });
     try {
-      await removeProductImages([product.imagePath, product.imageThumbPath]);
+      await removeUnreferencedProductImages([product.imagePath, product.imageThumbPath]);
     } catch (error) {
       console.error("商品已刪除，但 MinIO 圖片清理失敗", error);
     }
