@@ -196,8 +196,6 @@ async function ensureMovementDataCheckFormula(sheets: SheetsClient, spreadsheetI
 
 async function writeMovementsToGoogleSheet(spreadsheetId: string, timeZone: string, entries: QueueMovement[]) {
   const sheets = getGoogleSheetsApiClient(true);
-  await ensureMovementEventMaster(sheets, spreadsheetId);
-  await ensureMovementDataCheckFormula(sheets, spreadsheetId);
 
   const metadata = await sheets.spreadsheets.get({ spreadsheetId, fields: "sheets.properties(sheetId,title,gridProperties(rowCount,columnCount))" });
   const target = metadata.data.sheets?.find((sheet) => sheet.properties?.title === "庫存異動")?.properties;
@@ -267,6 +265,18 @@ export async function processGoogleSheetMovementQueue(limit = 100) {
   await prisma.googleSheetMovementQueue.updateMany({ where: { status: "PROCESSING", updatedAt: { lt: new Date(Date.now() - 10 * 60_000) } }, data: { status: "FAILED", processingToken: null, lastError: "上次同步程序中斷，已重新排入等待區", nextAttemptAt: new Date() } });
   const pendingCount = await prisma.googleSheetMovementQueue.count({ where: { status: { in: ["PENDING", "FAILED"] }, attempts: { lt: 10 } } });
   if (!config.hasCredentials) return { processed: 0, failed: 0, pending: pendingCount, demo: true, message: "目前是本地 Demo；Queue 已保留，設定可寫入的 Service Account 後才會送出", productQueue };
+
+  // Event definitions are ERP-owned reference data. Keep the Sheet master in
+  // sync even when there are no new movements waiting to be written; otherwise
+  // a newly supported movement type can remain absent indefinitely.
+  try {
+    const sheets = getGoogleSheetsApiClient(true);
+    await ensureMovementEventMaster(sheets, connection.spreadsheetId);
+    await ensureMovementDataCheckFormula(sheets, connection.spreadsheetId);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Google Sheet 事件主檔同步失敗";
+    return { processed: 0, failed: 0, pending: pendingCount, demo: false, message, productQueue };
+  }
 
   const processingToken = randomUUID();
   const candidates = await prisma.googleSheetMovementQueue.findMany({ where: { status: { in: ["PENDING", "FAILED"] }, attempts: { lt: 10 }, nextAttemptAt: { lte: new Date() } }, orderBy: { createdAt: "asc" }, take: Math.min(Math.max(limit, 1), 100), select: { id: true } });
