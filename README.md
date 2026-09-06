@@ -2,7 +2,17 @@
 
 Neverland ERP 是為 Neverland 品牌商品、總倉、直營與寄賣通路設計的輕量 ERP / 庫存後台。系統以 PostgreSQL 的庫存異動帳作為正式資料來源，從異動即時計算各 SKU 在總倉與各通路的庫存，並提供銷售分析、商品圖片、帳號權限、Google Authenticator 雙重驗證、Google Sheet 同步、請款管理，以及 Remote MCP / OAuth 整合。
 
-> Current release target: **v3.0.2**
+> Current release target: **v3.0.3**
+
+## v3.0.3 — ERP-first product and event master sync
+
+v3.0.3 將 Google Sheet 的商品與事件主檔明確定位為 ERP 的唯讀下游資料，避免人工維護的舊格式阻塞 ERP 商品新增與庫存計算。
+
+- ERP 新增、修改或刪除商品時，僅將該 SKU 排入商品同步佇列；Sheet 已有同 SKU 時更新原列，沒有時才附加到資料最後一列。
+- 同步排程會補齊缺少成功紀錄的商品，並提供管理者手動重試失敗項目的能力；正常異動不會整表覆寫。
+- `商品主檔` 與 `商品總覽` 的舊人工名稱格式不再被誤判為 SKU，避免阻塞新品同步。
+- `事件主檔` 現由 ERP 定義校正；即使沒有新的庫存異動，也會補齊「銷貨退回」、「進貨退出」與「庫存調整」等缺少事件及其庫存係數。
+- 同步頁面顯示商品 Outbox 的狀態與最近錯誤，方便追查失敗原因。
 
 ## v3.0.2 — Billing statements and Google Sheets workflow
 
@@ -93,10 +103,10 @@ UI implementation 採用本地 design tokens / primitives 對齊 Medusa，而不
 ### Google Sheet sync
 
 - Google Sheet URL / ID 後台設定。
-- 主檔預覽、衝突檢查與安全套用。
-- 每日排程同步。
-- Inventory Outbox Queue 寫回 Google Sheet。
-- 重試、防重複、同步歷史與錯誤狀態。
+- ERP 是商品與事件主檔的 source of truth；商品資料只會由 ERP 單向寫入 Google Sheet。
+- 新增或修改商品只同步該 SKU；同步缺漏時才會補齊未成功同步的商品。
+- `事件主檔` 會依 ERP 支援的庫存異動類型與係數自動補齊，不需等待新異動產生。
+- 商品與庫存異動各有 Outbox Queue，具備重試、防重複、同步歷史與錯誤狀態。
 
 ### Remote MCP / OAuth
 
@@ -174,11 +184,11 @@ npm run build
 
 ## Data ownership principles
 
-- PostgreSQL 是 ERP 的正式帳本；Google Sheet 用於主檔同步、庫存相容檢視與請款文件線上編輯。
+- PostgreSQL 是 ERP 的正式帳本；Google Sheet 用於 ERP 單向主檔同步、庫存相容檢視與請款文件線上編輯。
 - 庫存不是可直接覆寫的單一數字，而是所有有效 Stock Movement 加總後的結果。
 - 歷史異動不直接修改或刪除，錯誤資料透過沖銷處理。
 - 已有歷史關聯的商品與通路不能任意刪除。
-- Google Sheet 同步使用唯一鍵、內容雜湊與同步基準做衝突判斷，不是整表覆蓋。
+- Google Sheet 商品同步以 SKU 定位並只更新有異動或缺少同步紀錄的資料，不是整表覆蓋；事件主檔則由 ERP 定義補齊缺少的事件。
 - BillingStatement / BillingStatementItem 保存建立請款當下的正式快照；Google Sheet 的人工排版或文字調整不會回寫並覆蓋 ERP 帳本。
 
 ## CI
