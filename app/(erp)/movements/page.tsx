@@ -47,6 +47,7 @@ export default async function MovementsPage({ searchParams }: { searchParams: Pr
   if (end) occurredAt.lt = dayAfter(end);
 
   const where: Prisma.StockMovementWhereInput = {
+    reversalOfId: null,
     ...(type ? { type } : {}),
     ...(channel ? { channelId: channel } : {}),
     ...(start || end ? { occurredAt } : {}),
@@ -62,6 +63,11 @@ export default async function MovementsPage({ searchParams }: { searchParams: Pr
         ] } } },
         { channel: { is: { name: { contains: q, mode: "insensitive" } } } },
         { createdBy: { is: { name: { contains: q, mode: "insensitive" } } } },
+        { reversal: { is: { OR: [
+          { referenceNo: { contains: q, mode: "insensitive" } },
+          { note: { contains: q, mode: "insensitive" } },
+          { createdBy: { is: { name: { contains: q, mode: "insensitive" } } } },
+        ] } } },
       ],
     } : {}),
   };
@@ -77,7 +83,12 @@ export default async function MovementsPage({ searchParams }: { searchParams: Pr
   const page = Math.min(requestedPage, totalPages);
   const movements = await prisma.stockMovement.findMany({
     where,
-    include: { product: true, channel: true, createdBy: true, reversal: true },
+    include: {
+      product: true,
+      channel: true,
+      createdBy: true,
+      reversal: { include: { createdBy: true } },
+    },
     orderBy: [{ occurredAt: "desc" }, { createdAt: "desc" }],
     skip: (page - 1) * pageSize,
     take: pageSize,
@@ -123,7 +134,15 @@ export default async function MovementsPage({ searchParams }: { searchParams: Pr
       channel: movement.channel,
       createdBy: movement.createdBy.name,
       reversedAt: movement.reversedAt?.toISOString() ?? null,
-      isReversal: Boolean(movement.reversalOfId),
+      reversal: movement.reversal ? {
+        id: movement.reversal.id,
+        occurredAt: movement.reversal.occurredAt.toISOString(),
+        quantity: movement.reversal.quantity,
+        unitPrice: movement.reversal.unitPrice == null ? null : Number(movement.reversal.unitPrice),
+        referenceNo: movement.reversal.referenceNo,
+        note: movement.reversal.note,
+        createdBy: movement.reversal.createdBy.name,
+      } : null,
     }))}
   />;
 }
