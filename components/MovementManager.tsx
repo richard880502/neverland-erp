@@ -212,8 +212,8 @@ export function MovementManager({ products, channels, movements, filters, canWri
 
     <div className="panel table-panel"><div className="table-wrap"><table>
       <thead><tr><th>日期</th><th>事件</th><th>SKU</th><th>商品</th><th>通路</th><th className="number">數量</th><th className="number">成交／參考單價</th><th>物流 / 運費</th><th>單號／備註</th><th>建立者</th><th></th></tr></thead>
-      <tbody>{movements.length ? movements.map((movement) => <tr key={movement.id} style={{ opacity: movement.reversedAt ? .5 : 1 }}>
-        <td>{new Date(movement.occurredAt).toLocaleDateString("zh-TW")}</td><td><span className={`badge ${movement.isReversal ? "warn" : ""}`}>{movement.isReversal ? "沖銷 · " : ""}{movementLabels[movement.type]}</span></td>
+      <tbody>{movements.length ? movements.map((movement) => <tr key={movement.id} style={movement.reversedAt || movement.isReversal ? { color: "var(--ui-fg-muted)", background: "var(--ui-bg-subtle)" } : undefined}>
+        <td>{new Date(movement.occurredAt).toLocaleDateString("zh-TW")}</td><td><span className="badge" style={movement.reversedAt || movement.isReversal ? { background: "var(--ui-bg-component)", color: "var(--ui-fg-muted)", borderColor: "var(--ui-border-base)" } : undefined} title={movement.reversedAt ? "原始異動已被沖銷，僅保留供歷史追溯" : movement.isReversal ? "系統建立的沖銷反向紀錄" : undefined}>{movement.reversedAt ? "已沖銷 · " : movement.isReversal ? "沖銷紀錄 · " : ""}{movementLabels[movement.type]}</span></td>
         <td className="sku">{movement.product.sku}</td><td>{movement.product.name} {movement.product.size ?? ""}</td><td>{movement.channel?.name ?? (movement.type === "RECEIVE" ? "倉庫" : "未指定")}</td>
         <td className="number"><strong>{movement.quantity}</strong></td><td className="number">{movement.unitPrice != null
           ? `NT$ ${movement.unitPrice.toLocaleString()}`
