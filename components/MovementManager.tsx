@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { Fragment, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { ChevronLeft, ChevronRight, Minus, RotateCcw, Search, X } from "lucide-react";
 import { PageHeader } from "@/components/ui/PageHeader";
@@ -33,7 +33,15 @@ type Movement = {
   channel: { id: string; name: string; type: ChannelType } | null;
   createdBy: string;
   reversedAt: string | null;
-  isReversal: boolean;
+  reversal: {
+    id: string;
+    occurredAt: string;
+    quantity: number;
+    unitPrice: number | null;
+    referenceNo: string | null;
+    note: string | null;
+    createdBy: string;
+  } | null;
 };
 type MovementFilters = {
   q: string;
@@ -168,7 +176,7 @@ export function MovementManager({ products, channels, movements, filters, canWri
   }
 
   async function reverse(id: string) {
-    if (!confirm("確定要沖銷這筆異動？原始紀錄仍會保留；若同一批物流的所有異動都被沖銷，對應運費支出也會自動作廢。")) return;
+    if (!confirm("確定要沖銷這筆異動？原始紀錄仍會保留；系統會在同一筆下方建立反向紀錄。若同一批物流的所有異動都被沖銷，對應運費支出也會自動作廢。")) return;
     const response = await fetch(`/api/movements/${id}/reverse`, { method: "POST" });
     const result = await response.json();
     if (!response.ok) return alert(result.error ?? "沖銷失敗");
@@ -205,25 +213,34 @@ export function MovementManager({ products, channels, movements, filters, canWri
         <div style={{ display: "flex", gap: 8, alignItems: "center" }}><button className="btn btn-primary" type="submit"><Search size={15} />搜尋</button><button className="btn btn-secondary" type="button" onClick={() => router.push("/movements")}><X size={15} />清除</button></div>
       </form>
       <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "center", flexWrap: "wrap", marginTop: 14 }}>
-        <span className="helper">共 {filters.total.toLocaleString()} 筆；目前顯示第 {firstResult.toLocaleString()}–{lastResult.toLocaleString()} 筆。搜尋會直接查完整庫存異動紀錄，不受最新 100 筆限制。</span>
+        <span className="helper">共 {filters.total.toLocaleString()} 筆業務異動；目前顯示第 {firstResult.toLocaleString()}–{lastResult.toLocaleString()} 筆。沖銷反向紀錄會附在原始異動下方，不另占分頁筆數；日期篩選以原始異動日期為準。</span>
         <div style={{ display: "flex", gap: 8, alignItems: "center" }}><button className="btn btn-secondary icon-btn" type="button" disabled={filters.page <= 1} onClick={() => goToPage(filters.page - 1)} title="上一頁"><ChevronLeft size={15} /></button><span className="helper">第 {filters.page} / {filters.totalPages} 頁</span><button className="btn btn-secondary icon-btn" type="button" disabled={filters.page >= filters.totalPages} onClick={() => goToPage(filters.page + 1)} title="下一頁"><ChevronRight size={15} /></button></div>
       </div>
     </div>
 
     <div className="panel table-panel"><div className="table-wrap"><table>
       <thead><tr><th>日期</th><th>事件</th><th>SKU</th><th>商品</th><th>通路</th><th className="number">數量</th><th className="number">成交／參考單價</th><th>物流 / 運費</th><th>單號／備註</th><th>建立者</th><th></th></tr></thead>
-      <tbody>{movements.length ? movements.map((movement) => <tr key={movement.id} style={movement.reversedAt || movement.isReversal ? { color: "var(--ui-fg-muted)", background: "var(--ui-bg-subtle)" } : undefined}>
-        <td>{new Date(movement.occurredAt).toLocaleDateString("zh-TW")}</td><td><span className="badge" style={movement.reversedAt || movement.isReversal ? { background: "var(--ui-bg-component)", color: "var(--ui-fg-muted)", borderColor: "var(--ui-border-base)" } : undefined} title={movement.reversedAt ? "原始異動已被沖銷，僅保留供歷史追溯" : movement.isReversal ? "系統建立的沖銷反向紀錄" : undefined}>{movement.reversedAt ? "已沖銷 · " : movement.isReversal ? "沖銷紀錄 · " : ""}{movementLabels[movement.type]}</span></td>
-        <td className="sku">{movement.product.sku}</td><td>{movement.product.name} {movement.product.size ?? ""}</td><td>{movement.channel?.name ?? (movement.type === "RECEIVE" ? "倉庫" : "未指定")}</td>
-        <td className="number"><strong>{movement.quantity}</strong></td><td className="number">{movement.unitPrice != null
-          ? `NT$ ${movement.unitPrice.toLocaleString()}`
-          : movement.product.listPrice != null
-            ? <><span>NT$ {movement.product.listPrice.toLocaleString()}</span><small className="price-kind">參考定價</small></>
-            : "—"}</td>
-        <td>{movement.shippingMethod || movement.shippingFee != null ? <div style={{ display: "grid", gap: 3 }}><strong>{movement.shippingMethod ?? "物流"}{movement.shippingFee != null ? ` · NT$ ${movement.shippingFee.toLocaleString()}` : ""}</strong><small className="price-kind">{shippingPayerLabel(movement.shippingPayer)}{["COMPANY", "REIMBURSABLE"].includes(movement.shippingPayer ?? "") && (movement.shippingFee ?? 0) > 0 ? " · 已同步財務" : ""}</small></div> : "—"}</td>
-        <td>{[movement.referenceNo, movement.note].filter(Boolean).join(" · ") || "—"}</td><td>{movement.createdBy}</td>
-        <td>{canWrite && !movement.reversedAt && !movement.isReversal && <button className="btn btn-danger" onClick={() => reverse(movement.id)} title="沖銷"><RotateCcw size={15} /></button>}</td>
-      </tr>) : <tr><td colSpan={11} style={{ textAlign: "center", padding: 28, color: "var(--muted)" }}>沒有符合目前條件的庫存異動。</td></tr>}</tbody>
+      <tbody>{movements.length ? movements.map((movement) => <Fragment key={movement.id}>
+        <tr style={movement.reversedAt ? { color: "var(--ui-fg-muted)", background: "var(--ui-bg-subtle)" } : undefined}>
+          <td>{new Date(movement.occurredAt).toLocaleDateString("zh-TW")}</td><td><span className="badge" style={movement.reversedAt ? { background: "var(--ui-bg-component)", color: "var(--ui-fg-muted)", borderColor: "var(--ui-border-base)" } : undefined} title={movement.reversedAt ? "原始異動已被沖銷；反向紀錄顯示在下一列" : undefined}>{movement.reversedAt ? "已沖銷 · " : ""}{movementLabels[movement.type]}</span></td>
+          <td className="sku">{movement.product.sku}</td><td>{movement.product.name} {movement.product.size ?? ""}</td><td>{movement.channel?.name ?? (movement.type === "RECEIVE" ? "倉庫" : "未指定")}</td>
+          <td className="number"><strong>{movement.quantity}</strong></td><td className="number">{movement.unitPrice != null
+            ? `NT$ ${movement.unitPrice.toLocaleString()}`
+            : movement.product.listPrice != null
+              ? <><span>NT$ {movement.product.listPrice.toLocaleString()}</span><small className="price-kind">參考定價</small></>
+              : "—"}</td>
+          <td>{movement.shippingMethod || movement.shippingFee != null ? <div style={{ display: "grid", gap: 3 }}><strong>{movement.shippingMethod ?? "物流"}{movement.shippingFee != null ? ` · NT$ ${movement.shippingFee.toLocaleString()}` : ""}</strong><small className="price-kind">{shippingPayerLabel(movement.shippingPayer)}{["COMPANY", "REIMBURSABLE"].includes(movement.shippingPayer ?? "") && (movement.shippingFee ?? 0) > 0 ? " · 已同步財務" : ""}</small></div> : "—"}</td>
+          <td>{[movement.referenceNo, movement.note].filter(Boolean).join(" · ") || "—"}</td><td>{movement.createdBy}</td>
+          <td>{canWrite && !movement.reversedAt && <button className="btn btn-danger" onClick={() => reverse(movement.id)} title="沖銷"><RotateCcw size={15} /></button>}</td>
+        </tr>
+        {movement.reversal && <tr style={{ color: "var(--ui-fg-muted)", background: "var(--ui-bg-component)" }}>
+          <td style={{ paddingLeft: 24 }}>↳ {new Date(movement.reversal.occurredAt).toLocaleDateString("zh-TW")}</td>
+          <td><span className="badge" style={{ background: "var(--ui-bg-component)", color: "var(--ui-fg-muted)", borderColor: "var(--ui-border-base)" }} title="系統建立的反向 ledger 紀錄">沖銷紀錄</span></td>
+          <td className="sku">{movement.product.sku}</td><td>{movement.product.name} {movement.product.size ?? ""}</td><td>{movement.channel?.name ?? (movement.type === "RECEIVE" ? "倉庫" : "未指定")}</td>
+          <td className="number"><strong>{movement.reversal.quantity}</strong></td><td className="number">{movement.reversal.unitPrice != null ? `NT$ ${movement.reversal.unitPrice.toLocaleString()}` : "—"}</td>
+          <td>—</td><td>{[movement.reversal.referenceNo, movement.reversal.note].filter(Boolean).join(" · ") || "—"}</td><td>{movement.reversal.createdBy}</td><td></td>
+        </tr>}
+      </Fragment>) : <tr><td colSpan={11} style={{ textAlign: "center", padding: 28, color: "var(--muted)" }}>沒有符合目前條件的庫存異動。</td></tr>}</tbody>
     </table></div></div>
   </>;
 }
