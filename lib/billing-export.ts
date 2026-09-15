@@ -52,7 +52,7 @@ async function statementPayload(id: string) {
 async function renderDocument(id: string, directory: string, format: "xlsx" | "pdf") {
   const payload = await statementPayload(id);
   const dataPath = path.join(directory, "billing.json");
-  const outputPath = path.join(directory, `${safeName(payload.statementNo)}.${format}`);
+  const outputPath = path.join(/* turbopackIgnore: true */ directory, `${safeName(payload.statementNo)}.${format}`);
   const templatePath = path.join(process.cwd(), "public", "templates", "Neverland請款單.xlsx");
   const scriptPath = path.join(process.cwd(), "scripts", "render-billing-template.py");
   await writeFile(dataPath, JSON.stringify(payload), "utf8");

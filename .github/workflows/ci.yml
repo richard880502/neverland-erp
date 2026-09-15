@@ -2,7 +2,18 @@ name: CI
 
 on:
   push:
+    branches:
+      - main
+    tags:
+      - "v*"
   pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   test:
@@ -26,11 +37,16 @@ jobs:
       NEXT_PUBLIC_APP_URL: https://erp.example.com
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - uses: actions/setup-node@v4
         with:
           node-version: 24
           cache: npm
       - run: npm ci
+      - name: Require release tags to point at main
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: git merge-base --is-ancestor "$GITHUB_SHA" "origin/main"
       - run: npx prisma migrate deploy
       - run: npm test
       - run: npm run test:integration
@@ -123,3 +139,44 @@ jobs:
           PY
       - run: npm run lint
       - run: npm run build
+
+  security:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - name: Block known critical production dependency vulnerabilities
+        run: npm audit --omit=dev --audit-level=critical
+
+  container:
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          load: true
+          push: false
+          tags: neverland-erp:ci
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+      - name: Start the production image and verify its health endpoint
+        run: |
+          docker run --detach --name neverland-erp-ci --publish 3000:3000 --entrypoint node neverland-erp:ci server.js
+          for attempt in $(seq 1 30); do
+            if curl --fail --silent --show-error http://127.0.0.1:3000/api/health | grep -q '"status":"ok"'; then
+              exit 0
+            fi
+            sleep 1
+          done
+          docker logs neverland-erp-ci
+          exit 1
+      - name: Remove test container
+        if: always()
+        run: docker rm --force neverland-erp-ci || true

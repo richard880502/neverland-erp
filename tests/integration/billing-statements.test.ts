@@ -49,6 +49,7 @@ test("billing auto-fills by date but manual billing remains independent from sto
     settlementRate: 0.6,
     taxRate: 0.05,
     shippingFee: 100,
+    sourceMovementIds: [],
     note: "manual integration",
     items: [{ productId: product.id, quantity: 2 }],
   };

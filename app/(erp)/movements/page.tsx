@@ -2,6 +2,7 @@ import { Prisma, type MovementType } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { MovementManager } from "@/components/MovementManager";
 import { getCurrentUser } from "@/lib/auth";
+import { reversalEventWhere } from "@/lib/movement-events";
 
 const movementTypes = new Set<MovementType>([
   "RECEIVE",
@@ -67,10 +68,7 @@ export default async function MovementsPage({ searchParams }: { searchParams: Pr
   };
 
   // Filter and paginate whole events; a match on either audit record keeps the pair.
-  const where: Prisma.StockMovementWhereInput = {
-    reversalOfId: null,
-    ...(Object.keys(match).length ? { OR: [match, { reversal: { is: match } }] } : {}),
-  };
+  const where = reversalEventWhere(match);
 
   const [products, channels, total, user] = await Promise.all([
     prisma.product.findMany({ where: { active: true }, orderBy: [{ name: "asc" }, { size: "asc" }] }),

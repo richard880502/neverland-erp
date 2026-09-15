@@ -4,7 +4,8 @@ import { prisma } from "../../lib/prisma";
 import { sumInventory } from "../../lib/inventory";
 import { callMcpTool } from "../../lib/mcp/tools";
 import type { McpAuth } from "../../lib/mcp/oauth";
-import { createInventoryMovement } from "../../lib/services/movements";
+import { createInventoryMovement, reverseInventoryMovement } from "../../lib/services/movements";
+import { reversalEventWhere } from "../../lib/movement-events";
 
 const email = "mcp-returns-integration@example.com";
 const sku = "MCP-RETURNS-SKU";
@@ -14,15 +15,24 @@ const consignmentName = "MCP Returns Consignment";
 const clientId = "returns-integration";
 const occurredAt = new Date("2040-01-15T12:00:00.000Z");
 const salesDay = "2040-01-15";
+const reversalEmail = "mcp-reversal-integration@example.com";
+const reversalSku = "MCP-REVERSAL-SKU";
+const reversalClientId = "reversal-integration";
 
 async function cleanup() {
   await prisma.googleSheetMovementQueue.deleteMany({ where: { movement: { product: { sku } } } });
   await prisma.stockMovement.deleteMany({ where: { product: { sku } } });
   await prisma.product.deleteMany({ where: { sku } });
+  await prisma.googleSheetMovementQueue.deleteMany({ where: { movement: { product: { sku: reversalSku } } } });
+  await prisma.stockMovement.deleteMany({ where: { product: { sku: reversalSku } } });
+  await prisma.product.deleteMany({ where: { sku: reversalSku } });
   await prisma.channel.deleteMany({ where: { name: { in: [directName, otherDirectName, consignmentName] } } });
   await prisma.mcpPreparedAction.deleteMany({ where: { clientId } });
   await prisma.mcpConnection.deleteMany({ where: { clientId } });
   await prisma.user.deleteMany({ where: { email } });
+  await prisma.mcpPreparedAction.deleteMany({ where: { clientId: reversalClientId } });
+  await prisma.mcpConnection.deleteMany({ where: { clientId: reversalClientId } });
+  await prisma.user.deleteMany({ where: { email: reversalEmail } });
 }
 
 async function commitTool(name: string, command: Record<string, unknown>, auth: McpAuth) {
@@ -94,4 +104,44 @@ test("MCP returns and consignment direct fulfillment preserve inventory and net 
 
   const sales = await callMcpTool("get_sales_summary", { from: salesDay, to: salesDay }, auth);
   assert.deepEqual(sales.structuredContent, { transactions: 2, returnTransactions: 1, quantity: 4, revenue: 600 });
+});
+
+test("formal reversals are linked, net to zero, and list as one event", async () => {
+  const user = await prisma.user.create({ data: { email: reversalEmail, name: "MCP Reversal Integration", passwordHash: "unused", role: "ADMIN", mustChangePassword: false } });
+  const connection = await prisma.mcpConnection.create({ data: { userId: user.id, clientId: reversalClientId, clientName: "Reversal integration", scopes: ["movements:reverse"] } });
+  const product = await prisma.product.create({ data: { sku: reversalSku, name: "MCP Reversal Product" } });
+  const actor = { userId: user.id, role: user.role } as const;
+  await createInventoryMovement({ type: "RECEIVE", productId: product.id, quantity: 5, occurredAt }, actor);
+  const original = await createInventoryMovement({ type: "ADJUSTMENT", productId: product.id, quantity: 2, referenceNo: "REVERSAL-1", occurredAt }, actor);
+
+  const auth: McpAuth = { userId: user.id, role: user.role, scopes: ["movements:reverse"], connectionId: connection.id, clientId: reversalClientId };
+  const preview = await callMcpTool("reverse_inventory_movement", { movementId: original.id }, auth);
+  const confirmationToken = (preview.structuredContent as { requiresConfirmation: boolean; confirmationToken: string }).confirmationToken;
+  assert.ok(confirmationToken);
+  const committed = await callMcpTool("reverse_inventory_movement", { movementId: original.id, confirmationToken }, auth);
+  const result = committed.structuredContent as { committed: boolean; reversedMovementId: string; reversalMovementId: string };
+  assert.equal(result.committed, true);
+  assert.equal(result.reversedMovementId, original.id);
+
+  const persisted = await prisma.stockMovement.findUniqueOrThrow({ where: { id: original.id }, include: { reversal: true } });
+  assert.ok(persisted.reversedAt);
+  assert.equal(persisted.reversal?.id, result.reversalMovementId);
+  assert.equal(persisted.reversal?.reversalOfId, original.id);
+  assert.equal(persisted.reversal?.quantity, -2);
+  const allMovements = await prisma.stockMovement.findMany({ where: { productId: product.id } });
+  assert.deepEqual(sumInventory(allMovements), { warehouse: 5, consignment: 0, sold: 0, defect: 0 });
+
+  const groupedRows = await prisma.stockMovement.findMany({
+    where: reversalEventWhere({ note: { contains: "沖銷：" } }),
+    include: { reversal: true },
+  });
+  assert.deepEqual(groupedRows.map((movement) => movement.id), [original.id]);
+  assert.equal(groupedRows[0].reversal?.id, result.reversalMovementId);
+  await assert.rejects(callMcpTool("reverse_inventory_movement", { movementId: original.id }, auth), /找不到可沖銷的異動/);
+
+  // The browser button calls this same service; direct calls must preserve the
+  // exact link and accounting behaviour used by MCP confirmation.
+  const directOriginal = await createInventoryMovement({ type: "ADJUSTMENT", productId: product.id, quantity: 1, occurredAt }, actor);
+  const directReversal = await reverseInventoryMovement(directOriginal.id, actor);
+  assert.equal(directReversal.reversalOfId, directOriginal.id);
 });
