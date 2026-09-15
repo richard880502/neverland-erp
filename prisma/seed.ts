@@ -1,11 +1,10 @@
-import { PrismaClient, MovementType } from "@prisma/client";
+import { MovementType } from "@prisma/client";
 import bcrypt from "bcryptjs";
 import { createHash, randomBytes } from "crypto";
 import path from "path";
 import sharp from "sharp";
 import { objectStorage } from "../lib/object-storage";
-
-const prisma = new PrismaClient();
+import { prisma } from "../lib/prisma";
 
 async function main() {
   const email = process.env.ADMIN_EMAIL ?? "admin@example.com";
