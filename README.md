@@ -2,7 +2,14 @@
 
 Neverland ERP 是為 Neverland 品牌商品、總倉、直營與寄賣通路設計的輕量 ERP / 庫存後台。系統以 PostgreSQL 的庫存異動帳作為正式資料來源，從異動即時計算各 SKU 在總倉與各通路的庫存，並提供銷售分析、商品圖片、帳號權限、Google Authenticator 雙重驗證、Google Sheet 同步、請款管理，以及 Remote MCP / OAuth 整合。
 
-> Current release target: **v3.0.3**
+> Current release target: **v3.0.4**
+
+## v3.0.4 — Grouped inventory reversal records
+
+庫存異動列表會將已沖銷的原始紀錄與系統建立的反向紀錄視為同一個沖銷事件：預設顯示原始紀錄，展開後可查看 linked 的負數沖銷紀錄與完整稽核資訊。
+
+- 搜尋原始紀錄或其沖銷紀錄都會找到同一組事件；分頁也以整組沖銷事件計算，避免兩筆資料被拆開。
+- 網頁與 `reverse_inventory_movement` MCP 工具都使用同一套正式沖銷服務，寫入 `reversedAt` 與 `reversalOfId`，並保留不可變更的歷史紀錄。
 
 ## v3.0.3 — ERP-first product and event master sync
 

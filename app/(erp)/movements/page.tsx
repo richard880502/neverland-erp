@@ -46,7 +46,7 @@ export default async function MovementsPage({ searchParams }: { searchParams: Pr
   if (start) occurredAt.gte = dateAtStart(start);
   if (end) occurredAt.lt = dayAfter(end);
 
-  const where: Prisma.StockMovementWhereInput = {
+  const match: Prisma.StockMovementWhereInput = {
     ...(type ? { type } : {}),
     ...(channel ? { channelId: channel } : {}),
     ...(start || end ? { occurredAt } : {}),
@@ -66,6 +66,12 @@ export default async function MovementsPage({ searchParams }: { searchParams: Pr
     } : {}),
   };
 
+  // Filter and paginate whole events; a match on either audit record keeps the pair.
+  const where: Prisma.StockMovementWhereInput = {
+    reversalOfId: null,
+    ...(Object.keys(match).length ? { OR: [match, { reversal: { is: match } }] } : {}),
+  };
+
   const [products, channels, total, user] = await Promise.all([
     prisma.product.findMany({ where: { active: true }, orderBy: [{ name: "asc" }, { size: "asc" }] }),
     prisma.channel.findMany({ where: { active: true, type: { not: "SYSTEM" } }, orderBy: { name: "asc" } }),
@@ -77,8 +83,8 @@ export default async function MovementsPage({ searchParams }: { searchParams: Pr
   const page = Math.min(requestedPage, totalPages);
   const movements = await prisma.stockMovement.findMany({
     where,
-    include: { product: true, channel: true, createdBy: true, reversal: true },
-    orderBy: [{ occurredAt: "desc" }, { createdAt: "desc" }],
+    include: { product: true, channel: true, createdBy: true, reversal: { include: { createdBy: true } } },
+    orderBy: [{ occurredAt: "desc" }, { createdAt: "desc" }, { id: "desc" }],
     skip: (page - 1) * pageSize,
     take: pageSize,
   });
@@ -123,7 +129,15 @@ export default async function MovementsPage({ searchParams }: { searchParams: Pr
       channel: movement.channel,
       createdBy: movement.createdBy.name,
       reversedAt: movement.reversedAt?.toISOString() ?? null,
-      isReversal: Boolean(movement.reversalOfId),
+      reversal: movement.reversal ? {
+        id: movement.reversal.id,
+        occurredAt: movement.reversal.occurredAt.toISOString(),
+        createdAt: movement.reversal.createdAt.toISOString(),
+        quantity: movement.reversal.quantity,
+        referenceNo: movement.reversal.referenceNo,
+        note: movement.reversal.note,
+        createdBy: movement.reversal.createdBy.name,
+      } : null,
     }))}
   />;
 }
