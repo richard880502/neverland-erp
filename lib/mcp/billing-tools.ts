@@ -542,7 +542,7 @@ const billingTools: Tool[] = [
             issuedAt: resolved.input.issuedAt,
             settlementRate: resolved.input.settlementRate,
             taxRate: resolved.input.taxRate,
-            items: resolved.pricing.map(({ updatedAt: _updatedAt, ...item }) => item),
+            items: resolved.pricing.map((item) => Object.fromEntries(Object.entries(item).filter(([key]) => key !== "updatedAt"))),
             totals: resolved.totals,
             note: resolved.input.note,
           },
