@@ -20,12 +20,14 @@
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1116.0",
     "@aws-sdk/s3-request-presigner": "^3.1131.0",
+    "@prisma/adapter-pg": "^7.10.0",
     "@prisma/client": "7.10.0",
     "bcryptjs": "3.0.3",
     "googleapis": "^173.0.0",
     "lucide-react": "1.45.0",
     "next": "16.3.5",
     "otplib": "13.4.1",
+    "pg": "^8.23.0",
     "prisma": "7.10.0",
     "qrcode": "1.5.4",
     "react": "19.2.8",
@@ -37,6 +39,7 @@
   },
   "devDependencies": {
     "@types/node": "26.5.1",
+    "@types/pg": "^8.23.1",
     "@types/qrcode": "1.5.6",
     "@types/react": "19.2.2",
     "@types/react-dom": "19.2.2",
