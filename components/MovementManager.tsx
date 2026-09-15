@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { Fragment, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { ChevronLeft, ChevronRight, Minus, RotateCcw, Search, X } from "lucide-react";
 import { PageHeader } from "@/components/ui/PageHeader";
@@ -33,7 +33,15 @@ type Movement = {
   channel: { id: string; name: string; type: ChannelType } | null;
   createdBy: string;
   reversedAt: string | null;
-  isReversal: boolean;
+  reversal: {
+    id: string;
+    occurredAt: string;
+    createdAt: string;
+    quantity: number;
+    referenceNo: string | null;
+    note: string | null;
+    createdBy: string;
+  } | null;
 };
 type MovementFilters = {
   q: string;
@@ -205,15 +213,15 @@ export function MovementManager({ products, channels, movements, filters, canWri
         <div style={{ display: "flex", gap: 8, alignItems: "center" }}><button className="btn btn-primary" type="submit"><Search size={15} />搜尋</button><button className="btn btn-secondary" type="button" onClick={() => router.push("/movements")}><X size={15} />清除</button></div>
       </form>
       <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "center", flexWrap: "wrap", marginTop: 14 }}>
-        <span className="helper">共 {filters.total.toLocaleString()} 筆；目前顯示第 {firstResult.toLocaleString()}–{lastResult.toLocaleString()} 筆。搜尋會直接查完整庫存異動紀錄，不受最新 100 筆限制。</span>
+        <span className="helper">共 {filters.total.toLocaleString()} 組異動；目前顯示第 {firstResult.toLocaleString()}–{lastResult.toLocaleString()} 組。搜尋涵蓋原始與沖銷紀錄；任一筆符合條件即顯示整組，展開內容可能超出篩選日期。</span>
         <div style={{ display: "flex", gap: 8, alignItems: "center" }}><button className="btn btn-secondary icon-btn" type="button" disabled={filters.page <= 1} onClick={() => goToPage(filters.page - 1)} title="上一頁"><ChevronLeft size={15} /></button><span className="helper">第 {filters.page} / {filters.totalPages} 頁</span><button className="btn btn-secondary icon-btn" type="button" disabled={filters.page >= filters.totalPages} onClick={() => goToPage(filters.page + 1)} title="下一頁"><ChevronRight size={15} /></button></div>
       </div>
     </div>
 
     <div className="panel table-panel"><div className="table-wrap"><table>
       <thead><tr><th>日期</th><th>事件</th><th>SKU</th><th>商品</th><th>通路</th><th className="number">數量</th><th className="number">成交／參考單價</th><th>物流 / 運費</th><th>單號／備註</th><th>建立者</th><th></th></tr></thead>
-      <tbody>{movements.length ? movements.map((movement) => <tr key={movement.id} style={{ opacity: movement.reversedAt ? .5 : 1 }}>
-        <td>{new Date(movement.occurredAt).toLocaleDateString("zh-TW")}</td><td><span className={`badge ${movement.isReversal ? "warn" : ""}`}>{movement.isReversal ? "沖銷 · " : ""}{movementLabels[movement.type]}</span></td>
+      <tbody>{movements.length ? movements.map((movement) => <Fragment key={movement.id}><tr style={{ background: movement.reversedAt ? "var(--surface-muted, #f5f5f5)" : undefined }}>
+        <td>{new Date(movement.occurredAt).toLocaleDateString("zh-TW")}</td><td><span className="badge">{movement.reversedAt ? "已沖銷 · " : ""}{movementLabels[movement.type]}</span></td>
         <td className="sku">{movement.product.sku}</td><td>{movement.product.name} {movement.product.size ?? ""}</td><td>{movement.channel?.name ?? (movement.type === "RECEIVE" ? "倉庫" : "未指定")}</td>
         <td className="number"><strong>{movement.quantity}</strong></td><td className="number">{movement.unitPrice != null
           ? `NT$ ${movement.unitPrice.toLocaleString()}`
@@ -222,8 +230,21 @@ export function MovementManager({ products, channels, movements, filters, canWri
             : "—"}</td>
         <td>{movement.shippingMethod || movement.shippingFee != null ? <div style={{ display: "grid", gap: 3 }}><strong>{movement.shippingMethod ?? "物流"}{movement.shippingFee != null ? ` · NT$ ${movement.shippingFee.toLocaleString()}` : ""}</strong><small className="price-kind">{shippingPayerLabel(movement.shippingPayer)}{["COMPANY", "REIMBURSABLE"].includes(movement.shippingPayer ?? "") && (movement.shippingFee ?? 0) > 0 ? " · 已同步財務" : ""}</small></div> : "—"}</td>
         <td>{[movement.referenceNo, movement.note].filter(Boolean).join(" · ") || "—"}</td><td>{movement.createdBy}</td>
-        <td>{canWrite && !movement.reversedAt && !movement.isReversal && <button className="btn btn-danger" onClick={() => reverse(movement.id)} title="沖銷"><RotateCcw size={15} /></button>}</td>
-      </tr>) : <tr><td colSpan={11} style={{ textAlign: "center", padding: 28, color: "var(--muted)" }}>沒有符合目前條件的庫存異動。</td></tr>}</tbody>
+        <td>{canWrite && !movement.reversedAt && <button className="btn btn-danger" onClick={() => reverse(movement.id)} title="沖銷"><RotateCcw size={15} /></button>}</td>
+      </tr>
+      {movement.reversedAt && <tr style={{ background: "var(--surface-muted, #f5f5f5)" }}><td colSpan={11} style={{ paddingTop: 0 }}>
+        {movement.reversal ? <details>
+          <summary style={{ cursor: "pointer" }}>查看沖銷紀錄 · 淨數量 {movement.quantity + movement.reversal.quantity}</summary>
+          <div style={{ padding: "12px 16px", display: "grid", gap: 6 }}>
+            <strong>↳ 沖銷紀錄 · {movementLabels[movement.type]} · 數量 {movement.reversal.quantity}</strong>
+            <span>異動日期：{new Date(movement.reversal.occurredAt).toLocaleDateString("zh-TW")} · 沖銷建立時間：{new Date(movement.reversal.createdAt).toLocaleString("zh-TW")}</span>
+            <span>建立者：{movement.reversal.createdBy}</span>
+            <span>單號／備註：{[movement.reversal.referenceNo, movement.reversal.note].filter(Boolean).join(" · ") || "—"}</span>
+            <small>原始紀錄：{movement.id} · 沖銷紀錄：{movement.reversal.id}</small>
+          </div>
+        </details> : <span className="helper">已沖銷；找不到對應沖銷紀錄。</span>}
+      </td></tr>}
+      </Fragment>) : <tr><td colSpan={11} style={{ textAlign: "center", padding: 28, color: "var(--muted)" }}>沒有符合目前條件的庫存異動。</td></tr>}</tbody>
     </table></div></div>
   </>;
 }
