@@ -1,11 +1,10 @@
-import { Prisma, PrismaClient } from "@prisma/client";
+import { Prisma } from "@prisma/client";
 import { createHash } from "crypto";
 import { readFile } from "fs/promises";
 import path from "path";
 import sharp from "sharp";
 import { objectStorage } from "../lib/object-storage";
-
-const prisma = new PrismaClient();
+import { prisma } from "../lib/prisma";
 
 type ManifestRow = {
   cell: string;

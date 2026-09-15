@@ -4,7 +4,6 @@ generator client {
 
 datasource db {
   provider = "postgresql"
-  url      = env("DATABASE_URL")
 }
 
 enum UserRole {
@@ -334,7 +333,7 @@ model Channel {
   id        String          @id @default(cuid())
   name      String          @unique
   type      ChannelType
-  active    Boolean         @default(true)
+  active      Boolean         @default(true)
   companyName String?
   taxId String?
   contactName String?
@@ -428,7 +427,7 @@ model GoogleSheetProductQueue {
   operation       String    @default("UPSERT")
   status          String    @default("PENDING")
   attempts        Int       @default(0)
-  nextAttemptAt   DateTime  @default(now())
+  nextAttemptAt   DateTime      @default(now())
   processingToken String?
   lastError       String?
   spreadsheetId   String?

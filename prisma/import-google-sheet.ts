@@ -1,8 +1,7 @@
-import { ChannelType, MovementType, Prisma, PrismaClient } from "@prisma/client";
+import { ChannelType, MovementType, Prisma } from "@prisma/client";
 import { readFile } from "fs/promises";
 import path from "path";
-
-const prisma = new PrismaClient();
+import { prisma } from "../lib/prisma";
 
 type Cell = string | number | boolean | null;
 type Sheet = { range: string; majorDimension: string; values: Cell[][] };
