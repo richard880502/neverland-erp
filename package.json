@@ -19,11 +19,11 @@
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1116.0",
-    "@aws-sdk/s3-request-presigner": "^3.1116.0",
+    "@aws-sdk/s3-request-presigner": "^3.1131.0",
     "@prisma/client": "6.19.3",
     "bcryptjs": "3.0.3",
     "googleapis": "^173.0.0",
-    "lucide-react": "0.468.0",
+    "lucide-react": "1.45.0",
     "next": "16.3.5",
     "otplib": "13.4.1",
     "prisma": "7.10.0",
@@ -32,7 +32,7 @@
     "react-dom": "19.2.8",
     "recharts": "3.10.0",
     "sharp": "0.35.4",
-    "tsx": "4.20.6",
+    "tsx": "4.23.13",
     "zod": "3.25.76"
   },
   "devDependencies": {
