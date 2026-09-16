@@ -1,6 +1,7 @@
 import { createHash, randomBytes, timingSafeEqual } from "crypto";
 import { lookup } from "node:dns/promises";
-import { isIP } from "node:net";
+import { request as httpsRequest } from "node:https";
+import { BlockList, isIP } from "node:net";
 import type { UserRole } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 
@@ -13,6 +14,7 @@ export const DEFAULT_MCP_SCOPES: McpScope[] = ["dashboard:read", "products:read"
 const ACCESS_TOKEN_MINUTES = 15;
 const REFRESH_TOKEN_DAYS = 30;
 const CODE_MINUTES = 5;
+const MAX_CLIENT_METADATA_BYTES = 64_000;
 
 type OAuthApplicationType = "web" | "native";
 type ConfiguredClient = { name?: string; redirectUris: string[]; applicationType?: OAuthApplicationType };
@@ -55,36 +57,78 @@ function configuredClients(): Record<string, ConfiguredClient> {
   } catch { throw new Error("MCP_OAUTH_CLIENTS_JSON 格式無效"); }
 }
 
-function isPrivateClientMetadataHost(hostname: string) {
+const blockedClientMetadataAddresses = new BlockList();
+for (const [network, prefix] of [
+  ["0.0.0.0", 8], ["10.0.0.0", 8], ["100.64.0.0", 10], ["127.0.0.0", 8],
+  ["169.254.0.0", 16], ["172.16.0.0", 12], ["192.0.0.0", 24], ["192.0.2.0", 24],
+  ["192.168.0.0", 16], ["198.18.0.0", 15], ["198.51.100.0", 24], ["203.0.113.0", 24],
+  ["224.0.0.0", 4], ["240.0.0.0", 4],
+] as const) blockedClientMetadataAddresses.addSubnet(network, prefix, "ipv4");
+for (const [network, prefix] of [
+  ["::", 128], ["::1", 128], ["fc00::", 7], ["fe80::", 10], ["ff00::", 8], ["2001:db8::", 32],
+] as const) blockedClientMetadataAddresses.addSubnet(network, prefix, "ipv6");
+
+export function isPrivateClientMetadataHost(hostname: string) {
   const host = hostname.toLowerCase().replace(/^\[|\]$/g, "");
-  if (host === "localhost" || host === "[::1]" || host.endsWith(".local")) return true;
-  if (host === "::1" || host === "::" || /^f[cd][0-9a-f]:/i.test(host) || /^fe[89ab][0-9a-f]:/i.test(host)) return true;
-  if (/^127\./.test(host) || /^10\./.test(host) || /^192\.168\./.test(host)) return true;
-  const match = host.match(/^172\.(\d+)\./);
-  return Boolean(match && Number(match[1]) >= 16 && Number(match[1]) <= 31);
+  if (host === "localhost" || host.endsWith(".localhost") || host.endsWith(".local")) return true;
+  const family = isIP(host);
+  if (family === 4) return blockedClientMetadataAddresses.check(host, "ipv4");
+  if (family === 6) return host.startsWith("::ffff:") || blockedClientMetadataAddresses.check(host, "ipv6");
+  return false;
 }
 
-async function assertPublicClientMetadataHost(hostname: string) {
-  if (isPrivateClientMetadataHost(hostname)) throw new Error("OAuth client metadata host 不允許使用本機或私有位址");
-  const addresses = await lookup(hostname, { all: true });
-  if (!addresses.length || addresses.some(({ address }) => isIP(address) > 0 && isPrivateClientMetadataHost(address))) throw new Error("OAuth client metadata host 解析到私有位址");
+async function resolvePublicClientMetadataAddress(hostname: string) {
+  if (isPrivateClientMetadataHost(hostname)) throw new Error("OAuth client metadata host 不允許使用本機、私有或保留位址");
+  const addresses = await lookup(hostname, { all: true, verbatim: true });
+  if (!addresses.length) throw new Error("OAuth client metadata host 無法解析");
+  if (addresses.some(({ address }) => isPrivateClientMetadataHost(address))) throw new Error("OAuth client metadata host 解析到本機、私有或保留位址");
+  return addresses[0];
+}
+
+async function fetchClientMetadataDocument(url: URL) {
+  const { address, family } = await resolvePublicClientMetadataAddress(url.hostname);
+  return new Promise<{ statusCode: number; contentType: string; body: string }>((resolve, reject) => {
+    const request = httpsRequest({
+      protocol: "https:",
+      hostname: address,
+      family,
+      port: url.port ? Number(url.port) : 443,
+      path: `${url.pathname}${url.search}`,
+      method: "GET",
+      servername: url.hostname,
+      headers: { Accept: "application/json", Host: url.host },
+      timeout: 5_000,
+    }, (response) => {
+      const statusCode = response.statusCode ?? 0;
+      const contentType = String(response.headers["content-type"] ?? "");
+      const chunks: Buffer[] = [];
+      let bytes = 0;
+      response.on("data", (chunk: Buffer | string) => {
+        const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+        bytes += buffer.length;
+        if (bytes > MAX_CLIENT_METADATA_BYTES) {
+          response.destroy(new Error("OAuth client metadata document 過大"));
+          return;
+        }
+        chunks.push(buffer);
+      });
+      response.on("end", () => resolve({ statusCode, contentType, body: Buffer.concat(chunks).toString("utf8") }));
+      response.on("error", reject);
+    });
+    request.on("timeout", () => request.destroy(new Error("OAuth client metadata document 請求逾時")));
+    request.on("error", reject);
+    request.end();
+  });
 }
 
 async function clientFromMetadataDocument(clientId: string): Promise<OAuthClient | null> {
   let url: URL;
   try { url = new URL(clientId); } catch { return null; }
   if (url.protocol !== "https:" || url.pathname === "/" || url.hash || url.username || url.password || isPrivateClientMetadataHost(url.hostname)) return null;
-  await assertPublicClientMetadataHost(url.hostname);
 
-  const response = await fetch(url, {
-    headers: { Accept: "application/json" },
-    redirect: "error",
-    signal: AbortSignal.timeout(5_000),
-  });
-  if (!response.ok || !response.headers.get("content-type")?.toLowerCase().includes("application/json")) throw new Error("無法讀取 OAuth client metadata document");
-  const raw = await response.text();
-  if (raw.length > 64_000) throw new Error("OAuth client metadata document 過大");
-  const metadata = JSON.parse(raw) as Record<string, unknown>;
+  const response = await fetchClientMetadataDocument(url);
+  if (response.statusCode < 200 || response.statusCode >= 300 || !response.contentType.toLowerCase().includes("application/json")) throw new Error("無法讀取 OAuth client metadata document");
+  const metadata = JSON.parse(response.body) as Record<string, unknown>;
   if (metadata.client_id !== undefined && metadata.client_id !== clientId) throw new Error("OAuth client metadata 的 client_id 不符");
   if (!Array.isArray(metadata.redirect_uris) || !metadata.redirect_uris.every((value) => typeof value === "string")) throw new Error("OAuth client metadata 缺少 redirect_uris");
   const applicationType: OAuthApplicationType = metadata.application_type === "native" ? "native" : "web";
