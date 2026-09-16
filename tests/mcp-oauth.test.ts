@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { redirectUriMatches, validateAuthorizationResponseIssuer, validateRedirectUri } from "../lib/mcp/oauth";
+import { isPrivateClientMetadataHost, redirectUriMatches, validateAuthorizationResponseIssuer, validateRedirectUri } from "../lib/mcp/oauth";
 
 test("web clients require HTTPS redirect URIs", () => {
   assert.equal(validateRedirectUri("https://chatgpt.com/connector/oauth/callback", "web"), "https://chatgpt.com/connector/oauth/callback");
@@ -37,6 +37,30 @@ test("native HTTP redirects cannot escape the loopback host", () => {
   assert.throws(() => validateRedirectUri("http://127.0.0.1.example.com/callback", "native"), /loopback/);
   assert.throws(() => validateRedirectUri("http://user@127.0.0.1/callback", "native"), /帳密/);
   assert.throws(() => validateRedirectUri("http://127.0.0.1/callback#token", "native"), /fragment/);
+});
+
+test("OAuth metadata SSRF filtering blocks local private link-local and reserved addresses", () => {
+  for (const host of [
+    "localhost",
+    "api.localhost",
+    "127.0.0.1",
+    "10.0.0.1",
+    "100.64.0.1",
+    "169.254.169.254",
+    "172.16.0.1",
+    "192.168.1.1",
+    "198.18.0.1",
+    "::1",
+    "fc00::1",
+    "fe80::1",
+    "::ffff:127.0.0.1",
+  ]) assert.equal(isPrivateClientMetadataHost(host), true, host);
+});
+
+test("OAuth metadata SSRF filtering permits ordinary public addresses and hostnames", () => {
+  assert.equal(isPrivateClientMetadataHost("8.8.8.8"), false);
+  assert.equal(isPrivateClientMetadataHost("1.1.1.1"), false);
+  assert.equal(isPrivateClientMetadataHost("example.com"), false);
 });
 
 test("RFC 9207 issuer validation rejects missing and mismatched issuers", () => {
