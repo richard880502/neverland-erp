@@ -29,6 +29,8 @@ const DATE_AWARE_INVENTORY_TOOLS = new Set([
   "create_consignment_direct_fulfillment",
 ]);
 
+const DATE_ALIAS_KEYS = ["date", "movementDate", "movement_date", "occurredDate", "occurred_date", "occurred_on", "occurred_at", "eventDate", "transactionDate", "operationDate"];
+
 const occurredOnProperty = {
   type: "string",
   format: "date",
@@ -68,6 +70,9 @@ function isValidDateOnly(value: string) {
 function normalizeInventoryDateInput(name: string, input: unknown) {
   if (!DATE_AWARE_INVENTORY_TOOLS.has(name) || input === null || typeof input !== "object" || Array.isArray(input)) return input;
   const record = input as Record<string, unknown>;
+  // zod 會默默丟掉未定義欄位；agent 若用別名傳日期，異動會被記成今天，所以直接拒絕。
+  const aliases = DATE_ALIAS_KEYS.filter((key) => record[key] != null);
+  if (aliases.length) throw new Error(`不支援欄位 ${aliases.join("、")}；異動日期請改用 occurredOn (YYYY-MM-DD)`);
   if (record.occurredOn == null) return input;
   if (record.occurredAt != null) throw new Error("occurredOn 與 occurredAt 只能擇一");
   if (typeof record.occurredOn !== "string" || !isValidDateOnly(record.occurredOn)) {
@@ -80,6 +85,20 @@ function normalizeInventoryDateInput(name: string, input: unknown) {
     // 用台北中午代表營運日期，避免 UTC 轉換後跨到前一天或後一天。
     occurredAt: `${occurredOn}T12:00:00+08:00`,
   };
+}
+
+// preview 一律明示寫入日期，沒指定時也要說清楚會用「確認當下」，讓 agent 與使用者能發現日期漏傳。
+function annotatePreviewDate(name: string, input: unknown, result: McpToolResult): McpToolResult {
+  const content = result.structuredContent as Record<string, unknown> | null | undefined;
+  if (!DATE_AWARE_INVENTORY_TOOLS.has(name) || !content || typeof content !== "object" || content.requiresConfirmation !== true) return result;
+  const normalized = normalizeInventoryDateInput(name, input) as Record<string, unknown> | null;
+  const raw = normalized && typeof normalized === "object" ? normalized.occurredAt : undefined;
+  const parsed = raw == null ? null : new Date(String(raw));
+  const effectiveOccurredAt = parsed && !Number.isNaN(parsed.getTime())
+    ? { source: "specified", value: parsed.toISOString(), taipeiDate: parsed.toLocaleDateString("en-CA", { timeZone: "Asia/Taipei" }) }
+    : { source: "not-specified", value: null, note: "未指定日期：確認時會以當下時間（今天）寫入。若使用者有指定日期，請取消並用 occurredOn 重新 preview。" };
+  const next = { ...content, preview: { ...(content.preview as object), effectiveOccurredAt } };
+  return { ...result, structuredContent: next, content: [{ type: "text", text: JSON.stringify(next, null, 2) }] } as McpToolResult;
 }
 
 export function normalizeMcpToolResult(name: string, result: McpToolResult) {
@@ -110,5 +129,5 @@ export async function callMcpTool(name: string, input: unknown, auth: McpAuth) {
     : hasFinanceMcpTool(name)
       ? await callFinanceMcpTool(name, input, auth)
       : await callCoreMcpTool(name, normalizeInventoryDateInput(name, input), auth);
-  return normalizeMcpToolResult(name, result);
+  return normalizeMcpToolResult(name, annotatePreviewDate(name, input, result));
 }
