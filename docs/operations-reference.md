@@ -23,7 +23,7 @@ flowchart LR
     Browser["瀏覽器／ERP 後台"] --> App["Next.js 應用程式"]
     App --> DB["PostgreSQL\n主檔、異動帳、Queue、稽核"]
     App --> Storage["MinIO／S3\nprivate bucket"]
-    Browser -->|"presigned GET"| Storage
+    Browser -.->|"不直連，經 ERP 代理"| Storage
     Sheet["Google Sheet\n商品／價格／通路主檔"] -->|"預覽、比對、確認"| App
     DB -->|"Outbox Queue"| App
     App -->|"庫存異動批次寫回"| Sheet
@@ -489,12 +489,10 @@ npm run build
 | `ADMIN_PASSWORD` | 初始管理員密碼 | 至少 10 字元；正式環境必須更換 |
 | `TOTP_ENCRYPTION_KEY` | 加密 TOTP 種子 | 必須為 32 bytes；設定後不可任意更換 |
 | `S3_ENDPOINT` | ERP 連線到 MinIO／S3 的內部 endpoint | Zeabur 內使用 MinIO private hostname，例如 `http://minio:9000` |
-| `S3_PUBLIC_ENDPOINT` | 瀏覽器可連線的 object endpoint | 用於 presigned URL；不可填 private hostname |
 | `S3_BUCKET` | private bucket 名稱 | 需由 MinIO init job 或平台預先建立 |
 | `S3_ACCESS_KEY` / `S3_SECRET_KEY` | S3 server-side 憑證 | 必須使用 Zeabur Secret，不可加到 `NEXT_PUBLIC_*` |
 | `S3_REGION` | S3 region | MinIO 可用 `us-east-1` |
 | `S3_FORCE_PATH_STYLE` | path-style URL | MinIO 建議 `true` |
-| `S3_SIGNED_URL_TTL_SECONDS` | 短效 GET URL 有效秒數 | 60–3600，預設 900 |
 | `LEGACY_UPLOAD_DIR` | 舊圖片遷移來源 | 僅執行 migration 時使用，runtime 不會寫入此目錄 |
 | `GOOGLE_SHEET_ID` | 尚無後台設定時的預設 Sheet ID | 後台儲存值會優先 |
 | `GOOGLE_SERVICE_ACCOUNT_JSON` | 完整 Service Account JSON 或單行 Base64 | 建議使用機密環境變數 |
@@ -572,7 +570,7 @@ openssl rand -hex 32
 - 縮圖裁切為 320 × 320，轉 WebP quality 78。
 - PostgreSQL 只保存相對路徑。
 - 實際檔案只寫入 private MinIO／S3 bucket 的 `products/`；不使用 application local filesystem。
-- 前端經過 ERP 權限驗證後取得短效 presigned GET URL，再直接向 object storage 下載；商品列表使用縮圖。
+- 前端經過 ERP 權限驗證後，由 `/api/uploads/*` 透過內網向 object storage 取圖並回傳；MinIO 不需要對外網域。商品列表使用縮圖。
 
 Google Sheet 日常主檔同步目前不會自動下載或更新圖片。既有 Sheet 圖片使用一次性匯入腳本處理；後續新增商品可直接在 ERP 上傳。
 
@@ -657,13 +655,11 @@ ADMIN_EMAIL=<初始管理員 Email>
 ADMIN_PASSWORD=<安全的初始密碼>
 TOTP_ENCRYPTION_KEY=<固定的 32-byte 金鑰>
 S3_ENDPOINT=http://<minio-private-host>:9000
-S3_PUBLIC_ENDPOINT=https://<minio-public-host>
 S3_BUCKET=neverland-erp
 S3_ACCESS_KEY=<MinIO access key>
 S3_SECRET_KEY=<MinIO secret key>
 S3_REGION=us-east-1
 S3_FORCE_PATH_STYLE=true
-S3_SIGNED_URL_TTL_SECONDS=900
 GOOGLE_SERVICE_ACCOUNT_JSON=<Service Account JSON 的單行 Base64>
 GOOGLE_SHEET_SYNC_ENABLED=false
 GOOGLE_SHEET_SYNC_TIME_ZONE=Asia/Taipei
@@ -675,7 +671,7 @@ GOOGLE_SHEET_SYNC_MINUTE=0
 
 - 建立並連接 PostgreSQL 服務。
 - 建立 MinIO service 與 persistent volume，並建立 private bucket。
-- `S3_ENDPOINT` 指向 MinIO private hostname；`S3_PUBLIC_ENDPOINT` 指向瀏覽器可連線的 HTTPS endpoint。
+- `S3_ENDPOINT` 指向 MinIO private hostname（如 `http://neverland-minio.zeabur.internal:9000`）；瀏覽器不直連 MinIO。
 - 環境變數使用 Zeabur Secret，不要提交金鑰。
 - 第一次登入後立即更換初始密碼。
 - 到同步設定測試 Google API 讀取及寫入。
