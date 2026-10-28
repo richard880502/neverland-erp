@@ -25,7 +25,7 @@
     "bcryptjs": "3.0.3",
     "googleapis": "^186.0.0",
     "lucide-react": "1.47.0",
-    "next": "16.3.6",
+    "next": "16.4.3",
     "otplib": "13.5.0",
     "pg": "^8.23.0",
     "prisma": "7.10.0",
@@ -44,7 +44,7 @@
     "@types/react": "19.3.0",
     "@types/react-dom": "19.3.0",
     "eslint": "9.39.2",
-    "eslint-config-next": "16.3.8",
+    "eslint-config-next": "16.4.3",
     "typescript": "5.9.3"
   },
   "overrides": {
