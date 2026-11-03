@@ -5,6 +5,11 @@ updates:
     schedule:
       interval: weekly
     open-pull-requests-limit: 5
+    # The project's eslint-config-next/typescript-eslint stack rejects TypeScript 7.
+    # Revisit this guard when upstream adds official TypeScript 7 support.
+    ignore:
+      - dependency-name: "typescript"
+        versions: [">=7.0.0"]
   - package-ecosystem: github-actions
     directory: /
     schedule:
