@@ -1,0 +1,97 @@
+name: Publish v3.0.6 (one-time)
+
+# This short-lived release branch triggers once when this workflow is committed.
+# It tags the already-tested main commit; it does NOT push to main or redeploy the app.
+on:
+  push:
+    branches:
+      - ci/publish-v3.0.6-once-20261103
+
+permissions:
+  contents: write
+  actions: read
+
+jobs:
+  publish:
+    name: Validate main, create tag and release
+    if: github.repository == 'richard880502/neverland-erp'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout release target from main
+        uses: actions/checkout@v7
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Verify release target and successful main checks
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_SHA: 4ceb6ca1a63b188360c850ca3eaaefc51a73f2cc
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          current_main="$(git ls-remote origin refs/heads/main | cut -f1)"
+          if [[ "$current_main" != "$RELEASE_SHA" ]]; then
+            echo "::error::main advanced to $current_main. Refusing to tag the wrong revision."
+            exit 1
+          fi
+
+          package_version="$(node -p "require('./package.json').version")"
+          lock_version="$(node -p "require('./package-lock.json').version")"
+          if [[ "$package_version" != "3.0.6" || "$lock_version" != "3.0.6" ]]; then
+            echo "::error::The target main commit must contain package and lockfile version 3.0.6."
+            exit 1
+          fi
+
+          response="$(gh api "repos/$GITHUB_REPOSITORY/commits/$RELEASE_SHA/check-runs?per_page=100")"
+          for check in test security container analyze Coolify; do
+            if ! jq -e --arg name "$check" '
+              [.check_runs[] | select(.name == $name)] | any(.conclusion == "success")
+            ' <<<"$response" >/dev/null; then
+              echo "::error::Required main check '$check' has not succeeded."
+              exit 1
+            fi
+          done
+
+          if gh release view v3.0.6 >/dev/null 2>&1; then
+            echo "::error::Release v3.0.6 already exists."
+            exit 1
+          fi
+
+          awk '
+            index($0, "## v3.0.6 —") == 1 { in_release=1; next }
+            in_release && /^## / { exit }
+            in_release { print }
+          ' README.md > "$RUNNER_TEMP/release-notes.md"
+          if ! grep -q '[^[:space:]]' "$RUNNER_TEMP/release-notes.md"; then
+            echo "::error::No README release notes found for v3.0.6."
+            exit 1
+          fi
+
+      - name: Create annotated tag and GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_SHA: 4ceb6ca1a63b188360c850ca3eaaefc51a73f2cc
+        shell: bash
+        run: |
+          set -euo pipefail
+          if git ls-remote --exit-code --refs --tags origin "refs/tags/v3.0.6" >/dev/null 2>&1; then
+            git fetch --no-tags origin "refs/tags/v3.0.6:refs/tags/v3.0.6"
+            existing_sha="$(git rev-list -n 1 v3.0.6)"
+            if [[ "$existing_sha" != "$RELEASE_SHA" ]]; then
+              echo "::error::Existing tag v3.0.6 points to $existing_sha, not $RELEASE_SHA."
+              exit 1
+            fi
+          else
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git tag -a v3.0.6 "$RELEASE_SHA" -m "Release v3.0.6"
+            git push origin refs/tags/v3.0.6
+          fi
+          gh release create v3.0.6 \
+            --verify-tag \
+            --title "v3.0.6 — Zod 4 compatibility maintenance" \
+            --notes-file "$RUNNER_TEMP/release-notes.md"
+          gh release view v3.0.6 --json url --jq '.url' >> "$GITHUB_STEP_SUMMARY"
