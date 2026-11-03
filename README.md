@@ -2,13 +2,13 @@
 
 Neverland ERP 是為 Neverland 品牌商品、總倉、直營與寄賣通路設計的輕量 ERP / 庫存後台。系統以 PostgreSQL 的庫存異動帳作為正式資料來源，從異動即時計算各 SKU 在總倉與各通路的庫存，並提供銷售分析、商品圖片、帳號權限、Google Authenticator 雙重驗證、Google Sheet 同步、請款管理，以及 Remote MCP / OAuth 整合。
 
-> 最新正式版本：**v3.0.5** · 下一版目標：**v3.0.6（待發布）**
+> 最新正式版本：**v3.0.6**
 >
 > 發布紀錄：[GitHub Releases](https://github.com/richard880502/neverland-erp/releases)。
 
-## v3.0.6 — 相依性相容性維護（準備中）
+## v3.0.6 — 相依性相容性維護（已發布）
 
-- Zod 由 **3.25.76** 升級至 **4.6.5**，保持 ERP API、財務／請款及 MCP 資料驗證流程；正式合併前需通過 TypeScript、ESLint、整合測試與容器建置。
+- Zod 由 **3.25.76** 升級至 **4.6.5**，保持 ERP API、財務／請款及 MCP 資料驗證流程；已通過合併前的型別、ESLint、整合測試與容器建置檢查。
 - 修正升級過程中的 `package.json` / `package-lock.json` 不一致，維持 `tsx 4.23.15`，解決 `npm ci` 安裝錯誤。
 - TypeScript 保留在 **5.9.3**；由於當前 `eslint-config-next` 引用的 `typescript-eslint` 不支援 TypeScript 7，暫時將其排除於 Dependabot 升級範圍。
 - 本版不新增資料庫遷移，也不主動修改 ERP 業務邏輯。
