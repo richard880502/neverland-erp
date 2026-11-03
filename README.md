@@ -5,6 +5,8 @@ Neverland ERP 是為 Neverland 品牌商品、總倉、直營與寄賣通路設�
 > 最新正式版本：**v3.0.6**
 >
 > 發布紀錄：[GitHub Releases](https://github.com/richard880502/neverland-erp/releases)。
+>
+> 發版方式：在 GitHub **Actions → Publish release → Run workflow**，選擇 `main` 並輸入版本（例如 `v3.0.6`）。系統會確認目前 `main` 的 CI、資安、Docker 與 Coolify 檢查成功，且版本與 `package.json` / `package-lock.json` 一致，再建立 Git Tag 與 GitHub Release；不會因為 CI 或 Coolify 部署完成而自動發版。
 
 ## v3.0.6 — 相依性相容性維護（已發布）
 
