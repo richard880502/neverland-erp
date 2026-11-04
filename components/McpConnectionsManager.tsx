@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState, useSyncExternalStore } from "react";
 import { Check, CheckCircle2, Copy, ExternalLink, Link2, ShieldCheck, Sparkles, Terminal, XCircle } from "lucide-react";
 
 type Connection = {
@@ -30,6 +30,10 @@ function publicMcpUrl(configuredOrigin: string | undefined, browserOrigin: strin
   }
 }
 
+const subscribeToOrigin = () => () => {};
+const getBrowserOrigin = () => window.location.origin;
+const getServerOrigin = () => "";
+
 export function McpConnectionsManager({
   initialConnections,
   configuredOrigin,
@@ -39,15 +43,12 @@ export function McpConnectionsManager({
 }) {
   const [connections, setConnections] = useState(initialConnections);
   const [platform, setPlatform] = useState<Platform>("chatgpt");
-  const [mcpUrl, setMcpUrl] = useState(() => publicMcpUrl(configuredOrigin, ""));
+  const browserOrigin = useSyncExternalStore(subscribeToOrigin, getBrowserOrigin, getServerOrigin);
+  const mcpUrl = publicMcpUrl(configuredOrigin, browserOrigin);
   const [copied, setCopied] = useState(false);
   const [copyError, setCopyError] = useState("");
   const [error, setError] = useState("");
   const [revoking, setRevoking] = useState<string | null>(null);
-
-  useEffect(() => {
-    setMcpUrl(publicMcpUrl(configuredOrigin, window.location.origin));
-  }, [configuredOrigin]);
 
   const copyUrl = async () => {
     if (!mcpUrl) return;
