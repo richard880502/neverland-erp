@@ -2,11 +2,19 @@
 
 Neverland ERP 是為 Neverland 品牌商品、總倉、直營與寄賣通路設計的輕量 ERP / 庫存後台。系統以 PostgreSQL 的庫存異動帳作為正式資料來源，從異動即時計算各 SKU 在總倉與各通路的庫存，並提供銷售分析、商品圖片、帳號權限、Google Authenticator 雙重驗證、Google Sheet 同步、請款管理，以及 Remote MCP / OAuth 整合。
 
-> 最新正式版本：**v3.0.6**
+> 最新正式版本：**v3.0.6**（v3.0.7 待發布）
 >
 > 發布紀錄：[GitHub Releases](https://github.com/richard880502/neverland-erp/releases)。
 >
-> 發版方式：在 GitHub **Actions → Publish release → Run workflow**，選擇 `main` 並輸入版本（例如 `v3.0.6`）。系統會確認目前 `main` 的 CI、資安、Docker 與 Coolify 檢查成功，且版本與 `package.json` / `package-lock.json` 一致，再建立 Git Tag 與 GitHub Release；不會因為 CI 或 Coolify 部署完成而自動發版。
+> 發版方式：在 GitHub **Actions → Publish release → Run workflow**，選擇 `main` 並輸入版本（例如 `v3.0.7`）。系統會確認目前 `main` 的 CI、資安、Docker 與 Coolify 檢查成功，且版本與 `package.json` / `package-lock.json` 一致，再建立 Git Tag 與 GitHub Release；不會因為 CI 或 Coolify 部署完成而自動發版。
+
+## v3.0.7 — MCP 連線設定引導（待發布）
+
+- **設定 → AI 助理連線設定**新增適合一般使用者的連線引導，可選擇 ChatGPT 或 Codex，依步驟複製 MCP 網址、貼入 AI 助理並完成 ERP 登入授權。
+- MCP 網址優先使用部署設定的 `NEXT_PUBLIC_APP_URL`，未指定時使用目前網站的 origin，自動組成 `/mcp` 連線位置；提供一鍵複製及複製結果提示。
+- 保留原有 OAuth 連線清單、授權範圍檢視及撤銷授權功能。
+- 修正連線引導頁的 React ESLint 規則錯誤，使用 `useSyncExternalStore` 取得瀏覽器 origin。
+- 本次為 UI / 使用體驗小版更新，不新增資料庫遷移；功能變更來自 [#81](https://github.com/richard880502/neverland-erp/pull/81)。
 
 ## v3.0.6 — 相依性相容性維護（已發布）
 
