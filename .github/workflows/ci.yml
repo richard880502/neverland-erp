@@ -46,6 +46,8 @@ jobs:
       - name: Generate Prisma Client
         run: npx prisma generate
       - run: npm test
+      - name: MCP ↔ ERP API parity contract (blocks merges on drift)
+        run: npm run test:parity
       - run: npm run test:integration
       - run: python3 -m py_compile scripts/render-billing-template.py
       - name: Validate billing XLSX template
