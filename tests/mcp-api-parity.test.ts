@@ -124,15 +124,43 @@ test("finance MCP mirrors every writable API field except explicitly restricted 
     .map(([key]) => key);
   assert.deepEqual(sorted(get("create_finance_transaction").inputSchema.required ?? []), sorted(required));
 
+  // Compare enum options dynamically: introducing a new API status must also
+  // update MCP discovery, otherwise the assistant cannot send that status.
+  const enumFields = ["direction", "paymentStatus", "reconciliationStatus", "invoiceStatus"] as const;
+  for (const field of enumFields) {
+    const definition = financeCreateSchema.shape[field] as unknown as {
+      options?: readonly string[];
+      def?: { innerType?: { options?: readonly string[] } };
+    };
+    const apiChoices = definition.options ?? definition.def?.innerType?.options;
+    assert.ok(apiChoices, `Cannot inspect API enum ${field}`);
+    assert.deepEqual(props("create_finance_transaction")[field].enum, [...apiChoices],
+      `Finance API status values changed for '${field}' but MCP discovery is stale`);
+  }
+
   const financeItems = props("create_finance_transaction").items.items?.properties;
   assert.ok(financeItems);
   assert.deepEqual(sorted(Object.keys(financeItems)), sorted(Object.keys(financeItemSchema.shape)),
     "Finance item model changed; MCP must expose its new writable item fields");
+  // Critical numeric bounds are part of the contract, not only property names.
+  const itemFields = financeItems as Record<string, Property>;
+  assert.equal(itemFields.quantity.minimum, 1);
+  assert.equal(itemFields.quantity.maximum, 1_000_000);
+  for (const name of ["unitAmount", "lineAmount"]) {
+    assert.equal(itemFields[name].minimum, 0);
+    assert.equal(itemFields[name].maximum, 100_000_000);
+  }
+
   const invoiceZod = financeCreateSchema.shape.invoice.unwrap().unwrap();
   const invoiceMcp = props("create_finance_transaction").invoice as unknown as { properties?: Record<string, unknown> };
   assert.ok(invoiceMcp.properties);
   assert.deepEqual(sorted(Object.keys(invoiceMcp.properties)), sorted(Object.keys(invoiceZod.shape)),
     "Invoice API model changed; MCP invoice contract is stale");
+  for (const field of ["grossAmount", "netAmount", "taxAmount"]) {
+    const fieldSchema = invoiceMcp.properties[field] as Property;
+    assert.equal(fieldSchema.minimum, 0);
+    assert.equal(fieldSchema.maximum, 100_000_000);
+  }
   assert.ok(props("create_finance_transaction").confirmationToken);
 });
 
