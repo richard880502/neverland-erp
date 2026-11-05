@@ -44,6 +44,14 @@ test("billing discovery separates read and write scopes", () => {
   ]);
 });
 
+test("finance write tool requires Staff/Admin and explicit OAuth scope", () => {
+  const staff = listMcpTools(auth("STAFF", ["finance:write"]));
+  assert.deepEqual(staff.map((tool) => tool.name), ["create_finance_transaction"]);
+  assert.deepEqual(staff[0].annotations, { readOnlyHint: false, idempotentHint: false, destructiveHint: false });
+  assert.deepEqual(listMcpTools(auth("VIEWER", ["finance:write"])).map((tool) => tool.name), []);
+  assert.deepEqual(listMcpTools(auth("STAFF", ["finance:read"])).map((tool) => tool.name).includes("create_finance_transaction"), false);
+});
+
 test("finance read scope exposes only read-only finance tools to every ERP role", () => {
   const expected = [
     "get_finance_summary",
