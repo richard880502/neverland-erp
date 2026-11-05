@@ -125,9 +125,9 @@ const financeWriteProperties = {
   paymentStatus: { type: "string", enum: paymentStatusSchema.options },
   reconciliationStatus: { type: "string", enum: reconciliationStatusSchema.options },
   invoiceStatus: { type: "string", enum: invoiceStatusSchema.options },
-  invoice: { type: "object", properties: { invoiceNo: { type: "string" }, issuedAt: { type: "string", format: "date" }, grossAmount: { type: "number", minimum: 0 }, netAmount: { type: "number", minimum: 0 }, taxAmount: { type: "number", minimum: 0 }, note: { type: "string" } } },
+  invoice: { type: "object", properties: { invoiceNo: { type: "string" }, issuedAt: { type: "string", format: "date" }, grossAmount: { type: "number", minimum: 0, maximum: 100000000 }, netAmount: { type: "number", minimum: 0, maximum: 100000000 }, taxAmount: { type: "number", minimum: 0, maximum: 100000000 }, note: { type: "string" } } },
   note: { type: "string" },
-  items: { type: "array", maxItems: 200, items: { type: "object", required: ["productName", "lineAmount"], properties: { productId: { type: "string" }, productName: { type: "string" }, sku: { type: "string" }, size: { type: "string" }, quantity: { type: "integer", minimum: 1 }, unitAmount: { type: "number", minimum: 0 }, lineAmount: { type: "number", minimum: 0 } } } },
+  items: { type: "array", maxItems: 200, items: { type: "object", required: ["productName", "lineAmount"], properties: { productId: { type: "string" }, productName: { type: "string" }, sku: { type: "string" }, size: { type: "string" }, quantity: { type: "integer", minimum: 1, maximum: 1000000 }, unitAmount: { type: "number", minimum: 0, maximum: 100000000 }, lineAmount: { type: "number", minimum: 0, maximum: 100000000 } } } },
   confirmationToken: { type: "string", description: "使用者確認預覽後取得的短效一次性 token" },
 };
 const financeTools: Tool[] = [
