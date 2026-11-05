@@ -24,6 +24,7 @@ type McpToolDefinition = ReturnType<typeof listCoreMcpTools>[number];
 
 const DATE_AWARE_INVENTORY_TOOLS = new Set([
   "create_inventory_movement",
+  "create_inventory_movements_batch",
   "create_sales_return",
   "create_purchase_return",
   "create_consignment_direct_fulfillment",
