@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { Ban, Download, ExternalLink, FileSpreadsheet, WalletCards } from "lucide-react";
+import { Ban, ExternalLink, WalletCards } from "lucide-react";
 
 function today() {
   const date = new Date();
@@ -68,11 +68,10 @@ export function BillingDetailActions({ id, totalAmount, status, canWrite }: { id
   return <div className="billing-actions-stack">
     <div className="header-actions">
       {canWrite && <button className="btn btn-primary" disabled={sheetOpening} onClick={openGoogleSheet}><ExternalLink size={15} />{sheetOpening ? "建立中…" : "Google 試算表"}</button>}
-      <a className="btn btn-secondary" href={`/api/billing/${id}/export/xlsx`}><FileSpreadsheet size={15} />匯出 XLSX</a>
-      <a className="btn btn-secondary" href={`/api/billing/${id}/export/pdf`}><Download size={15} />匯出 PDF</a>
       {canWrite && status === "ISSUED" && <button className="btn btn-danger" disabled={voiding} onClick={voidStatement}><Ban size={15} />{voiding ? "作廢中…" : "作廢請款單"}</button>}
       {canWrite && status !== "PAID" && status !== "VOID" && <button className="btn btn-primary" onClick={() => setShowPaid((value) => !value)}><WalletCards size={15} />標記已收款</button>}
     </div>
+    {canWrite && <p className="billing-export-hint">需要 PDF 或 Excel？請在 Google 試算表中使用「檔案 → 下載」。</p>}
     {message && !showPaid && <div className="form-error billing-action-error">{message}</div>}
     {showPaid && <div className="panel billing-paid-panel">
       {message && <div className="form-error">{message}</div>}
