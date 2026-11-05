@@ -17,10 +17,9 @@ ENV NODE_ENV=production
 ENV NEXT_TELEMETRY_DISABLED=1
 ENV PORT=3000
 ENV HOSTNAME=0.0.0.0
-# Alpine's LibreOffice package provides the matching Python UNO bridge.
-# The billing renderer intentionally uses LibreOffice for both spreadsheet
-# mutation and PDF rendering so drawings/fonts/layout stay in one engine.
-RUN apk add --no-cache python3 libreoffice font-noto-cjk font-liberation
+# Finance XLSX import uses the Python standard-library parser; the retired
+# Billing PDF/XLSX exporter and its LibreOffice/UNO/fonts are no longer needed.
+RUN apk add --no-cache python3
 COPY package.json package-lock.json ./
 RUN npm install --omit=dev --no-audit --no-fund && npm cache clean --force
 COPY --from=builder /app/prisma ./prisma
