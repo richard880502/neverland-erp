@@ -4,6 +4,7 @@ import { randomUUID } from "node:crypto";
 import { prisma } from "../../lib/prisma";
 import { callMcpTool } from "../../lib/mcp/registry";
 import { createInventoryMovement } from "../../lib/services/movements";
+import { createFinanceTransaction, financeCreateSchema } from "../../lib/services/finance";
 import type { McpAuth } from "../../lib/mcp/oauth";
 
 const suffix = "mcp-parity-" + randomUUID().slice(0, 8);
@@ -110,4 +111,70 @@ test("finance write requires explicit scope and confirmation, matching ERP finan
   await assert.rejects(callMcpTool("create_finance_transaction", input, { ...auth, role: "VIEWER" }), /角色權限不足/);
   await assert.rejects(callMcpTool("create_finance_transaction", input, { ...auth, scopes: ["finance:read"] }), /scope 不足/);
   await assert.rejects(callMcpTool("create_finance_transaction", { ...input, source: "OTHER", sourceRef: "MOVEMENT_SHIPPING:fake" }, auth), /MANUAL/);
+});
+
+test("API domain service and MCP produce equivalent inventory and finance effects for the same operation", async () => {
+  const product = await prisma.product.findUniqueOrThrow({ where: { sku: sku1 } });
+  const connection = await prisma.mcpConnection.findFirstOrThrow({ where: { userId } });
+  const actor = { userId, role: "STAFF" } as const;
+  const auth: McpAuth = { userId, role: "STAFF", clientId, connectionId: connection.id,
+    scopes: ["inventory:write", "finance:write"] };
+  const date = "2042-05-04";
+  const occurredAt = new Date(`${date}T12:00:00+08:00`);
+  const common = { type: "SHIP" as const, quantity: 1, channelId, unitPrice: 120,
+    referenceNo: suffix + "-API-EQUIVALENCE", shippingMethod: "郵局", shippingFee: 70,
+    shippingPayer: "COMPANY" as const };
+
+  // The web API POST validates movementInputSchema and invokes this same
+  // service. Compare its persisted result with an actual MCP two-step call.
+  const apiMovement = await createInventoryMovement({ ...common, productId: product.id, occurredAt }, actor);
+  const args = { ...common, sku: sku1, occurredOn: date };
+  const prepared = await callMcpTool("create_inventory_movement", args, auth);
+  const confirmationToken = (prepared.structuredContent as { confirmationToken: string }).confirmationToken;
+  const committed = await callMcpTool("create_inventory_movement", { ...args, confirmationToken }, auth);
+  const mcpId = (committed.structuredContent as { movement: { id: string } }).movement.id;
+  const [apiRow, mcpRow] = await Promise.all([
+    prisma.stockMovement.findUniqueOrThrow({ where: { id: apiMovement.id } }),
+    prisma.stockMovement.findUniqueOrThrow({ where: { id: mcpId } }),
+  ]);
+  const movementShape = (row: typeof apiRow) => ({
+    productId: row.productId, occurredAt: row.occurredAt.toISOString(), type: row.type,
+    quantity: row.quantity, channelId: row.channelId, unitPrice: Number(row.unitPrice),
+    shippingMethod: row.shippingMethod, shippingFee: Number(row.shippingFee),
+    shippingPayer: row.shippingPayer, referenceNo: row.referenceNo,
+  });
+  assert.deepEqual(movementShape(mcpRow), movementShape(apiRow));
+  assert.ok(apiRow.shippingGroupKey && mcpRow.shippingGroupKey);
+  const [apiExpense, mcpExpense] = await Promise.all([
+    prisma.financeTransaction.findMany({ where: { sourceRef: `MOVEMENT_SHIPPING:${apiRow.shippingGroupKey}` } }),
+    prisma.financeTransaction.findMany({ where: { sourceRef: `MOVEMENT_SHIPPING:${mcpRow.shippingGroupKey}` } }),
+  ]);
+  assert.equal(apiExpense.length, 1);
+  assert.equal(mcpExpense.length, 1);
+  const expenseShape = (item: typeof apiExpense[number]) => ({
+    direction: item.direction, amount: Number(item.amount), categoryId: item.categoryId,
+    channelId: item.channelId, paymentStatus: item.paymentStatus,
+    invoiceStatus: item.invoiceStatus, counterparty: item.counterparty, source: item.source,
+  });
+  assert.deepEqual(expenseShape(mcpExpense[0]), expenseShape(apiExpense[0]));
+
+  // Finance POST also invokes this service using financeCreateSchema.
+  const financeArgs = { occurredAt: date, direction: "EXPENSE" as const, amount: 45,
+    counterparty: "Parity invoice", summary: "API-MCP equality", invoiceStatus: "MISSING" as const };
+  const financeApi = await createFinanceTransaction(financeCreateSchema.parse(financeArgs), actor);
+  const financePreview = await callMcpTool("create_finance_transaction", financeArgs, auth);
+  const financeToken = (financePreview.structuredContent as { confirmationToken: string }).confirmationToken;
+  const financeMcp = await callMcpTool("create_finance_transaction", { ...financeArgs, confirmationToken: financeToken }, auth);
+  const financeMcpId = (financeMcp.structuredContent as { transaction: { id: string } }).transaction.id;
+  const [apiFinanceRow, mcpFinanceRow] = await Promise.all([
+    prisma.financeTransaction.findUniqueOrThrow({ where: { id: financeApi.id } }),
+    prisma.financeTransaction.findUniqueOrThrow({ where: { id: financeMcpId } }),
+  ]);
+  const financeShape = (row: typeof apiFinanceRow) => ({
+    direction: row.direction, amount: Number(row.amount), occurredAt: row.occurredAt.toISOString(),
+    categoryId: row.categoryId, summary: row.summary, counterparty: row.counterparty,
+    source: row.source, paymentStatus: row.paymentStatus, invoiceStatus: row.invoiceStatus,
+    reconciliationStatus: row.reconciliationStatus,
+  });
+  assert.deepEqual(financeShape(mcpFinanceRow), financeShape(apiFinanceRow));
 });
