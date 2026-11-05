@@ -64,9 +64,9 @@ jobs:
               assert any(name.startswith("xl/media/") for name in names), "missing company stamp/media"
           print("billing XLSX template is a valid archive with drawing/media")
           PY
-      # LibreOffice fallback retirement tracked in #84.
-      # Keep template inspection; heavy UNO end-to-end test is disabled until
-      # the legacy PDF/XLSX export endpoints and UI are retired.
+      # LibreOffice fallback is being retired; keep lightweight XLSX static
+      # validation until billing export UI/API/runtime are removed in #84.
+      # https://github.com/richard880502/neverland-erp/issues/84
       - run: npm run lint
       - run: npm run build
 
