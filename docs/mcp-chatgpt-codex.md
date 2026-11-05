@@ -81,6 +81,9 @@ For an eleven-SKU shipment using postal shipping of NT$70 paid by the company, u
 
 ## Billing tools
 
+Billing PDF and Excel downloads are now handled by Google Sheets (File → Download). The legacy ERP `/api/billing/:id/export/pdf` and `/api/billing/:id/export/xlsx` endpoints and the LibreOffice-based renderer were retired in [#84](https://github.com/richard880502/neverland-erp/issues/84). The `create_billing_google_sheet` MCP tool, BillingStatement database records, totals and audit trails are unchanged.
+
+
 With `billing:read`, any ERP role can discover the read-only Billing tools permitted by its OAuth grant:
 
 - `list_billing_statements` — filters by channel, company / statement number keyword, status and issued-date range.

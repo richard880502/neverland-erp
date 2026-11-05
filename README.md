@@ -59,7 +59,7 @@ v3.0.2 新增經銷 / 寄賣請款流程，讓 ERP 直接產生請款快照、�
 - 已存在的 `BL-...` 頁籤只會重新開啟，不會再次覆蓋，保留財務人員在線上手動調整的內容。
 - 商品超過公版原本 15 列時，由 Google Sheets 在付款區塊上方動態插入商品列，讓 Google 原生排版引擎處理 Footer、印章與版面位置。
 - PostgreSQL 仍是請款資料 source of truth；Google Sheet 僅作為正式文件、排版與人工編輯層。
-- XLSX / PDF 直接匯出仍保留為 fallback，目前由 LibreOffice UNO 處理；後續排版一致性追蹤於 [#15](https://github.com/richard880502/neverland-erp/issues/15)。
+- 舊版 LibreOffice UNO 的 PDF/XLSX 直接匯出 fallback 已於 [#84](https://github.com/richard880502/neverland-erp/issues/84) 退役；需要檔案時請在 Google 試算表使用「檔案 → 下載」匯出 PDF 或 Excel。
 
 ## v3.0.0 — Stateless storage and admin productivity
 
@@ -117,8 +117,9 @@ UI implementation 採用本地 design tokens / primitives 對齊 Medusa，而不
 - 請款單建立後保存不可變更的客戶與商品價格快照。
 - 支援收款登記與作廢稽核流程。
 - 可一鍵從既有 `Neverland請款單` 的 `範本` 頁籤建立對應 Google Sheet 頁籤並直接線上編輯。
+- 可透過 Google 試算表內建「檔案 → 下載」取得 PDF 或 Microsoft Excel，不需要在 ERP 容器安裝 LibreOffice。
 - Google Sheet 是文件與人工編輯層；PostgreSQL 仍為正式請款資料來源。
-- XLSX / PDF 為 fallback 匯出格式。
+- PDF / Excel 請透過 Google 試算表「檔案 → 下載」取得；ERP 不再提供伺服器端直接匯出 API。
 
 ### Product / Channel master data
 
@@ -177,7 +178,7 @@ ERP 提供 protected, stateless Streamable HTTP MCP endpoint，可讓支援 MCP 
 | Auth | Cookie Session、bcrypt、TOTP、OAuth 2.1 / MCP |
 | Images | Sharp、WebP、private MinIO／S3-compatible Object Storage |
 | Google | Google Sheets API、Service Account |
-| Document export | Google Sheets（主要）、LibreOffice UNO XLSX / PDF（fallback） |
+| Billing documents | Google Sheets（建立、線上編輯與原生 PDF / Excel 下載） |
 | Runtime | Node.js 24、Docker |
 | Deployment | Zeabur |
 
@@ -232,7 +233,7 @@ GitHub Actions 會在 push / pull request 執行：
 2. `npx prisma migrate deploy`
 3. `npm test`
 4. `npm run test:integration`
-5. XLSX 模板結構檢查（不再於每個 PR 安裝 LibreOffice；直接匯出功能退役追蹤於 [#84](https://github.com/richard880502/neverland-erp/issues/84)）
+5. Finance Excel 匯入 Python parser 靜態檢查（不再測試已退役的請款 PDF/XLSX renderer）
 6. `npm run lint`
 7. `npm run build`
 
