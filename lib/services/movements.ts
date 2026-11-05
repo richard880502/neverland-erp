@@ -174,8 +174,7 @@ async function createInventoryMovementInTransaction(tx: Prisma.TransactionClient
   if (requiresChannel && !input.channelId) throw new Error("此事件必須選擇通路");
   if (isSale(input.type) && (input.unitPrice === "" || input.unitPrice == null)) throw new Error("銷售事件請填入銷售單價，才能正確分析營收");
 
-  {
-    const [product, channel, existing] = await Promise.all([
+  const [product, channel, existing] = await Promise.all([
       tx.product.findUnique({ where: { id: input.productId } }),
       input.channelId ? tx.channel.findUnique({ where: { id: input.channelId } }) : null,
       tx.stockMovement.findMany({ where: { productId: input.productId } }),
@@ -229,7 +228,6 @@ async function createInventoryMovementInTransaction(tx: Prisma.TransactionClient
         shipping: shipping ? { method: shipping.method, fee: shipping.fee, payer: shipping.payer, groupKey: shipping.groupKey } : null,
       }, ipAddress: actor.ipAddress ?? null } });
     return created;
-  }
 }
 
 export async function createInventoryMovement(input: MovementInput, actor: MovementActor) {
