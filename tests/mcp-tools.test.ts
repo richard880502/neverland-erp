@@ -16,6 +16,7 @@ test("staff discovery intersects role permissions with OAuth scopes", () => {
   const names = listMcpTools(auth("STAFF", ["inventory:write", "sync:run"])).map((tool) => tool.name);
   assert.deepEqual(names, [
     "create_inventory_movement",
+    "create_inventory_movements_batch",
     "create_sales_return",
     "create_purchase_return",
     "create_consignment_direct_fulfillment",
@@ -86,7 +87,7 @@ test("tool execution repeats the role and scope checks server-side", async () =>
 
 test("inventory write tools advertise confirmation-relevant annotations", () => {
   const tools = listMcpTools(auth("ADMIN", ["inventory:write", "movements:reverse", "sync:run"]));
-  for (const name of ["create_inventory_movement", "create_sales_return", "create_purchase_return", "create_consignment_direct_fulfillment"]) {
+  for (const name of ["create_inventory_movement", "create_inventory_movements_batch", "create_sales_return", "create_purchase_return", "create_consignment_direct_fulfillment"]) {
     const definition = tools.find((tool) => tool.name === name);
     assert.deepEqual(definition?.annotations, { readOnlyHint: false, idempotentHint: false, destructiveHint: false });
     assert.ok(definition?.inputSchema.properties?.confirmationToken);
