@@ -232,7 +232,7 @@ GitHub Actions 會在 push / pull request 執行：
 2. `npx prisma migrate deploy`
 3. `npm test`
 4. `npm run test:integration`
-5. XLSX template / LibreOffice billing renderer smoke test
+5. XLSX 模板結構檢查（直接匯出 fallback 的 LibreOffice 退役追蹤於 [#84](https://github.com/richard880502/neverland-erp/issues/84)）
 6. `npm run lint`
 7. `npm run build`
 
