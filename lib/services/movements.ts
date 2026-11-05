@@ -67,8 +67,20 @@ function assertCanWrite(actor: MovementActor) {
   if (actor.role !== "ADMIN" && actor.role !== "STAFF") throw new Error("FORBIDDEN");
 }
 
+/** Prisma's PG driver adapter may surface SQLSTATE 40001 as a
+ * DriverAdapterError/TransactionWriteConflict rather than Prisma P2034. */
 function isRetryableSerializableError(error: unknown) {
-  return typeof error === "object" && error !== null && "code" in error && (error as { code?: unknown }).code === "P2034";
+  if (typeof error !== "object" || error === null) return false;
+  const failure = error as {
+    code?: unknown;
+    kind?: unknown;
+    cause?: { originalCode?: unknown; kind?: unknown };
+  };
+  return failure.code === "P2034"
+    || failure.code === "40001"
+    || failure.kind === "TransactionWriteConflict"
+    || failure.cause?.originalCode === "40001"
+    || failure.cause?.kind === "TransactionWriteConflict";
 }
 
 async function serializableTransaction<T>(work: (tx: Prisma.TransactionClient) => Promise<T>): Promise<T> {
