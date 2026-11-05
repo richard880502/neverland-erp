@@ -7,13 +7,16 @@ test("consent page exposes all supported billing and finance scopes even when no
   const billingRead = options.find((option) => option.scope === "billing:read");
   const billingWrite = options.find((option) => option.scope === "billing:write");
   const financeRead = options.find((option) => option.scope === "finance:read");
+  const financeWrite = options.find((option) => option.scope === "finance:write");
 
   assert.ok(billingRead);
   assert.ok(billingWrite);
   assert.ok(financeRead);
+  assert.ok(financeWrite);
   assert.equal(billingRead.requested, false);
   assert.equal(billingWrite.requested, false);
   assert.equal(financeRead.requested, false);
+  assert.equal(financeWrite.requested, false);
   assert.equal(options.find((option) => option.scope === "dashboard:read")?.requested, true);
 });
 
