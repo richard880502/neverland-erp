@@ -169,13 +169,12 @@ async function syncShippingExpense(tx: Prisma.TransactionClient, input: Movement
   return financeId;
 }
 
-export async function createInventoryMovement(input: MovementInput, actor: MovementActor) {
-  assertCanWrite(actor);
+async function createInventoryMovementInTransaction(tx: Prisma.TransactionClient, input: MovementInput, actor: MovementActor) {
   const requiresChannel = ["SHIP", "SALES_RETURN", "CONSIGN_OUT", "CONSIGN_RETURN", "CONSIGN_SOLD", "BUYOUT"].includes(input.type);
   if (requiresChannel && !input.channelId) throw new Error("此事件必須選擇通路");
   if (isSale(input.type) && (input.unitPrice === "" || input.unitPrice == null)) throw new Error("銷售事件請填入銷售單價，才能正確分析營收");
 
-  return serializableTransaction(async (tx) => {
+  {
     const [product, channel, existing] = await Promise.all([
       tx.product.findUnique({ where: { id: input.productId } }),
       input.channelId ? tx.channel.findUnique({ where: { id: input.channelId } }) : null,
@@ -230,7 +229,51 @@ export async function createInventoryMovement(input: MovementInput, actor: Movem
         shipping: shipping ? { method: shipping.method, fee: shipping.fee, payer: shipping.payer, groupKey: shipping.groupKey } : null,
       }, ipAddress: actor.ipAddress ?? null } });
     return created;
+  }
+}
+
+export async function createInventoryMovement(input: MovementInput, actor: MovementActor) {
+  assertCanWrite(actor);
+  return serializableTransaction((tx) => createInventoryMovementInTransaction(tx, input, actor));
+}
+
+/** A single serializable transaction makes multi-SKU shipment and its one
+ * shared shipping expense all-or-nothing. A server-owned group key prevents
+ * accidental reuse of a key from a different shipment. */
+export async function createInventoryMovementsBatch(inputs: MovementInput[], actor: MovementActor) {
+  assertCanWrite(actor);
+  if (inputs.length < 1 || inputs.length > 100) throw new Error("批次庫存異動必須包含 1–100 件品項");
+  const groupKey = randomUUID();
+  const movements = await serializableTransaction(async (tx) => {
+    const created = [];
+    for (const input of inputs) {
+      created.push(await createInventoryMovementInTransaction(tx, { ...input, shippingGroupKey: groupKey }, actor));
+    }
+    return created;
   });
+  return { movements, shippingGroupKey: groupKey };
+}
+
+/** Read-only preview uses the same fallback rules as the browser's domain
+ * service; the MCP confirmation payload includes this snapshot, so changing
+ * channel defaults between preview and commit invalidates the old token. */
+export async function previewMovementShipping(input: MovementInput) {
+  const shipping = await prisma.$transaction((tx) => resolveMovementShipping(tx, input));
+  const expenseCandidate = Boolean(shipping && shipping.fee > 0 && ["COMPANY", "REIMBURSABLE"].includes(shipping.payer ?? ""));
+  const existingExpense = expenseCandidate && input.shippingGroupKey
+    ? await prisma.financeTransaction.findFirst({
+        where: { sourceRef: `MOVEMENT_SHIPPING:${input.shippingGroupKey}` },
+        select: { id: true },
+      })
+    : null;
+  return {
+    method: shipping?.method ?? null,
+    fee: shipping?.fee ?? 0,
+    payer: shipping?.payer ?? null,
+    willCreateExpense: expenseCandidate && !existingExpense,
+    expenseAmount: expenseCandidate && !existingExpense ? shipping!.fee : 0,
+    existingExpenseId: existingExpense?.id ?? null,
+  };
 }
 
 export async function createConsignmentDirectFulfillment(input: ConsignmentDirectFulfillmentInput, actor: MovementActor) {
