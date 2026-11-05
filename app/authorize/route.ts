@@ -6,7 +6,7 @@ import { takeRateLimit } from "@/lib/mcp/rate-limit";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
-const highRisk = new Set(["inventory:write", "movements:reverse", "sync:run", "billing:write"]);
+const highRisk = new Set(["inventory:write", "movements:reverse", "sync:run", "billing:write", "finance:write"]);
 const scopeLabels: Record<string, { title: string; detail: string }> = {
   "dashboard:read": { title: "查看營運摘要", detail: "讀取庫存、低庫存與銷售概況。" },
   "products:read": { title: "讀取商品資料", detail: "搜尋並查看商品、SKU、尺寸與價格資料。" },
@@ -19,6 +19,7 @@ const scopeLabels: Record<string, { title: string; detail: string }> = {
   "inventory:write": { title: "建立庫存異動", detail: "可新增入庫、出貨、寄賣及庫存調整紀錄。" },
   "movements:reverse": { title: "沖銷庫存異動", detail: "可建立反向紀錄，影響目前庫存數量。" },
   "sync:run": { title: "執行資料同步", detail: "可立即啟動 Google Sheet 同步及佇列處理。" },
+  "finance:write": { title: "新增財務收支", detail: "可新增收入或支出紀錄；需二階段確認，不可偽造系統產生的物流費用。" },
   "billing:write": { title: "建立與管理請款", detail: "可建立正式請款單、作廢請款單並建立 Google 試算表請款頁籤；操作前仍需再次確認。" },
   "offline_access": { title: "維持連線", detail: "允許 ChatGPT 以 refresh token 安全續期，不必頻繁重新登入。" },
 };

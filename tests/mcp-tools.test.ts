@@ -16,6 +16,7 @@ test("staff discovery intersects role permissions with OAuth scopes", () => {
   const names = listMcpTools(auth("STAFF", ["inventory:write", "sync:run"])).map((tool) => tool.name);
   assert.deepEqual(names, [
     "create_inventory_movement",
+    "create_inventory_movements_batch",
     "create_sales_return",
     "create_purchase_return",
     "create_consignment_direct_fulfillment",
@@ -41,6 +42,14 @@ test("billing discovery separates read and write scopes", () => {
     "void_billing_statement",
     "create_billing_google_sheet",
   ]);
+});
+
+test("finance write tool requires Staff/Admin and explicit OAuth scope", () => {
+  const staff = listMcpTools(auth("STAFF", ["finance:write"]));
+  assert.deepEqual(staff.map((tool) => tool.name), ["create_finance_transaction"]);
+  assert.deepEqual(staff[0].annotations, { readOnlyHint: false, idempotentHint: false, destructiveHint: false });
+  assert.deepEqual(listMcpTools(auth("VIEWER", ["finance:write"])).map((tool) => tool.name), []);
+  assert.deepEqual(listMcpTools(auth("STAFF", ["finance:read"])).map((tool) => tool.name).includes("create_finance_transaction"), false);
 });
 
 test("finance read scope exposes only read-only finance tools to every ERP role", () => {
@@ -86,7 +95,7 @@ test("tool execution repeats the role and scope checks server-side", async () =>
 
 test("inventory write tools advertise confirmation-relevant annotations", () => {
   const tools = listMcpTools(auth("ADMIN", ["inventory:write", "movements:reverse", "sync:run"]));
-  for (const name of ["create_inventory_movement", "create_sales_return", "create_purchase_return", "create_consignment_direct_fulfillment"]) {
+  for (const name of ["create_inventory_movement", "create_inventory_movements_batch", "create_sales_return", "create_purchase_return", "create_consignment_direct_fulfillment"]) {
     const definition = tools.find((tool) => tool.name === name);
     assert.deepEqual(definition?.annotations, { readOnlyHint: false, idempotentHint: false, destructiveHint: false });
     assert.ok(definition?.inputSchema.properties?.confirmationToken);

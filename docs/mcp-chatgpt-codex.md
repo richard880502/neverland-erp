@@ -49,6 +49,7 @@ When an MCP client first calls `/mcp` without a token, it receives a `401` and a
 - `movements:reverse`
 - `sync:run`
 - `billing:write`
+- `finance:write`
 
 `billing:read` is a normal read scope and is part of the default read-only grant set. `billing:write` is intentionally separated so an assistant can inspect and preview receivables without gaining authority to create or void financial documents.
 
@@ -64,6 +65,19 @@ With `inventory:write`, Staff/Admin users can use the following two-phase tools:
 - `create_consignment_direct_fulfillment` — deducts stock from a CONSIGNMENT source while attributing the sale to a DIRECT channel. Commit creates `CONSIGN_RETURN` and `SHIP` inside one Serializable transaction.
 
 The read tool `list_inventory_movements` recognizes `SALES_RETURN` and `PURCHASE_RETURN`. `get_sales_summary` and `get_sales_by_channel` include `SALES_RETURN` with a negative sign, so returned quantity and refund amount reduce net quantity and net revenue.
+
+## MCP shipping and finance parity (3.0.8)
+
+- `create_inventory_movement` supports `shippingMethod`, `shippingFee`, `shippingPayer`, and `shippingGroupKey`. When omitted, channel defaults are applied by the shared ERP movement domain service.
+- The preview includes resolved shipping details, expected expense amount, and an existing group expense reference. Changes to channel defaults invalidate an earlier confirmation token.
+- `create_inventory_movements_batch` creates 1–100 unique SKU rows in one Serializable database transaction. It uses a server-generated shared shipping group key; company-paid or reimbursable shipping is recorded **once per batch**, not once per SKU. If any row fails, the whole database transaction rolls back.
+- `list_inventory_movements` and `get_inventory_movement` expose actual shipping data for audit.
+- `create_finance_transaction` mirrors the ERP's Finance creation service, requires `finance:write`, Staff/Admin role, and two-stage confirmation. It is for independent manual finance records: **do not** use it to duplicate a shipping expense already created automatically.
+- `finance:write` is an explicit, high-risk OAuth grant, not enabled by default. Existing authorizations must grant the additional scope before the finance write tool appears.
+
+### Shipping acceptance scenario
+
+For an eleven-SKU shipment using postal shipping of NT$70 paid by the company, use `create_inventory_movements_batch` with 11 items, `type=SHIP`, `shippingMethod=郵局`, `shippingFee=70`, and `shippingPayer=COMPANY`. Preview must show one NT$70 expense; after confirmation all 11 inventory movements must exist with the same group key and one linked Finance expense. Invalid inventory must roll back every row and the financial expense. Reversing the last active movement in the group voids its corresponding finance expense.
 
 ## Billing tools
 

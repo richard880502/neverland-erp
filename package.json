@@ -1,6 +1,6 @@
 {
   "name": "stockflow-erp",
-  "version": "3.0.7",
+  "version": "3.0.8",
   "private": true,
   "scripts": {
     "dev": "next dev",
@@ -9,6 +9,7 @@
     "lint": "eslint .",
     "test": "prisma generate && tsx --test tests/mcp-oauth.test.ts tests/mcp-protocol.test.ts tests/mcp-tools.test.ts tests/mcp-authorization-scopes.test.ts tests/mcp-structured-content.test.ts tests/oauth-metadata.test.ts tests/object-storage.test.ts",
     "test:integration": "tsx --test tests/integration/**/*.test.ts",
+    "test:parity": "tsx --test tests/mcp-api-parity.test.ts",
     "db:push": "prisma db push",
     "db:migrate": "prisma migrate deploy",
     "db:seed": "tsx prisma/seed.ts",

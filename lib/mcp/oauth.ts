@@ -7,7 +7,7 @@ import { prisma } from "@/lib/prisma";
 
 export const MCP_SCOPES = [
   "dashboard:read", "products:read", "channels:read", "inventory:read", "movements:read", "sales:read", "sync:read", "billing:read", "finance:read",
-  "inventory:write", "movements:reverse", "sync:run", "billing:write", "offline_access",
+  "inventory:write", "movements:reverse", "sync:run", "billing:write", "finance:write", "offline_access",
 ] as const;
 export type McpScope = (typeof MCP_SCOPES)[number];
 export const DEFAULT_MCP_SCOPES: McpScope[] = ["dashboard:read", "products:read", "channels:read", "inventory:read", "movements:read", "sales:read", "sync:read", "billing:read", "finance:read", "offline_access"];

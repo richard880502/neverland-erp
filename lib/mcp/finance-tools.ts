@@ -4,8 +4,9 @@ import { prisma } from "@/lib/prisma";
 import { getBillingFinanceTrace } from "@/lib/services/billing-finance-trace";
 import { getDirectSettlementFinanceTrace } from "@/lib/services/direct-settlement-finance-trace";
 import { getFinanceDashboardByDates } from "@/lib/services/finance-range";
-import { getFinanceTransactionDetail, listFinanceCategories } from "@/lib/services/finance";
+import { createFinanceTransaction, financeCreateSchema, getFinanceTransactionDetail, listFinanceCategories } from "@/lib/services/finance";
 import type { McpAuth, McpScope } from "@/lib/mcp/oauth";
+import { consumeMcpAction, prepareMcpAction } from "@/lib/mcp/confirmation";
 
 type Tool = {
   name: string;
@@ -111,7 +112,52 @@ async function channelMapFor(rows: Array<{ channelId: string | null }>) {
   return new Map(channels.map((channel) => [channel.id, channel]));
 }
 
+const financeWriteProperties = {
+  occurredAt: { type: "string", format: "date", description: "交易日期 YYYY-MM-DD" },
+  direction: { type: "string", enum: ["INCOME", "EXPENSE"] },
+  amount: { type: "number", exclusiveMinimum: 0, maximum: 100000000 },
+  categoryId: { type: "string" },
+  counterparty: { type: "string" },
+  relatedParty: { type: "string" },
+  salesChannel: { type: "string" },
+  summary: { type: "string" },
+  channelId: { type: "string" },
+  paymentStatus: { type: "string", enum: paymentStatusSchema.options },
+  reconciliationStatus: { type: "string", enum: reconciliationStatusSchema.options },
+  invoiceStatus: { type: "string", enum: invoiceStatusSchema.options },
+  invoice: { type: "object", properties: { invoiceNo: { type: "string" }, issuedAt: { type: "string", format: "date" }, grossAmount: { type: "number", minimum: 0, maximum: 100000000 }, netAmount: { type: "number", minimum: 0, maximum: 100000000 }, taxAmount: { type: "number", minimum: 0, maximum: 100000000 }, note: { type: "string" } } },
+  note: { type: "string" },
+  items: { type: "array", maxItems: 200, items: { type: "object", required: ["productName", "lineAmount"], properties: { productId: { type: "string" }, productName: { type: "string" }, sku: { type: "string" }, size: { type: "string" }, quantity: { type: "integer", minimum: 1, maximum: 1000000 }, unitAmount: { type: "number", minimum: 0, maximum: 100000000 }, lineAmount: { type: "number", minimum: 0, maximum: 100000000 } } } },
+  confirmationToken: { type: "string", description: "使用者確認預覽後取得的短效一次性 token" },
+};
 const financeTools: Tool[] = [
+  tool({
+    name: "create_finance_transaction",
+    description: "依 ERP 網頁版相同財務 domain service 建立收入或支出。必須兩階段預覽及使用者確認。物流出貨產生的運費請由庫存異動自動同步，不要重複新增手動支出。",
+    inputSchema: { type: "object", required: ["occurredAt", "direction", "amount"], properties: financeWriteProperties },
+    annotations: { readOnlyHint: false, idempotentHint: false, destructiveHint: false },
+    scope: "finance:write",
+    run: async (raw, auth) => {
+      if (auth.role !== "ADMIN" && auth.role !== "STAFF") throw new Error("角色權限不足");
+      const parsed = z.object({ ...financeCreateSchema.shape, confirmationToken: z.string().optional() }).parse(raw);
+      const { confirmationToken, ...command } = parsed;
+      if (command.source !== "MANUAL" || command.sourceRef || command.legacySheet || command.legacyRow) {
+        throw new Error("MCP 手動收支只允許 MANUAL 來源，不允許偽造系統自動同步記錄");
+      }
+      const payload = JSON.parse(JSON.stringify(command));
+      if (!confirmationToken) {
+        if (command.categoryId) {
+          const category = await prisma.financeCategory.findUnique({ where: { id: command.categoryId } });
+          if (!category || category.direction !== command.direction) throw new Error("財務分類方向與收支不符");
+        }
+        return prepareMcpAction("create_finance_transaction", payload, auth, { direction: command.direction, amount: command.amount, occurredAt: command.occurredAt, categoryId: command.categoryId ?? null, counterparty: command.counterparty ?? null, summary: command.summary ?? null, items: command.items, paymentStatus: command.paymentStatus, invoiceStatus: command.invoiceStatus, note: "此為獨立手動財務紀錄；庫存出貨自動產生的物流支出不應再手動新增。" });
+      }
+      await consumeMcpAction("create_finance_transaction", confirmationToken, payload, auth);
+      const result = await createFinanceTransaction(command, { userId: auth.userId, role: auth.role });
+      await prisma.auditLog.create({ data: { userId: auth.userId, action: "MCP_FINANCE_TRANSACTION_CREATED", entityType: "FinanceTransaction", entityId: result.id, metadata: { source: "MCP", connectionId: auth.connectionId, clientId: auth.clientId, amount: command.amount, direction: command.direction } } });
+      return { committed: true, transaction: { id: result.id, direction: command.direction, amount: command.amount } };
+    },
+  }),
   tool({
     name: "get_finance_summary",
     description: "取得指定期間的財務摘要，沿用 ERP 財務儀表板的淨營收、退款、支出、應收、現金流、COGS、毛利與預估淨利計算。未提供日期時預設本月至今天。",
@@ -446,7 +492,7 @@ const financeTools: Tool[] = [
 
 export function listFinanceMcpTools(auth?: McpAuth) {
   return financeTools
-    .filter((definition) => !auth || auth.scopes.includes(definition.scope))
+    .filter((definition) => !auth || (auth.scopes.includes(definition.scope) && (definition.scope !== "finance:write" || auth.role === "ADMIN" || auth.role === "STAFF")))
     .map(({ name, description, inputSchema, annotations }) => ({ name, description, inputSchema, annotations }));
 }
 
