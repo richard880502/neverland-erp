@@ -49,24 +49,8 @@ jobs:
       - name: MCP ↔ ERP API parity contract (blocks merges on drift)
         run: npm run test:parity
       - run: npm run test:integration
-      - run: python3 -m py_compile scripts/render-billing-template.py
-      - name: Validate billing XLSX template
-        run: |
-          python3 - <<'PY'
-          import zipfile
-
-          path = "public/templates/Neverland請款單.xlsx"
-          with zipfile.ZipFile(path) as archive:
-              names = set(archive.namelist())
-              assert "[Content_Types].xml" in names, "missing XLSX content types"
-              assert "xl/workbook.xml" in names, "missing workbook.xml"
-              assert any(name.startswith("xl/drawings/") and name.endswith(".xml") for name in names), "missing billing drawing"
-              assert any(name.startswith("xl/media/") for name in names), "missing company stamp/media"
-          print("billing XLSX template is a valid archive with drawing/media")
-          PY
-      # LibreOffice fallback is being retired; keep lightweight XLSX static
-      # validation until billing export UI/API/runtime are removed in #84.
-      # https://github.com/richard880502/neverland-erp/issues/84
+      - name: Validate Finance XLSX import parser
+        run: python3 -m py_compile scripts/parse-finance-xlsx.py
       - run: npm run lint
       - run: npm run build
 
@@ -96,6 +80,10 @@ jobs:
           tags: neverland-erp:ci
           cache-from: type=gha
           cache-to: type=gha,mode=max
+      - name: Verify legacy LibreOffice is absent and Finance XLSX importer remains supported
+        run: |
+          docker run --rm --entrypoint sh neverland-erp:ci -c 'command -v python3 >/dev/null && ! command -v libreoffice >/dev/null && ! command -v soffice >/dev/null && test -f /app/scripts/parse-finance-xlsx.py'
+          docker image inspect neverland-erp:ci --format 'Runtime image size: {{.Size}} bytes'
       - name: Start the production image and verify its health endpoint
         run: |
           docker run --detach --name neverland-erp-ci --publish 3000:3000 --entrypoint node neverland-erp:ci server.js

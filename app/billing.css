@@ -90,3 +90,6 @@
   .billing-items-editor-head > .billing-items-editor-actions { justify-content: flex-start; }
   .billing-item-row { grid-template-columns: minmax(0, 1fr) 82px 42px; }
 }
+
+/* Direct PDF/XLSX downloads were retired in #84; guide staff to Google Sheets. */
+.billing-export-hint { margin: 6px 0 0; font-size: 12px; color: var(--text-muted, #71717a); }
