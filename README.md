@@ -1,240 +1,95 @@
 # Neverland ERP
 
-Neverland ERP 是為 Neverland 品牌商品、總倉、直營與寄賣通路設計的輕量 ERP / 庫存後台。系統以 PostgreSQL 的庫存異動帳作為正式資料來源，從異動即時計算各 SKU 在總倉與各通路的庫存，並提供銷售分析、商品圖片、帳號權限、Google Authenticator 雙重驗證、Google Sheet 同步、請款管理，以及 Remote MCP / OAuth 整合。
+Neverland ERP 是面向品牌商品、總倉、直營與寄賣通路的輕量 ERP，涵蓋商品／庫存、銷售分析、財務與請款、Google Sheets 同步，以及可透過 ChatGPT／Codex 操作的 Remote MCP。
 
-> 最新正式版本：**v3.0.6**（v3.0.7 待發布）
+資料以 **PostgreSQL 為正式來源**：庫存由不可變更的異動帳計算；請款金額與品項快照保存在 ERP。Google Sheets 用於同步與請款文件的線上編輯，不作為正式帳本。
+
+> **最新已發布版本：v3.0.7** · **準備發布：v3.0.8**（`package.json` 版本已更新，尚未建立 Release）
 >
-> 發布紀錄：[GitHub Releases](https://github.com/richard880502/neverland-erp/releases)。
->
-> 發版方式：在 GitHub **Actions → Publish release → Run workflow**，選擇 `main` 並輸入版本（例如 `v3.0.7`）。系統會確認目前 `main` 的 CI、資安、Docker 與 Coolify 檢查成功，且版本與 `package.json` / `package-lock.json` 一致，再建立 Git Tag 與 GitHub Release；不會因為 CI 或 Coolify 部署完成而自動發版。
+> [GitHub Releases](https://github.com/richard880502/neverland-erp/releases) · [MCP 連線說明](docs/mcp-chatgpt-codex.md) · [操作與維運參考](docs/operations-reference.md)
 
-## v3.0.7 — MCP 連線設定引導（待發布）
+## v3.0.8 — MCP 與 ERP API 對齊、精簡請款匯出（待發布）
 
-- **設定 → AI 助理連線設定**新增適合一般使用者的連線引導，可選擇 ChatGPT 或 Codex，依步驟複製 MCP 網址、貼入 AI 助理並完成 ERP 登入授權。
-- MCP 網址優先使用部署設定的 `NEXT_PUBLIC_APP_URL`，未指定時使用目前網站的 origin，自動組成 `/mcp` 連線位置；提供一鍵複製及複製結果提示。
-- 保留原有 OAuth 連線清單、授權範圍檢視及撤銷授權功能。
-- 修正連線引導頁的 React ESLint 規則錯誤，使用 `useSyncExternalStore` 取得瀏覽器 origin。
-- 本次為 UI / 使用體驗小版更新，不新增資料庫遷移；功能變更來自 [#81](https://github.com/richard880502/neverland-erp/pull/81)。
+- **MCP 庫存與物流對齊**：`create_inventory_movement` 支援物流方式、運費、負擔者與物流群組；預覽顯示預計物流支出，並驗證確認後是否有通路預設值變更。
+- **批次庫存異動**：新增 `create_inventory_movements_batch`，同批多 SKU 以同一筆交易處理、共用物流群組，避免公司／代墊運費被逐品項重複記帳；任一品項失敗則整批回滾。
+- **MCP 財務寫入**：新增 `create_finance_transaction`，透過 `finance:write` OAuth 授權、角色檢查及兩階段確認建立手動收支，避免重複建立系統自動產生的物流支出。
+- **防止 API／MCP 功能落差**：CI 新增欄位／型別契約測試（`npm run test:parity`）與資料庫整合測試，檢查庫存、物流、財務的實際寫入結果與權限。
+- **退役 LibreOffice**：移除低使用率的請款 PDF／XLSX 伺服器端匯出、UNO 渲染程式與相關 Docker 依賴。請款仍可透過 **Google 試算表 → 檔案 → 下載** 取得 PDF／Excel；財務 Excel 匯入所需的 Python 3 繼續保留。
 
-## v3.0.6 — 相依性相容性維護（已發布）
+相關變更：[MCP 對齊 PR #83](https://github.com/richard880502/neverland-erp/pull/83) · [CI 精簡 PR #85](https://github.com/richard880502/neverland-erp/pull/85) · [LibreOffice 退役 PR #87](https://github.com/richard880502/neverland-erp/pull/87)／[Issue #84](https://github.com/richard880502/neverland-erp/issues/84)。
 
-- Zod 由 **3.25.76** 升級至 **4.6.5**，保持 ERP API、財務／請款及 MCP 資料驗證流程；已通過合併前的型別、ESLint、整合測試與容器建置檢查。
-- 修正升級過程中的 `package.json` / `package-lock.json` 不一致，維持 `tsx 4.23.15`，解決 `npm ci` 安裝錯誤。
-- TypeScript 保留在 **5.9.3**；由於當前 `eslint-config-next` 引用的 `typescript-eslint` 不支援 TypeScript 7，暫時將其排除於 Dependabot 升級範圍。
-- 本版不新增資料庫遷移，也不主動修改 ERP 業務邏輯。
-- 相關變更：[#71](https://github.com/richard880502/neverland-erp/pull/71)；暫緩的 TypeScript 7：[#62](https://github.com/richard880502/neverland-erp/pull/62)。
+## 主要功能
 
-## v3.0.5 — MCP 庫存異動日期修正（已發布）
+| 模組 | 功能 |
+| --- | --- |
+| **商品與庫存** | SKU、尺寸、價格、圖片；總倉／各通路庫存；進出貨、寄賣、退貨、盤點調整與沖銷；負庫存防護及稽核紀錄。 |
+| **銷售分析** | 銷售額、銷量、通路佔比、熱銷商品與低庫存指標。 |
+| **財務管理** | 收入、費用、分類、付款與對帳狀態、發票資料、Excel 匯入，以及符合條件的物流支出自動同步。 |
+| **請款管理** | 寄賣／買斷請款快照、稅額與運費計算、收款／作廢紀錄；由既有 Google Sheet 公版建立請款頁籤並保留人工修改。 |
+| **Google Sheets** | 商品／庫存異動同步佇列、重試與歷史紀錄；ERP 資料和 Sheet 文件權責分離。 |
+| **Remote MCP** | 透過 OAuth 2.1 授權 Agent 查詢或異動庫存、請款與財務；高風險寫入採預覽／確認流程，沿用 ERP 權限與業務驗證。 |
+| **安全與帳號** | 角色權限、雙重驗證（TOTP）、登入與連線撤銷、操作稽核。 |
 
-- MCP 建立庫存異動時，如果傳入 `date` 或 `movementDate` 等非正式日期欄位，現在會明確拒絕並提示使用 `occurredOn`（YYYY-MM-DD），防止日期被默默記成當天。
-- MCP 確認前預覽新增 `effectiveOccurredAt`，清楚顯示將實際寫入的日期。
-- 詳見 [v3.0.5 GitHub Release](https://github.com/richard880502/neverland-erp/releases/tag/v3.0.5)。
+### MCP 使用方式
 
-## v3.0.4 — Grouped inventory reversal records
+1. 在 ERP 的「**設定 → AI 助理連線設定**」選擇 ChatGPT 或 Codex，依引導取得連線資訊。
+2. MCP Endpoint 為 `https://<erp-domain>/mcp`；完成 ERP OAuth 授權後，Agent 只能使用授權範圍內的工具。
+3. 庫存、請款、財務等寫入操作遵循預覽／使用者確認；`finance:write` 必須額外授權。
 
-庫存異動列表會將已沖銷的原始紀錄與系統建立的反向紀錄視為同一個沖銷事件：預設顯示原始紀錄，展開後可查看 linked 的負數沖銷紀錄與完整稽核資訊。
-
-- 搜尋原始紀錄或其沖銷紀錄都會找到同一組事件；分頁也以整組沖銷事件計算，避免兩筆資料被拆開。
-- 網頁與 `reverse_inventory_movement` MCP 工具都使用同一套正式沖銷服務，寫入 `reversedAt` 與 `reversalOfId`，並保留不可變更的歷史紀錄。
-
-## v3.0.3 — ERP-first product and event master sync
-
-v3.0.3 將 Google Sheet 的商品與事件主檔明確定位為 ERP 的唯讀下游資料，避免人工維護的舊格式阻塞 ERP 商品新增與庫存計算。
-
-- ERP 新增、修改或刪除商品時，僅將該 SKU 排入商品同步佇列；Sheet 已有同 SKU 時更新原列，沒有時才附加到資料最後一列。
-- 同步排程會補齊缺少成功紀錄的商品，並提供管理者手動重試失敗項目的能力；正常異動不會整表覆寫。
-- `商品主檔` 與 `商品總覽` 的舊人工名稱格式不再被誤判為 SKU，避免阻塞新品同步。
-- `事件主檔` 現由 ERP 定義校正；即使沒有新的庫存異動，也會補齊「銷貨退回」、「進貨退出」與「庫存調整」等缺少事件及其庫存係數。
-- 同步頁面顯示商品 Outbox 的狀態與最近錯誤，方便追查失敗原因。
-
-## v3.0.2 — Billing statements and Google Sheets workflow
-
-v3.0.2 新增經銷 / 寄賣請款流程，讓 ERP 直接產生請款快照、計算應收金額，並沿用既有 `Neverland請款單` Google Sheet 公版進行線上編輯。
-
-- 新增 `BillingStatement` / `BillingStatementItem` 請款快照，保存客戶資料、商品、數量、建議售價、經銷價、稅率、運費與總額。
-- 選擇客戶與日期區間後，可依庫存異動自動帶入建議品項與數量；使用者仍可自由增刪品項、修改數量或完全手動建立請款單。
-- 寄賣通路依 `CONSIGN_SOLD` 建議請款，買斷通路依 `BUYOUT` 建議請款；日期只作為自動帶入便利功能，不限制人工請款。
-- 請款單編號依請款日期自動產生，例如 `BL-202608-001`、`BL-202609-001`，每月流水號重新起算。
-- 請款詳情新增 `Google 試算表` 按鈕：ERP 會在既有 `Neverland請款單` 試算表中複製 `範本` 頁籤，命名為對應 `BL-...`，填入 ERP 請款資料後直接開啟該頁籤。
-- 已存在的 `BL-...` 頁籤只會重新開啟，不會再次覆蓋，保留財務人員在線上手動調整的內容。
-- 商品超過公版原本 15 列時，由 Google Sheets 在付款區塊上方動態插入商品列，讓 Google 原生排版引擎處理 Footer、印章與版面位置。
-- PostgreSQL 仍是請款資料 source of truth；Google Sheet 僅作為正式文件、排版與人工編輯層。
-- 舊版 LibreOffice UNO 的 PDF/XLSX 直接匯出 fallback 已於 [#84](https://github.com/richard880502/neverland-erp/issues/84) 退役；需要檔案時請在 Google 試算表使用「檔案 → 下載」匯出 PDF 或 Excel。
-
-## v3.0.0 — Stateless storage and admin productivity
-
-v3.0.0 將商品圖片儲存全面改為私有 MinIO／S3-compatible Object Storage，並加入商品定價與後台操作體驗的改善。
-
-- 商品圖片上傳、讀取與刪除皆使用 MinIO；資料庫僅保存 object key，不再有 runtime 本機上傳 fallback。
-- 保留 Sharp 產生 1600px 原圖與 320px 縮圖 WebP，圖片透過短效簽名網址供已授權使用者直接讀取。
-- 提供既有商品圖片的一次性遷移工具與完整驗證流程，讓 ERP 可以維持 stateless 部署。
-- 管理員可在商品管理頁直接編輯售價，包含精簡的價格編輯介面與 API 權限控管。
-- 側欄帳號頭像針對中文 initials、帳號區塊與日期篩選樣式進行調整，提升緊湊版面的一致性。
-
-## v2.0.0 — Medusa-aligned Admin UI
-
-v2.0.0 主要更新 Neverland ERP 的後台視覺系統，讓它與 `neverland-medusa` 的 Admin Dashboard 使用同一套產品語言，同時保留原本 ERP 的 business logic、API、權限與資料模型。
-
-這次外觀更新包含：
-
-- 全新的 Medusa-inspired App Shell：淺色 Sidebar、分組導覽、active state、breadcrumb 與 compact account control。
-- 統一的 neutral surface、border、shadow、radius、spacing 與 typography hierarchy。
-- interactive / focus / chart accent 改為 Medusa 類型的 blue + neutral 色系，不再使用原本的紫色主視覺。
-- Dashboard KPI、filter、chart、Inventory、Products、Channels、Movements、Users、Google Sheet Sync 與 Account / Security 頁面整體視覺統一。
-- Login page 改為管理後台 auth card，並修正 viewport 置中、brand mark 對齊與窄畫面呈現。
-- Sidebar 左下角帳號資訊加入固定 action column 與 ellipsis，長 email / role 不再溢出。
-- 核心管理頁共用 `PageHeader`，減少各頁自行維護不同 header 樣式。
-- Desktop 為主要操作體驗，同時保留 tablet / narrow viewport fallback。
-
-UI implementation 採用本地 design tokens / primitives 對齊 Medusa，而不是把 Medusa Dashboard runtime 直接嵌入 ERP，因此 ERP 仍維持獨立的 Next.js application。
-
-## 核心功能
-
-### Inventory / Stock ledger
-
-- 商品 / SKU / 尺寸即時庫存。
-- 總倉、寄賣據點與可調貨位置。
-- 進貨、出貨、銷貨退回、進貨退出、寄賣出貨、寄賣退回、寄賣售出、買斷、瑕疵與庫存調整。
-- 商品選擇支援 SKU / 名稱 / 尺寸快速搜尋與編碼排序。
-- 寄賣代發會在同一個 Serializable transaction 中建立 `CONSIGN_RETURN` + 直營 `SHIP`，從寄賣經銷扣庫存並將營收歸入直營通路。
-- 銷貨退回會回補倉庫並扣回已售數量與營收；進貨退出會扣除總倉庫存。
-- 負庫存防護、沖銷與稽核紀錄。
-- PostgreSQL 不可變更異動帳作為正式庫存來源。
-
-### Dashboard
-
-- 日期、通路與商品全域篩選。
-- 銷售額 / 銷量趨勢。
-- 通路占比、熱銷與滯銷排行。
-- KPI 與前一期比較。
-- 即時庫存與低庫存 SKU。
-
-### Billing / 請款管理
-
-- 寄賣與買斷通路請款單。
-- 依日期區間自動帶入建議商品與數量，也支援完全手動請款。
-- 自動計算經銷價、未稅小計、營業稅、運費與應收總額。
-- 請款單建立後保存不可變更的客戶與商品價格快照。
-- 支援收款登記與作廢稽核流程。
-- 可一鍵從既有 `Neverland請款單` 的 `範本` 頁籤建立對應 Google Sheet 頁籤並直接線上編輯。
-- 可透過 Google 試算表內建「檔案 → 下載」取得 PDF 或 Microsoft Excel，不需要在 ERP 容器安裝 LibreOffice。
-- Google Sheet 是文件與人工編輯層；PostgreSQL 仍為正式請款資料來源。
-- PDF / Excel 請透過 Google 試算表「檔案 → 下載」取得；ERP 不再提供伺服器端直接匯出 API。
-
-### Product / Channel master data
-
-- 商品 SKU、名稱、尺寸、安全庫存、價格、成本、文案與圖片。
-- 直營、寄賣、買斷等通路主檔。
-- 啟用 / 停用與有歷史資料時的刪除保護。
-
-### Accounts & Security
-
-- 管理員、庫存人員、檢視者角色。
-- Cookie session、bcrypt、登入失敗鎖定與 audit log。
-- Google Authenticator 相容 TOTP 與一次性備援碼。
-- 帳號停用、密碼重設與 session revoke。
-
-### Google Sheet sync
-
-- Google Sheet URL / ID 後台設定。
-- ERP 是商品與事件主檔的 source of truth；商品資料只會由 ERP 單向寫入 Google Sheet。
-- 新增或修改商品只同步該 SKU；同步缺漏時才會補齊未成功同步的商品。
-- `事件主檔` 會依 ERP 支援的庫存異動類型與係數自動補齊，不需等待新異動產生。
-- 商品與庫存異動各有 Outbox Queue，具備重試、防重複、同步歷史與錯誤狀態。
-
-### Remote MCP / OAuth
-
-ERP 提供 protected, stateless Streamable HTTP MCP endpoint，可讓支援 MCP / OAuth 的 agent 或 assistant 在使用者權限範圍內操作 ERP。
-
-庫存與請款寫入都採兩階段 preview / confirmation。庫存工具包含：
-
-- `create_inventory_movement`：一般庫存異動
-- `create_sales_return`：銷貨退回
-- `create_purchase_return`：進貨退出
-- `create_consignment_direct_fulfillment`：寄賣代發
-- `reverse_inventory_movement`：沖銷既有異動
-
-請款 MCP 另提供 `billing:read` / `billing:write` 分離權限：
-
-- `list_billing_statements` / `get_billing_statement`：查詢正式請款快照
-- `preview_billing_statement`：依通路與日期區間預覽建議品項、經銷價、稅與總額
-- `create_billing_statement`：確認後建立正式 `BL-YYYYMM-xxx` 請款單
-- `void_billing_statement`：確認後作廢待收款請款單
-- `create_billing_google_sheet`：確認後建立或開啟對應 Google Sheet 頁籤，既有頁籤不覆寫
-
-正式寫入在 commit 時仍會重新執行 ERP 角色、OAuth scope 與 domain validation；Billing 的 confirmation snapshot 也會綁定當下通路與商品價格狀態，避免預覽後主檔變更卻沿用舊確認。
-
-完整設定與連線說明：[`docs/mcp-chatgpt-codex.md`](docs/mcp-chatgpt-codex.md)
+設定與工具清單請見 [Remote MCP 文件](docs/mcp-chatgpt-codex.md)；API／MCP 防回歸規則請見 [Parity Gate](docs/mcp-api-parity.md)。目前的契約測試涵蓋主要庫存與財務寫入流程，**不代表所有 REST API 都已有對應 MCP 工具**。
 
 ## 技術架構
 
-| Layer | Technology |
+| 項目 | 採用技術 |
 | --- | --- |
-| Frontend | Next.js 16、React 19、TypeScript |
-| Charts | Recharts |
-| Backend | Next.js Route Handlers |
-| ORM | Prisma 6 |
-| Database | PostgreSQL 16 |
-| Auth | Cookie Session、bcrypt、TOTP、OAuth 2.1 / MCP |
-| Images | Sharp、WebP、private MinIO／S3-compatible Object Storage |
-| Google | Google Sheets API、Service Account |
-| Billing documents | Google Sheets（建立、線上編輯與原生 PDF / Excel 下載） |
-| Runtime | Node.js 24、Docker |
-| Deployment | Zeabur |
+| Web / API | Next.js 16、React 19、TypeScript、Route Handlers |
+| 資料庫 / ORM | PostgreSQL 16、Prisma 7 |
+| 認證 / MCP | Session、TOTP、OAuth 2.1、Streamable HTTP MCP |
+| 圖片 | Sharp／WebP、私有 S3 相容 Object Storage（例如 MinIO） |
+| Google 整合 | Google Sheets API、Service Account |
+| 執行與部署 | Node.js 24、Docker、Coolify |
+| 額外執行環境 | Python 3（財務 Excel 匯入；不包含 LibreOffice） |
 
-## Local development
+## 本機啟動
 
-使用 Docker：
+先依 `.env.example` 建立環境設定，填入資料庫、物件儲存及必要的 Google 憑證。
+
+使用 Docker Compose：
 
 ```bash
 cp .env.example .env
 docker compose up --build
 ```
 
-直接使用 Node.js：
+或於已準備 PostgreSQL 的環境執行：
 
 ```bash
-npm install
+npm ci
 npx prisma migrate deploy
 npm run db:seed
 npm run dev
 ```
 
-常用檢查：
+正式部署需設定 HTTPS 公開網址（`NEXT_PUBLIC_APP_URL`），並妥善管理 MCP OAuth、Google Service Account、資料庫與物件儲存憑證。詳細操作請參考 [維運文件](docs/operations-reference.md)。
+
+## 開發檢查與發布
 
 ```bash
-npm test
-npm run test:integration
+npm test                    # 單元與契約相關測試
+npm run test:parity         # MCP ↔ ERP API 欄位／權限對齊
+npm run test:integration    # PostgreSQL 業務流程與副作用
 npm run lint
 npm run build
 ```
 
-## Documentation
+PR 的 GitHub Actions CI 同時執行相依性安全檢查與 Docker 建置／健康檢查；正式部署由 Coolify 工作流程追蹤。財務 Excel 匯入的 Python parser 也保留靜態檢查。
 
-原本 README 中完整的資料權責、庫存帳本、Google Sheet 同步、Service Account、Docker、Zeabur、備份、安全與維運說明已完整保留在：
+**v3.0.8 發版方式**：當 `main` 的 CI、安全性、Docker 及 Coolify 檢查通過後，在 GitHub **Actions → Publish release → Run workflow** 選擇 `main`，輸入 `v3.0.8`。工作流程會核對 `package.json`、`package-lock.json`、README 的版本說明及必要檢查，再建立 Git Tag／GitHub Release；**合併或部署不會自動發布 Release**。
 
-- [`docs/operations-reference.md`](docs/operations-reference.md) — ERP 完整操作與維運文件
-- [`docs/mcp-chatgpt-codex.md`](docs/mcp-chatgpt-codex.md) — Remote MCP / OAuth / ChatGPT / Codex 連線文件
+## 文件與歷史
 
-## Data ownership principles
-
-- PostgreSQL 是 ERP 的正式帳本；Google Sheet 用於 ERP 單向主檔同步、庫存相容檢視與請款文件線上編輯。
-- 庫存不是可直接覆寫的單一數字，而是所有有效 Stock Movement 加總後的結果。
-- 歷史異動不直接修改或刪除，錯誤資料透過沖銷處理。
-- 已有歷史關聯的商品與通路不能任意刪除。
-- Google Sheet 商品同步以 SKU 定位並只更新有異動或缺少同步紀錄的資料，不是整表覆蓋；事件主檔則由 ERP 定義補齊缺少的事件。
-- BillingStatement / BillingStatementItem 保存建立請款當下的正式快照；Google Sheet 的人工排版或文字調整不會回寫並覆蓋 ERP 帳本。
-
-## CI
-
-GitHub Actions 會在 push / pull request 執行：
-
-1. `npm ci`
-2. `npx prisma migrate deploy`
-3. `npm test`
-4. `npm run test:integration`
-5. Finance Excel 匯入 Python parser 靜態檢查（不再測試已退役的請款 PDF/XLSX renderer）
-6. `npm run lint`
-7. `npm run build`
-
-只有 CI 全部通過後才應合併到 `main`。
+- [歷史版本與完整更新紀錄 — GitHub Releases](https://github.com/richard880502/neverland-erp/releases)（v3.0.7 及之前的版本）
+- [MCP / OAuth 設定與工具說明](docs/mcp-chatgpt-codex.md)
+- [MCP ↔ API 對齊測試規範](docs/mcp-api-parity.md)
+- [財務模組技術文件](docs/finance/README.md)
+- [ERP 詳細維運參考](docs/operations-reference.md)
