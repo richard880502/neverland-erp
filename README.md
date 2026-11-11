@@ -4,11 +4,21 @@ Neverland ERP 是面向品牌商品、總倉、直營與寄賣通路的輕量 ER
 
 資料以 **PostgreSQL 為正式來源**：庫存由不可變更的異動帳計算；請款金額與品項快照保存在 ERP。Google Sheets 用於同步與請款文件的線上編輯，不作為正式帳本。
 
-> **最新已發布版本：v3.0.7** · **準備發布：v3.0.8**（`package.json` 版本已更新，尚未建立 Release）
+> **最新已發布版本：v3.0.8** · **準備發布：v3.1.0**（完成 CI 後，透過 GitHub Actions 手動發布）
 >
 > [GitHub Releases](https://github.com/richard880502/neverland-erp/releases) · [MCP 連線說明](docs/mcp-chatgpt-codex.md) · [操作與維運參考](docs/operations-reference.md)
 
-## v3.0.8 — MCP 與 ERP API 對齊、精簡請款匯出（待發布）
+## v3.1.0 — MCP 2026 相容性、Liveness 與依賴維護
+
+- **MCP 2026-07-28 Stateless Protocol**：新增 `server/discover`、現代化 request `_meta` 與 HTTP Header 對應驗證（`MCP-Protocol-Version`、`Mcp-Method`、`Mcp-Name`）；保留既有 2025 handshake 相容性，並依 OAuth Scope／ERP 角色隔離工具探索結果。
+- **協定安全與 CI 回歸**：針對 header/body 不一致、未授權工具、不同 OAuth Scope 與舊版相容性新增回歸測試；瀏覽器跨來源請求新增 Origin 驗證（可以 `MCP_ALLOWED_ORIGINS` 指定允許來源）。完整官方 SDK v2 與多副本正式 E2E 仍需獨立驗收。
+- **根路徑 `/livez`**：新增無資料庫／S3／外部 API 依賴的 Liveness endpoint，回傳 HTTP 200／`{"status":"ok"}` 並停用快取；CI Docker Smoke Test 同步檢查 `/api/health` 與 `/livez`。
+- **Dependabot 更新分組**：npm 正式與開發依賴的 Minor／Patch 更新各自分組；GitHub Actions 更新也分組，減少不必要的 PR 數量與 CI 重複執行。
+- **相依套件維護**：整合多項相容性套件更新與 GitHub Actions 更新，持續由既有測試、Lint、Build、安全性分析及 Docker 驗證把關。
+
+相關變更：[MCP 協定 PR #90](https://github.com/richard880502/neverland-erp/pull/90) · [Liveness PR #91](https://github.com/richard880502/neverland-erp/pull/91) · [Dependabot Grouping PR #92](https://github.com/richard880502/neverland-erp/pull/92) · [依賴更新 PR #93](https://github.com/richard880502/neverland-erp/pull/93)。
+
+## v3.0.8 — MCP 與 ERP API 對齊、精簡請款匯出
 
 - **MCP 庫存與物流對齊**：`create_inventory_movement` 支援物流方式、運費、負擔者與物流群組；預覽顯示預計物流支出，並驗證確認後是否有通路預設值變更。
 - **批次庫存異動**：新增 `create_inventory_movements_batch`，同批多 SKU 以同一筆交易處理、共用物流群組，避免公司／代墊運費被逐品項重複記帳；任一品項失敗則整批回滾。
@@ -84,11 +94,11 @@ npm run build
 
 PR 的 GitHub Actions CI 同時執行相依性安全檢查與 Docker 建置／健康檢查；正式部署由 Coolify 工作流程追蹤。財務 Excel 匯入的 Python parser 也保留靜態檢查。
 
-**v3.0.8 發版方式**：當 `main` 的 CI、安全性、Docker 及 Coolify 檢查通過後，在 GitHub **Actions → Publish release → Run workflow** 選擇 `main`，輸入 `v3.0.8`。工作流程會核對 `package.json`、`package-lock.json`、README 的版本說明及必要檢查，再建立 Git Tag／GitHub Release；**合併或部署不會自動發布 Release**。
+**v3.1.0 發版方式**：當 `main` 的 CI、安全性、Docker 及 Coolify 檢查通過後，在 GitHub **Actions → Publish release → Run workflow** 選擇 `main`，輸入 `v3.1.0`。工作流程會核對 `package.json`、`package-lock.json`、README 的版本說明及必要檢查，再建立 Git Tag／GitHub Release；**合併或部署不會自動發布 Release**。
 
 ## 文件與歷史
 
-- [歷史版本與完整更新紀錄 — GitHub Releases](https://github.com/richard880502/neverland-erp/releases)（v3.0.7 及之前的版本）
+- [歷史版本與完整更新紀錄 — GitHub Releases](https://github.com/richard880502/neverland-erp/releases)（v3.0.8 及之前的版本）
 - [MCP / OAuth 設定與工具說明](docs/mcp-chatgpt-codex.md)
 - [MCP ↔ API 對齊測試規範](docs/mcp-api-parity.md)
 - [財務模組技術文件](docs/finance/README.md)
