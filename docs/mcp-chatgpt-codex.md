@@ -41,7 +41,7 @@ The deployment serves:
 
 Only Authorization Code + PKCE `S256` is accepted. Implicit and password grants are not exposed. Tokens are audience-bound to `https://<erp-domain>/mcp`; a token cannot be replayed against another endpoint. The authorization metadata advertises `offline_access`, which is selected by default so ChatGPT can use the rotating refresh token without requiring frequent sign-in.
 
-Authorization responses include the RFC 9207 `iss` parameter, exactly matching the authorization metadata issuer. The MCP endpoint uses stateless JSON-RPC and negotiates the stable 2025 protocol versions without sticky routing.
+Authorization responses include the RFC 9207 `iss` parameter, exactly matching the authorization metadata issuer. The MCP endpoint supports the 2026-07-28 stateless request envelope in addition to the 2025 legacy initialize handshake. Modern callers include `MCP-Protocol-Version`, `Mcp-Method`, and, for `tools/call`, `Mcp-Name`, plus per-request `params._meta` with the protocol version, client info, and client capabilities. `server/discover` reports supported versions, capabilities, and server identity. Requests do not require sticky routing or an `Mcp-Session-Id`. Tool catalogs remain private to the connection's role and OAuth scopes (`ttlMs: 0`, `cacheScope: private`).
 
 When an MCP client first calls `/mcp` without a token, it receives a `401` and a `WWW-Authenticate` header pointing at the protected-resource metadata. The host then opens the Neverland ERP login page, where the user sees a consent screen. Read scopes are selected by default; the following are unchecked until explicitly approved:
 
@@ -131,3 +131,22 @@ The browser returns to a short-lived loopback callback after login and consent. 
 - Billing write tools reuse `createBillingStatement`, `voidBillingStatement`, and `openBillingGoogleSheet`; MCP does not bypass Billing totals, role checks, statement status rules, or Google Sheet duplicate protection.
 - High-risk write tools use a server-side two-phase flow in addition to MCP annotations. The first call returns a five-minute, connection-bound, single-use `confirmationToken` and performs no write. After explicit user approval, the client repeats the exact same arguments with that token. Changed arguments, expired/replayed tokens, a different user/connection/client, and domain-state conflicts are rejected.
 - Keep `NEXT_PUBLIC_APP_URL` stable. Changing it invalidates the OAuth resource audience and requires re-authorizing clients.
+
+## MCP 2026-07-28 protocol compatibility and CI
+
+The endpoint serves both modern requests (which carry a per-request `_meta` envelope) and older ChatGPT/Codex requests using `initialize`. Modern calls must provide matching `MCP-Protocol-Version` and `Mcp-Method` headers; `tools/call` also requires a matching `Mcp-Name`. Mismatches fail with JSON-RPC `-32020`, rather than silently dispatching a different operation. Unknown modern protocol revisions return an error containing the supported versions.
+
+Run `npm test` (the existing CI test job) to enforce `tests/mcp-protocol.test.ts`. Tests cover discovery, modern result envelopes, role-aware tool discovery, header mismatch, unsupported revisions, legacy handshake, and OAuth discovery challenge. Run `npm run test:integration` for database-backed OAuth/permission checks. These checks are synthetic; production ChatGPT OAuth and Codex CLI login/refresh/revoke still need separate live acceptance before closing Issue #2.
+
+Modern discovery example:
+
+```http
+POST /mcp HTTP/1.1
+Authorization: Bearer <access-token>
+Content-Type: application/json
+Accept: application/json, text/event-stream
+MCP-Protocol-Version: 2026-07-28
+Mcp-Method: server/discover
+
+{"jsonrpc":"2.0","id":"discover-1","method":"server/discover","params":{"_meta":{"io.modelcontextprotocol/protocolVersion":"2026-07-28","io.modelcontextprotocol/clientInfo":{"name":"erp-client","version":"1.0.0"},"io.modelcontextprotocol/clientCapabilities":{}}}}
+```
