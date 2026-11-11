@@ -84,11 +84,12 @@ jobs:
         run: |
           docker run --rm --entrypoint sh neverland-erp:ci -c 'command -v python3 >/dev/null && ! command -v libreoffice >/dev/null && ! command -v soffice >/dev/null && test -f /app/scripts/parse-finance-xlsx.py'
           docker image inspect neverland-erp:ci --format 'Runtime image size: {{.Size}} bytes'
-      - name: Start the production image and verify its health endpoint
+      - name: Start the production image and verify health and liveness endpoints
         run: |
           docker run --detach --name neverland-erp-ci --publish 3000:3000 --entrypoint node neverland-erp:ci server.js
           for attempt in $(seq 1 30); do
-            if curl --fail --silent --show-error http://127.0.0.1:3000/api/health | grep -q '"status":"ok"'; then
+            if curl --fail --silent --show-error http://127.0.0.1:3000/api/health | grep -q '"status":"ok"' \
+              && curl --fail --silent --show-error http://127.0.0.1:3000/livez | grep -q '"status":"ok"'; then
               exit 0
             fi
             sleep 1
