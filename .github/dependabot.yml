@@ -5,6 +5,26 @@ updates:
     schedule:
       interval: weekly
     open-pull-requests-limit: 5
+    # Consolidate routine dependency bumps to reduce duplicate PR/CI runs.
+    # Major version changes remain individual PRs for separate review.
+    # Security updates are intentionally not grouped by these rules.
+    groups:
+      production-minor-patch:
+        applies-to: version-updates
+        dependency-type: production
+        patterns:
+          - "*"
+        update-types:
+          - minor
+          - patch
+      development-minor-patch:
+        applies-to: version-updates
+        dependency-type: development
+        patterns:
+          - "*"
+        update-types:
+          - minor
+          - patch
     # The project's eslint-config-next/typescript-eslint stack rejects TypeScript 7.
     # Revisit this guard when upstream adds official TypeScript 7 support.
     ignore:
@@ -14,3 +34,11 @@ updates:
     directory: /
     schedule:
       interval: weekly
+    groups:
+      actions-minor-patch:
+        applies-to: version-updates
+        patterns:
+          - "*"
+        update-types:
+          - minor
+          - patch

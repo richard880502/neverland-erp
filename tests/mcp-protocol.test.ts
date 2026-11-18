@@ -64,7 +64,7 @@ test("server/discover advertises modern and legacy versions without session hand
   assert.equal(json.result?.resultType, "complete");
   assert.deepEqual(json.result?.supportedVersions, ["2026-07-28", "2025-06-18", "2025-03-26", "2024-11-05"]);
   assert.deepEqual(json.result?.capabilities, { tools: { listChanged: false } });
-  assert.deepEqual((json.result?._meta as Record<string, unknown>)?.["io.modelcontextprotocol/serverInfo"], { name: "Neverland ERP", version: "3.0.8" });
+  assert.deepEqual((json.result?._meta as Record<string, unknown>)?.["io.modelcontextprotocol/serverInfo"], { name: "Neverland ERP", version: "3.1.0" });
   assert.equal(json.result?.cacheScope, "private");
   assert.equal(json.result?.ttlMs, 0);
 });
