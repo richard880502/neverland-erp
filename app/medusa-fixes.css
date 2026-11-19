@@ -4,13 +4,13 @@
   /* Keep primary actions neutral/dark like Medusa Admin, but use blue for
      interactive/focus states instead of the previous purple accent. */
   --ui-bg-highlight: #eff6ff;
-  --ui-fg-interactive: #3b82f6;
+  --ui-fg-interactive: #2563eb;
   --ui-border-interactive: #3b82f6;
   --ui-focus: 0 0 0 3px rgba(59, 130, 246, .16);
 
   /* Legacy aliases still referenced by a few existing components. */
-  --lime: #3b82f6;
-  --orange: #3b82f6;
+  --lime: #2563eb;
+  --orange: #2563eb;
   --denim: #2563eb;
 }
 
@@ -36,7 +36,7 @@
 }
 
 .login-shell {
-  width: min(420px, calc(100vw - 40px));
+  width: min(420px, 100%);
   margin: auto;
   align-self: center;
   justify-self: center;
@@ -100,7 +100,7 @@
   min-width: 30px;
   max-width: 30px;
   justify-self: end;
-  overflow: hidden;
+  overflow: visible;
 }
 
 .sidebar-user-meta {
@@ -156,10 +156,15 @@
    -------------------------------------------------------------------------- */
 
 .dashboard-filter-panel {
-  grid-template-columns: minmax(180px, 1.05fr) repeat(4, minmax(135px, .78fr)) minmax(286px, 1.25fr);
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  align-items: stretch;
 }
 
+.dashboard-filter-panel .dashboard-filter-title { grid-column: 1 / 3; }
+
 .dashboard-range-control {
+  grid-column: 3 / -1;
+  grid-row: 1;
   min-width: 0;
   min-height: 66px;
   padding: 8px 9px;
@@ -468,8 +473,10 @@
 }
 
 @media (max-width: 1180px) {
+  .dashboard-filter-panel .dashboard-filter-title,
   .dashboard-range-control {
     grid-column: 1 / -1;
+    grid-row: auto;
   }
 }
 
@@ -515,4 +522,22 @@
     padding-top: 32px;
     padding-bottom: 32px;
   }
+}
+
+/* Four labelled filters stay together without imposing fixed minimum widths. */
+@media (max-width: 1180px) {
+  .dashboard-filter-panel { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (max-width: 640px) {
+  .dashboard-filter-panel { grid-template-columns: minmax(0, 1fr); }
+  .dashboard-filter-panel .dashboard-presets button { min-height: 44px; height: 44px; }
+  .chart-mode-toggle button { min-height: 44px; }
+  .dashboard-range-copy { flex-wrap: wrap; }
+  .dashboard-range-copy strong { white-space: normal; overflow-wrap: anywhere; }
+}
+
+@media (max-width: 900px) {
+  .sidebar-user-card { grid-template-columns: 32px minmax(0, 1fr) 44px; }
+  .sidebar-user-card > form { width: 44px; min-width: 44px; max-width: 44px; }
+  .sidebar-user .logout { width: 44px; height: 44px; min-width: 44px; }
 }
