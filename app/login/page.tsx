@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 import { ShieldCheck } from "lucide-react";
 import { getCurrentUser } from "@/lib/auth";
+import { ThemeToggle } from "@/components/ThemeToggle";
 import { LoginForm } from "@/components/LoginForm";
 
 export default async function LoginPage({ searchParams }: { searchParams: Promise<{ returnTo?: string }> }) {
@@ -9,6 +10,7 @@ export default async function LoginPage({ searchParams }: { searchParams: Promis
   return (
     <div className="login-page">
       <main className="login-shell">
+        <div className="login-theme-tools"><ThemeToggle /></div>
         <div className="login-brand-lockup">
           <span className="brand-mark">N</span>
           <span><strong>Neverland</strong><span>Operations</span></span>

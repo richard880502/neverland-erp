@@ -107,12 +107,18 @@ export function DashboardExperience({ data }: { data: DashboardDataset }) {
   }
 
   function changeStartDate(value: string) {
-    setStartDate(value);
+    // Native date inputs can emit an empty value while being cleared/edited.
+    // Keep the last valid range so derived dates never receive an invalid date.
+    if (!value) return;
+    const next = value < data.dateBounds.min ? data.dateBounds.min : value > endDate ? endDate : value;
+    setStartDate(next);
     setSelectedPreset(null);
   }
 
   function changeEndDate(value: string) {
-    setEndDate(value);
+    if (!value) return;
+    const next = value < startDate ? startDate : value > data.dateBounds.max ? data.dateBounds.max : value;
+    setEndDate(next);
     setSelectedPreset(null);
   }
 

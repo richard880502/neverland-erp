@@ -4,9 +4,19 @@ Neverland ERP 是面向品牌商品、總倉、直營與寄賣通路的輕量 ER
 
 資料以 **PostgreSQL 為正式來源**：庫存由不可變更的異動帳計算；請款金額與品項快照保存在 ERP。Google Sheets 用於同步與請款文件的線上編輯，不作為正式帳本。
 
-> **最新已發布版本：v3.0.8** · **準備發布：v3.1.0**（完成 CI 後，透過 GitHub Actions 手動發布）
+> **最新已發布版本：v3.1.0** · **準備發布：v3.2.0**（完成 CI 後，透過 GitHub Actions 手動發布）
 >
 > [GitHub Releases](https://github.com/richard880502/neverland-erp/releases) · [MCP 連線說明](docs/mcp-chatgpt-codex.md) · [操作與維運參考](docs/operations-reference.md)
+
+## v3.2.0 — 深淺色模式與介面細節修補
+
+- **深色／淺色／跟隨系統**：登入頁及側欄提供模式選擇，記住瀏覽器偏好、即時回應系統模式變更並同步分頁；頁面繪製前套用主題，避免載入時閃爍。
+- **完整語意配色**：表格、表單、庫存卡片、請款、財務、同步設定與圖表使用對應模式的背景、文字、邊框及狀態色，補修舊樣式殘留的白底和低對比小字。
+- **版面與手機操作**：修正儀表板篩選列水平溢出、並排卡片間距及 KPI 數值／比較文字重疊；保留手機登出入口，調整操作尺寸與登入卡片寬度。
+- **日期與無障礙**：防止清空日期或超出範圍的日期造成計算錯誤；補上鍵盤焦點、跳至主要內容及減少動態效果支援。
+- **版本與回歸驗證**：MCP Server 版本改為直接取用 package 版本，避免發版版本不一致；49 個測試、Lint、正式建置通過，另完成 70 組瀏覽器排版檢查與 24 組已載入畫面的文字對比檢查。
+
+本版不需額外資料庫遷移，也沒有變更庫存、請款及財務業務規則。模式操作與維護說明見 [深淺色模式與介面修補](docs/ui-color-modes.md)。
 
 ## v3.1.0 — MCP 2026 相容性、Liveness 與依賴維護
 
@@ -94,11 +104,11 @@ npm run build
 
 PR 的 GitHub Actions CI 同時執行相依性安全檢查與 Docker 建置／健康檢查；正式部署由 Coolify 工作流程追蹤。財務 Excel 匯入的 Python parser 也保留靜態檢查。
 
-**v3.1.0 發版方式**：當 `main` 的 CI、安全性、Docker 及 Coolify 檢查通過後，在 GitHub **Actions → Publish release → Run workflow** 選擇 `main`，輸入 `v3.1.0`。工作流程會核對 `package.json`、`package-lock.json`、README 的版本說明及必要檢查，再建立 Git Tag／GitHub Release；**合併或部署不會自動發布 Release**。
+**v3.2.0 發版方式**：當 `main` 的 CI、安全性、Docker 及 Coolify 檢查通過後，在 GitHub **Actions → Publish release → Run workflow** 選擇 `main`，輸入 `v3.2.0`。工作流程會核對 `package.json`、`package-lock.json`、README 的版本說明及必要檢查，再建立 Git Tag／GitHub Release；**合併或部署不會自動發布 Release**。
 
 ## 文件與歷史
 
-- [歷史版本與完整更新紀錄 — GitHub Releases](https://github.com/richard880502/neverland-erp/releases)（v3.0.8 及之前的版本）
+- [歷史版本與完整更新紀錄 — GitHub Releases](https://github.com/richard880502/neverland-erp/releases)（v3.1.0 及之前的版本）
 - [MCP / OAuth 設定與工具說明](docs/mcp-chatgpt-codex.md)
 - [MCP ↔ API 對齊測試規範](docs/mcp-api-parity.md)
 - [財務模組技術文件](docs/finance/README.md)

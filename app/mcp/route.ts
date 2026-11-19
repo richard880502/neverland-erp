@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { version } from "@/package.json";
 import { authenticateMcpAccessToken, baseUrl, requireHttpsInProduction, type McpAuth } from "@/lib/mcp/oauth";
 import { callMcpTool, listMcpTools } from "@/lib/mcp/registry";
 import { takeRateLimit } from "@/lib/mcp/rate-limit";
@@ -12,7 +13,7 @@ const MODERN_PROTOCOL_VERSION = "2026-07-28";
 const LEGACY_PROTOCOL_VERSION = "2025-06-18";
 const LEGACY_VERSIONS = [LEGACY_PROTOCOL_VERSION, "2025-03-26", "2024-11-05"];
 const SUPPORTED_VERSIONS = [MODERN_PROTOCOL_VERSION, ...LEGACY_VERSIONS];
-const SERVER_INFO = { name: "Neverland ERP", version: "3.1.0" };
+const SERVER_INFO = { name: "Neverland ERP", version };
 const SERVER_INSTRUCTIONS = "Neverland ERP MCP。所有庫存、請款建立/作廢與外部文件寫入均需取得使用者確認。";
 
 type Rpc = { jsonrpc?: unknown; id?: unknown; method?: unknown; params?: unknown };
