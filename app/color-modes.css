@@ -1,0 +1,184 @@
+/* Shared theme tokens. Semantic state colours remain distinct in both modes. */
+:root {
+  color-scheme: light;
+  --ui-fg-muted: #62626b;
+  --ui-fg-disabled: #62626b;
+  --ui-chart-grid: #e4e4e7;
+  --ui-chart-axis: #d4d4d8;
+  --ui-chart-primary: #2563eb;
+  --ui-chart-neutral: #52525b;
+  --ui-chart-secondary: #0f766e;
+  --ui-chart-tertiary: #7c3aed;
+  --ui-chart-warning: #b45309;
+  --ui-chart-negative: #be185d;
+  --ui-chart-rule: rgba(0, 0, 0, .28);
+  --ui-chart-guide: rgba(0, 0, 0, .055);
+}
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --ui-bg-base: #18181b;
+  --ui-bg-subtle: #111113;
+  --ui-bg-component: #202023;
+  --ui-bg-component-hover: #29292e;
+  --ui-bg-component-pressed: #34343b;
+  --ui-bg-highlight: #172742;
+  --ui-bg-interactive: #e4e4e7;
+  --ui-bg-interactive-hover: #ffffff;
+  --ui-fg-base: #f4f4f5;
+  --ui-fg-subtle: #d4d4d8;
+  --ui-fg-muted: #a1a1aa;
+  --ui-fg-disabled: #a1a1aa;
+  --ui-fg-interactive: #93c5fd;
+  --ui-fg-danger: #fda4af;
+  --ui-fg-warning: #fdba74;
+  --ui-fg-success: #6ee7b7;
+  --ui-bg-danger: #3a1d29;
+  --ui-bg-warning: #352719;
+  --ui-bg-success: #152f29;
+  --ui-border-base: #34343b;
+  --ui-border-strong: #52525b;
+  --ui-border-interactive: #60a5fa;
+  --ui-border-danger: #7d3449;
+  --ui-border-warning: #78512b;
+  --ui-border-success: #2c6553;
+  --ui-focus: 0 0 0 3px rgba(96, 165, 250, .24);
+  --ui-shadow-card: 0 1px 3px rgba(0, 0, 0, .25);
+  --ui-shadow-flyout: 0 8px 28px rgba(0, 0, 0, .4);
+  --ui-chart-grid: #34343b;
+  --ui-chart-axis: #52525b;
+  --ui-chart-primary: #60a5fa;
+  --ui-chart-neutral: #d4d4d8;
+  --ui-chart-secondary: #5eead4;
+  --ui-chart-tertiary: #c4b5fd;
+  --ui-chart-warning: #fbbf24;
+  --ui-chart-negative: #f9a8d4;
+  --ui-chart-rule: #71717a;
+  --ui-chart-guide: rgba(255, 255, 255, .09);
+  --green: var(--ui-fg-success);
+  --lime: var(--ui-fg-interactive);
+  --orange: var(--ui-fg-interactive);
+  --denim: var(--ui-fg-interactive);
+}
+
+.theme-control {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 8px;
+  min-height: 36px;
+  flex-shrink: 0;
+  border: 1px solid var(--ui-border-strong);
+  border-radius: var(--ui-radius-sm);
+  background: var(--ui-bg-base);
+  color: var(--ui-fg-subtle);
+}
+.theme-control select {
+  max-width: 100%;
+  min-height: 34px;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+.theme-control:focus-within { outline: 2px solid var(--ui-border-interactive); outline-offset: 2px; }
+.theme-control select:focus-visible { outline: none; box-shadow: none; }
+.sidebar-header { display: grid; gap: 2px; margin-bottom: 12px; }
+.sidebar-header .brand { padding-bottom: 8px; }
+.sidebar-header .theme-control { justify-self: start; margin-left: 8px; }
+.login-theme-tools { display: flex; justify-content: flex-end; margin-bottom: 16px; }
+
+/* Legacy surfaces share the same token contract as the current admin theme. */
+[data-theme="dark"] .topbar { background: var(--ui-bg-base); }
+[data-theme="dark"] .login-page { background: var(--ui-bg-subtle); }
+[data-theme="dark"] :is(.brand-mark, .product-price-editor) { background: var(--ui-bg-component); }
+[data-theme="dark"] :is(
+  .stat-card, .stat-card.warn, .dashboard-panel,
+  .inventory-card-numbers > div, .variant-stock-card, .variant-balance > div,
+  .inventory-detail-stats > div, .inventory-detail-hero,
+  .sync-connection-meta > div, .sync-queue-summary > div,
+  .sync-summary button, .account-summary > div, .two-factor-summary > div,
+  .billing-stats > div, .billing-detail-meta > div,
+  .billing-customer-card, .billing-preview-meta span,
+  .billing-autofill-note, .transfer-preview small,
+  .manual-key, .recovery-code-grid code
+) { background: var(--ui-bg-component); color: var(--ui-fg-base); }
+[data-theme="dark"] :is(.inventory-product-image, .inventory-detail-image) { background: var(--ui-bg-subtle); }
+[data-theme="dark"] :is(.input, .select, .textarea, .inventory-search, .inventory-select, .billing-search) {
+  background: var(--ui-bg-base);
+  color: var(--ui-fg-base);
+}
+[data-theme="dark"] :is(.inventory-search input, .inventory-select select, .billing-search input) {
+  background: transparent;
+  color: var(--ui-fg-base);
+}
+[data-theme="dark"] .dashboard-filter-panel label :is(input, select) { background: var(--ui-bg-base); }
+[data-theme="dark"] th { background: var(--ui-bg-component); color: var(--ui-fg-subtle); }
+[data-theme="dark"] tbody tr:hover { background: var(--ui-bg-component-hover); }
+[data-theme="dark"] :is(.btn-primary, .login-form .btn-primary, .sync-action-card .btn-secondary, .skip-link) {
+  background: var(--ui-bg-interactive);
+  border-color: var(--ui-bg-interactive);
+  color: var(--ui-bg-subtle);
+}
+[data-theme="dark"] :is(.btn-primary, .login-form .btn-primary, .sync-action-card .btn-secondary):hover {
+  background: var(--ui-bg-interactive-hover);
+  border-color: var(--ui-bg-interactive-hover);
+  color: var(--ui-bg-subtle);
+}
+[data-theme="dark"] :is(.btn-secondary, .btn-danger):hover { background: var(--ui-bg-component-hover); }
+[data-theme="dark"] :is(.sidebar-avatar, .product-size-option.selected, .login-step .badge.green, .sync-card-icon) {
+  background: var(--ui-bg-highlight);
+  color: var(--ui-fg-interactive);
+  border-color: var(--ui-border-interactive);
+}
+[data-theme="dark"] .dashboard-filter-panel .dashboard-presets button:hover { background: var(--ui-bg-component-pressed); }
+[data-theme="dark"] .dashboard-filter-panel .dashboard-presets button.active {
+  color: var(--ui-fg-interactive);
+  background: var(--ui-bg-base);
+  box-shadow: inset 0 0 0 1px var(--ui-border-interactive);
+}
+[data-theme="dark"] :is(.billing-status-issued, .billing-preview-meta .warn) {
+  background: var(--ui-bg-warning); color: var(--ui-fg-warning); border-color: var(--ui-border-warning);
+}
+[data-theme="dark"] .billing-status-paid { background: var(--ui-bg-success); color: var(--ui-fg-success); border-color: var(--ui-border-success); }
+[data-theme="dark"] .billing-status-void { background: var(--ui-bg-component-pressed); color: var(--ui-fg-muted); }
+[data-theme="dark"] :is(.billing-hint, .sync-message) { color: var(--ui-fg-warning); }
+[data-theme="dark"] :is(.sync-action-card small, .sync-action-card span) { color: var(--ui-fg-muted); }
+[data-theme="dark"] .sync-action-card { color: var(--ui-fg-base); }
+[data-theme="dark"] .comparison-period > span:last-child { color: var(--ui-fg-muted); }
+[data-theme="dark"] ::selection { background: #1e40af; color: #eff6ff; }
+
+@media (max-width: 900px) {
+  .sidebar-header { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+  .sidebar-header .brand { padding-bottom: 3px; }
+  .sidebar-header .theme-control { margin: 0; }
+}
+@media (max-width: 640px) {
+  .theme-control, .theme-control select { min-height: 44px; }
+  .theme-control select { font-size: 16px; }
+}
+
+[data-theme="dark"] .dashboard-edition {
+  background: var(--ui-bg-component);
+  color: var(--ui-fg-base);
+}
+[data-theme="dark"] .dashboard-edition :is(strong, i) { color: var(--ui-fg-base); }
+[data-theme="dark"] .dashboard-edition :is(span, small) { color: var(--ui-fg-muted); }
+[data-theme="dark"] .dashboard-filter-panel > label { background: var(--ui-bg-component); }
+[data-theme="dark"] .dashboard-filter-panel > label > span { color: var(--ui-fg-subtle); }
+[data-theme="dark"] .panel-index { color: var(--ui-fg-interactive) !important; }
+[data-theme="dark"] :is(
+  .dashboard-panel .panel-header, .dashboard-footer, .dashboard-edition i,
+  .billing-section-head, .billing-list-head, .billing-total-box,
+  .billing-items-editor, .inventory-section-title
+) { border-color: var(--ui-border-base); }
+[data-theme="dark"] :is(.billing-stats, .billing-detail-meta) { background: var(--ui-border-base); }
+
+/* Small secondary labels remain readable on tinted component surfaces. */
+.sidebar-user-meta strong { color: var(--ui-fg-base); }
+.dashboard-edition > span { color: #fdba74; }
+.sync-action-card :is(small, span) { color: var(--ui-fg-muted); }
+.sync-toggle { background: var(--ui-bg-component); }
+.empty-thumb { background: var(--ui-bg-component); color: var(--ui-fg-muted); }
+[data-theme="dark"] .dashboard-filter-panel .dashboard-filter-title > span { color: var(--ui-fg-interactive); }

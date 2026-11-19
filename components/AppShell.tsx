@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { ThemeToggle } from "@/components/ThemeToggle";
 import { usePathname } from "next/navigation";
 import { BarChart3, Bot, Boxes, CircleDollarSign, DatabaseZap, KeyRound, LogOut, PackagePlus, ReceiptText, Route, ShieldCheck, ShoppingBag, Users } from "lucide-react";
 
@@ -47,12 +48,14 @@ export function AppShell({ user, children }: { user: { name: string; email: stri
   const pathname = usePathname();
   return (
     <div className="app-shell">
+      <a className="skip-link" href="#main-content">跳至主要內容</a>
       <aside className="sidebar">
         <div className="sidebar-header">
           <Link className="brand" href="/" aria-label="Neverland Operations 首頁">
             <span className="brand-mark">N</span>
             <span className="brand-copy"><b>Neverland</b><small>Operations</small></span>
           </Link>
+          <ThemeToggle />
         </div>
 
         <nav className="nav" aria-label="主要導覽">
@@ -88,7 +91,7 @@ export function AppShell({ user, children }: { user: { name: string; email: stri
           <div className="topbar-breadcrumb"><span>Neverland</span><span>/</span><strong>{pageLabel(pathname)}</strong></div>
           <div className="topbar-meta">Operations / ERP</div>
         </header>
-        <main className="main">{children}</main>
+        <main className="main" id="main-content" tabIndex={-1}>{children}</main>
       </div>
     </div>
   );

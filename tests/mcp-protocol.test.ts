@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { version } from "../package.json";
 import { GET, handleAuthenticatedMcpRequest } from "../app/mcp/route";
 import type { McpAuth } from "../lib/mcp/oauth";
 
@@ -64,7 +65,7 @@ test("server/discover advertises modern and legacy versions without session hand
   assert.equal(json.result?.resultType, "complete");
   assert.deepEqual(json.result?.supportedVersions, ["2026-07-28", "2025-06-18", "2025-03-26", "2024-11-05"]);
   assert.deepEqual(json.result?.capabilities, { tools: { listChanged: false } });
-  assert.deepEqual((json.result?._meta as Record<string, unknown>)?.["io.modelcontextprotocol/serverInfo"], { name: "Neverland ERP", version: "3.1.0" });
+  assert.deepEqual((json.result?._meta as Record<string, unknown>)?.["io.modelcontextprotocol/serverInfo"], { name: "Neverland ERP", version });
   assert.equal(json.result?.cacheScope, "private");
   assert.equal(json.result?.ttlMs, 0);
 });
