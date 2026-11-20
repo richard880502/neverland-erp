@@ -4,9 +4,20 @@ Neverland ERP 是面向品牌商品、總倉、直營與寄賣通路的輕量 ER
 
 資料以 **PostgreSQL 為正式來源**：庫存由不可變更的異動帳計算；請款金額與品項快照保存在 ERP。Google Sheets 用於同步與請款文件的線上編輯，不作為正式帳本。
 
-> **最新已發布版本：v3.1.0** · **準備發布：v3.2.0**（完成 CI 後，透過 GitHub Actions 手動發布）
+> **最新已發布版本：v3.2.0** · **準備發布：v3.2.1**（完成 CI 後，透過 GitHub Actions 手動發布）
 >
 > [GitHub Releases](https://github.com/richard880502/neverland-erp/releases) · [MCP 連線說明](docs/mcp-chatgpt-codex.md) · [操作與維運參考](docs/operations-reference.md)
+
+## v3.2.1 — Cloudflare 訪客 IP 修正與建置流程改善
+
+- **Cloudflare 真實訪客 IP**：修正經 Cloudflare 反向代理時，登入工作階段 IP 紀錄與 OAuth／MCP 限速可能誤將 Cloudflare 邊緣節點當成使用者的問題；只有當連線上一跳屬於 Cloudflare 公告網段時，才採用 `CF-Connecting-IP`，其餘情況維持使用實際連線端 IP。
+- **IP 解析回歸測試**：新增測試覆蓋 Cloudflare IPv4／IPv6、非可信代理、缺少或無效的來源 IP Header 與 IP 網段邊界。
+- **可重現的 Docker 建置**：依賴安裝改用 `npm ci`，移除重複執行的 Prisma Client 產生步驟與已退役 LibreOffice 的舊 CI 檢查，保留現行測試、容器健康檢查及部署流程。
+- **開發依賴更新**：將 TypeScript 從 `5.9.3` 升級至 `6.0.3`，同步保留 `package-lock.json` 一致性。
+
+相關變更：[TypeScript 升級 PR #75](https://github.com/richard880502/neverland-erp/pull/75) · [Docker／CI 改善 PR #96](https://github.com/richard880502/neverland-erp/pull/96) · [Cloudflare 訪客 IP 修正 PR #97](https://github.com/richard880502/neverland-erp/pull/97)。
+
+本版未新增資料庫遷移；發版前仍需通過 `main` 的 CI、安全性、Docker、CodeQL 與 Coolify 檢查。
 
 ## v3.2.0 — 深淺色模式與介面細節修補
 
@@ -104,11 +115,11 @@ npm run build
 
 PR 的 GitHub Actions CI 同時執行相依性安全檢查與 Docker 建置／健康檢查；正式部署由 Coolify 工作流程追蹤。財務 Excel 匯入的 Python parser 也保留靜態檢查。
 
-**v3.2.0 發版方式**：當 `main` 的 CI、安全性、Docker 及 Coolify 檢查通過後，在 GitHub **Actions → Publish release → Run workflow** 選擇 `main`，輸入 `v3.2.0`。工作流程會核對 `package.json`、`package-lock.json`、README 的版本說明及必要檢查，再建立 Git Tag／GitHub Release；**合併或部署不會自動發布 Release**。
+**v3.2.1 發版方式**：當 `main` 的 CI、安全性、Docker 及 Coolify 檢查通過後，在 GitHub **Actions → Publish release → Run workflow** 選擇 `main`，輸入 `v3.2.1`。工作流程會核對 `package.json`、`package-lock.json`、README 的版本說明及必要檢查，再建立 Git Tag／GitHub Release；**合併或部署不會自動發布 Release**。
 
 ## 文件與歷史
 
-- [歷史版本與完整更新紀錄 — GitHub Releases](https://github.com/richard880502/neverland-erp/releases)（v3.1.0 及之前的版本）
+- [歷史版本與完整更新紀錄 — GitHub Releases](https://github.com/richard880502/neverland-erp/releases)（v3.2.0 及之前的版本）
 - [MCP / OAuth 設定與工具說明](docs/mcp-chatgpt-codex.md)
 - [MCP ↔ API 對齊測試規範](docs/mcp-api-parity.md)
 - [財務模組技術文件](docs/finance/README.md)
