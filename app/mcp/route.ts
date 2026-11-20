@@ -3,6 +3,7 @@ import { version } from "@/package.json";
 import { authenticateMcpAccessToken, baseUrl, requireHttpsInProduction, type McpAuth } from "@/lib/mcp/oauth";
 import { callMcpTool, listMcpTools } from "@/lib/mcp/registry";
 import { takeRateLimit } from "@/lib/mcp/rate-limit";
+import { getClientIp } from "@/lib/client-ip";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -194,7 +195,7 @@ export async function POST(request: Request) {
   try {
     requireHttpsInProduction(request);
     if (!validateOrigin(request)) return NextResponse.json({ error: "Invalid Origin" }, { status: 403 });
-    const ip = request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || request.headers.get("x-real-ip") || "unknown";
+    const ip = getClientIp(request) || "unknown";
     const rate = takeRateLimit(`mcp:${ip}`);
     if (!rate.allowed) return NextResponse.json({ error: "rate_limited" }, { status: 429, headers: { "Retry-After": String(rate.retryAfter) } });
     const header = request.headers.get("authorization");

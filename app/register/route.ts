@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { registerDynamicClient, requireHttpsInProduction } from "@/lib/mcp/oauth";
 import { takeRateLimit } from "@/lib/mcp/rate-limit";
+import { getClientIp } from "@/lib/client-ip";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -17,7 +18,7 @@ const schema = z.object({
 export async function POST(request: Request) {
   try {
     requireHttpsInProduction(request);
-    const ip = request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || request.headers.get("x-real-ip") || "unknown";
+    const ip = getClientIp(request) || "unknown";
     const rate = takeRateLimit(`register:${ip}`, 10, 60 * 60_000);
     if (!rate.allowed) return NextResponse.json({ error: "invalid_client_metadata", error_description: "Too many client registration requests" }, { status: 429, headers: { "Retry-After": String(rate.retryAfter) } });
     const input = schema.safeParse(await request.json());
