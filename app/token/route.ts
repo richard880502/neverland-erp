@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { baseUrl, exchangeAuthorizationCode, getClient, requireHttpsInProduction, rotateRefreshToken } from "@/lib/mcp/oauth";
 import { takeRateLimit } from "@/lib/mcp/rate-limit";
+import { getClientIp } from "@/lib/client-ip";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -21,7 +22,7 @@ function tokenResponse(body: Awaited<ReturnType<typeof exchangeAuthorizationCode
 
 export async function POST(request: Request) {
   try {
-    requireHttpsInProduction(request); const ip = request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || "unknown"; const rate = takeRateLimit(`token:${ip}`, 30); if (!rate.allowed) return oauthError("slow_down", "Too many requests", 429);
+    requireHttpsInProduction(request); const ip = getClientIp(request) || "unknown"; const rate = takeRateLimit(`token:${ip}`, 30); if (!rate.allowed) return oauthError("slow_down", "Too many requests", 429);
     const form = await request.formData(); const grantType = form.get("grant_type"); const formClientId = form.get("client_id");
     const clientId = typeof formClientId === "string" && formClientId ? formClientId : basicClientId(request);
     if (!clientId) { console.warn("oauth_token_rejected", { reason: "missing_client_id", grantType }); return oauthError("invalid_request", "client_id is required"); } const audience = `${baseUrl(request)}/mcp`;

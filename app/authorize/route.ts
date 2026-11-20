@@ -3,6 +3,7 @@ import { assertSameOrigin, getAuthContext } from "@/lib/auth";
 import { baseUrl, issueAuthorizationCode, validateAuthorizationRequest } from "@/lib/mcp/oauth";
 import { consentScopeOptions, selectedConsentScopes } from "@/lib/mcp/authorization-scopes";
 import { takeRateLimit } from "@/lib/mcp/rate-limit";
+import { getClientIp } from "@/lib/client-ip";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -48,7 +49,7 @@ function queryFromForm(form: FormData) {
 
 export async function GET(request: Request) {
   try {
-    const ip = request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || "unknown";
+    const ip = getClientIp(request) || "unknown";
     if (!takeRateLimit(`authorize:${ip}`, 30).allowed) return page("請稍後再試", "<h1>請稍後再試</h1><p>授權請求次數過多。</p>", 429);
     const auth = await getAuthContext();
     if (!auth) return NextResponse.redirect(new URL(`/login?returnTo=${encodeURIComponent(`${new URL(request.url).pathname}${new URL(request.url).search}`)}`, baseUrl(request)));
@@ -67,7 +68,7 @@ export async function GET(request: Request) {
 
 export async function POST(request: Request) {
   try {
-    const ip = request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || "unknown";
+    const ip = getClientIp(request) || "unknown";
     if (!takeRateLimit(`authorize:${ip}`, 30).allowed) return page("請稍後再試", "<h1>請稍後再試</h1><p>授權請求次數過多。</p>", 429);
     assertSameOrigin(request);
     const auth = await getAuthContext();

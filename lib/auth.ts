@@ -2,6 +2,7 @@ import { createHash, randomBytes } from "crypto";
 import { cookies } from "next/headers";
 import type { UserRole } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
+import { getClientIp } from "@/lib/client-ip";
 
 const COOKIE_NAME = "stockflow_session";
 const MFA_COOKIE_NAME = "stockflow_mfa_challenge";
@@ -10,7 +11,7 @@ const MFA_CHALLENGE_MINUTES = 5;
 
 export function clientIp(request?: Request) {
   if (!request) return null;
-  return request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || request.headers.get("x-real-ip") || null;
+  return getClientIp(request);
 }
 
 function tokenHash(token: string) {
