@@ -24,7 +24,7 @@
     "@prisma/adapter-pg": "^7.10.1",
     "@prisma/client": "7.10.1",
     "bcryptjs": "3.0.3",
-    "googleapis": "^186.0.0",
+    "googleapis": "^190.0.0",
     "lucide-react": "1.70.0",
     "next": "16.4.5",
     "otplib": "13.6.0",
