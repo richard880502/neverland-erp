@@ -6,6 +6,7 @@ import {
   billingCreateSchema,
   billingPreviewSchema,
   createBillingStatement,
+  previewBillingFreight,
   previewBillingStatement,
   voidBillingStatement,
 } from "@/lib/services/billing";
@@ -245,6 +246,7 @@ async function resolveCreateInput(raw: z.infer<typeof mcpBillingCreateSchema>) {
     if (item.sku && item.productId && product.sku !== item.sku) throw new Error(`productId 與 SKU 不一致：${item.sku}`);
     return { productId: product.id, quantity: item.quantity };
   });
+  const { freightSnapshot } = await previewBillingFreight(raw);
   const input = billingCreateSchema.parse({
     channelId: raw.channelId,
     periodStart: raw.periodStart,
@@ -253,6 +255,7 @@ async function resolveCreateInput(raw: z.infer<typeof mcpBillingCreateSchema>) {
     settlementRate: raw.settlementRate,
     taxRate: raw.taxRate,
     shippingFee: raw.shippingFee,
+    freightSnapshot,
     note: raw.note ?? null,
     items: normalizedItems,
   });

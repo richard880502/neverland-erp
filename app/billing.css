@@ -93,3 +93,112 @@
 
 /* Direct PDF/XLSX downloads were retired in #84; guide staff to Google Sheets. */
 .billing-export-hint { margin: 6px 0 0; font-size: 12px; color: var(--text-muted, #71717a); }
+
+/* Dealer shipment notes */
+.shipment-freight { display: grid; gap: 10px; }
+.shipment-freight-presets { display: flex; flex-wrap: wrap; gap: 6px; }
+.shipment-freight-presets .btn { padding: 6px 10px; font-size: 11px; }
+.shipment-actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-top: 12px; }
+.shipment-actions .billing-create-button { flex: 1; }
+.shipment-row-actions { display: flex; flex-wrap: wrap; gap: 6px; justify-content: flex-end; }
+.shipment-row-actions .btn { padding: 6px 9px; font-size: 11px; gap: 5px; white-space: nowrap; }
+.shipment-filter { display: flex; gap: 6px; }
+.shipment-filter .btn { padding: 6px 12px; font-size: 11px; }
+.shipment-freight-row td { background: var(--surface-muted, #f7f6f1); }
+.shipment-draft-products { margin-top: 12px; }
+.shipment-draft-products-header { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px; }
+.shipment-draft-products-header > div, .shipment-draft-lines li > div { display: grid; gap: 3px; min-width: 0; }
+.shipment-draft-products-header small, .shipment-draft-lines small, .shipment-draft-products-empty { color: var(--muted); font-size: 12px; }
+.shipment-draft-products-empty { margin: 12px 0 0; }
+.shipment-draft-lines { margin: 10px 0 0; padding: 0; list-style: none; }
+.shipment-draft-lines li { display: grid; grid-template-columns: minmax(0, 1fr) auto 34px; gap: 10px; align-items: center; padding: 8px 0; border-bottom: 1px solid var(--line); font-size: 13px; overflow-wrap: anywhere; }
+.shipment-draft-lines .shipment-picker-icon { width: 34px; height: 34px; }
+
+.shipment-picker {
+  width: min(900px, calc(100vw - 40px));
+  height: min(740px, calc(100dvh - 40px));
+  max-width: none;
+  max-height: none;
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  overflow: hidden;
+  color: var(--ink);
+  background: var(--ui-bg-base, var(--panel));
+  box-shadow: 0 24px 90px rgb(0 0 0 / .25);
+}
+.shipment-picker::backdrop { background: rgb(12 14 17 / .50); }
+.shipment-picker-layout { height: 100%; min-height: 0; display: grid; grid-template-rows: auto auto minmax(0, 1fr) auto; }
+.shipment-picker-header, .shipment-picker-footer { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 16px 24px; }
+.shipment-picker-header { border-bottom: 1px solid var(--line); }
+.shipment-picker-header h2 { margin: 0 0 4px; font-size: 23px; letter-spacing: -.025em; line-height: 1.25; }
+.shipment-picker-header p { margin: 0; color: var(--muted); font-size: 13px; overflow-wrap: anywhere; }
+.shipment-picker-icon { display: inline-grid; width: 40px; height: 40px; flex: none; place-items: center; padding: 0; border: 1px solid var(--line); border-radius: 8px; color: var(--muted); background: transparent; cursor: pointer; }
+.shipment-picker-icon:hover:not(:disabled), .shipment-picker-stepper button:hover:not(:disabled) { color: var(--ink); background: var(--ui-bg-component-hover, var(--paper)); }
+.shipment-picker-controls { display: grid; gap: 13px; padding: 14px 24px; border-bottom: 1px solid var(--line); }
+.shipment-deal-options { display: flex; gap: 9px; min-width: 0; margin: 0; padding: 0; border: 0; }
+.shipment-deal-options legend { padding: 0; margin-bottom: 7px; font-size: 13px; font-weight: 700; }
+.shipment-deal-options legend span { margin-left: 6px; color: var(--muted); font-size: 11px; font-weight: 400; }
+.shipment-deal-option { display: flex; flex: 1; align-items: center; gap: 9px; min-width: 0; padding: 9px 12px; border: 1px solid var(--line); border-radius: 9px; cursor: pointer; }
+.shipment-deal-option:has(:checked), .shipment-picker-variant[data-selected="true"] { border-color: var(--ui-border-interactive, var(--orange)); background: color-mix(in srgb, var(--ui-fg-interactive, var(--orange)) 8%, var(--ui-bg-base, var(--panel))); }
+.shipment-deal-option input { flex: none; width: 16px; height: 16px; margin: 0; accent-color: var(--ui-fg-interactive, var(--orange)); }
+.shipment-deal-option span { display: grid; gap: 2px; }
+.shipment-deal-option strong { font-size: 14px; }
+.shipment-deal-option small { color: var(--muted); font-size: 12px; }
+.shipment-picker-toolbar { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; }
+.shipment-picker-search, .shipment-picker-selected { display: flex; align-items: center; gap: 8px; min-height: 43px; padding: 0 12px; border: 1px solid var(--line); border-radius: 8px; color: var(--muted); background: var(--ui-bg-base, var(--panel)); }
+.shipment-picker-search:focus-within { outline: 2px solid var(--ui-border-interactive, var(--orange)); outline-offset: -2px; }
+.shipment-picker-search svg { flex: none; }
+.shipment-picker-search input { width: 100%; min-width: 0; padding: 8px 0; border: 0; outline: 0; color: var(--ink); background: transparent; font-size: 16px; }
+.shipment-picker-selected { color: var(--ink); font-size: 12px; white-space: nowrap; cursor: pointer; }
+.shipment-picker-selected[aria-pressed="true"] { border-color: var(--ui-border-interactive, var(--orange)); color: var(--ui-fg-interactive, var(--orange)); }
+.shipment-picker-copy { font-size: 12px; }
+.shipment-picker-copy summary { display: flex; align-items: center; gap: 6px; width: fit-content; min-height: 26px; list-style: none; color: var(--ui-fg-interactive, var(--ink)); cursor: pointer; }
+.shipment-picker-copy summary::-webkit-details-marker { display: none; }
+.shipment-picker-copy-fields { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 8px; margin-top: 5px; }
+.shipment-picker-copy-fields :is(.select, .btn) { min-height: 38px; }
+.shipment-picker-copy p { margin: 6px 0 0; color: var(--muted); }
+.shipment-picker-copy-message:not(:empty) { margin-top: 5px; }
+.shipment-picker-catalog { min-height: 0; overflow: auto; overflow-anchor: none; overscroll-behavior: contain; padding: 16px 24px 22px; background: var(--ui-bg-subtle, var(--paper)); }
+.shipment-picker-group + .shipment-picker-group { margin-top: 17px; }
+.shipment-picker-group h3 { margin: 0 0 8px; font-size: 14px; font-weight: 700; overflow-wrap: anywhere; }
+.shipment-picker-variants { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 183px), 1fr)); gap: 8px; }
+.shipment-picker-variant { display: grid; gap: 7px; min-width: 0; padding: 10px; border: 1px solid var(--line); border-radius: 10px; background: var(--ui-bg-base, var(--panel)); }
+.shipment-picker-variant-heading, .shipment-picker-variant-details { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 4px 7px; min-width: 0; overflow-wrap: anywhere; }
+.shipment-picker-variant-heading strong { font-size: 14px; }
+.shipment-picker-variant-heading span, .shipment-picker-variant-details span { color: var(--muted); font-size: 11px; }
+.shipment-picker-variant-details strong { font-size: 12px; }
+.shipment-picker-variant-details .shipment-picker-warning { color: var(--ui-fg-warning, #87532a); font-weight: 650; }
+.shipment-picker-stepper { display: grid; grid-template-columns: 39px minmax(0, 1fr) 39px; min-width: 0; border: 1px solid var(--line); border-radius: 7px; background: var(--ui-bg-base, var(--panel)); }
+.shipment-picker-stepper button, .shipment-picker-stepper input { height: 39px; min-width: 0; margin: 0; padding: 0; border: 0; color: var(--ink); background: transparent; }
+.shipment-picker-stepper button { display: grid; place-items: center; border-radius: 6px; cursor: pointer; }
+.shipment-picker-stepper button:disabled, .shipment-picker-icon:disabled { opacity: .45; cursor: default; }
+.shipment-picker-stepper input { width: 100%; border-inline: 1px solid var(--line); text-align: center; font-size: 16px; font-variant-numeric: tabular-nums; appearance: textfield; }
+.shipment-picker-stepper input::-webkit-inner-spin-button, .shipment-picker-stepper input::-webkit-outer-spin-button { appearance: none; }
+.shipment-picker :is(button, input):focus-visible { outline: 2px solid var(--ui-border-interactive, var(--orange)); outline-offset: -2px; }
+.shipment-picker-search input:focus-visible { outline: none; }
+.shipment-picker-empty { display: grid; justify-items: center; align-content: center; gap: 8px; height: 100%; min-height: 85px; text-align: center; color: var(--muted); font-size: 13px; }
+.shipment-picker-footer { border-top: 1px solid var(--line); }
+.shipment-picker-total { display: grid; gap: 3px; font-variant-numeric: tabular-nums; }
+.shipment-picker-total span, .shipment-picker-total small { color: var(--muted); font-size: 12px; }
+.shipment-picker-total strong { color: var(--ui-fg-interactive, var(--ink)); font-size: 20px; }
+.shipment-picker-actions { display: flex; align-items: center; gap: 8px; }
+
+@media (max-width: 600px) {
+  .shipment-picker { width: calc(100vw - 16px); height: calc(100dvh - 16px); border-radius: 13px; }
+  .shipment-picker-header, .shipment-picker-footer, .shipment-picker-controls, .shipment-picker-catalog { padding-inline: 12px; }
+  .shipment-picker-header, .shipment-picker-footer { padding-block: 10px; }
+  .shipment-picker-header h2 { font-size: 19px; }
+  .shipment-picker-variants { grid-template-columns: repeat(auto-fill, minmax(min(100%, 141px), 1fr)); }
+  .shipment-picker-actions, .shipment-picker-footer { gap: 6px; }
+  .shipment-picker-actions .btn { min-height: 42px; padding-inline: 9px; white-space: nowrap; }
+  .shipment-picker-total strong { font-size: 17px; }
+}
+@media (max-height: 640px) {
+  .shipment-picker { overflow-y: auto; }
+  .shipment-picker-layout { min-height: min(500px, 140dvh); }
+}
+@media (max-width: 760px) {
+  .shipment-freight .billing-three-col { grid-template-columns: 1fr; }
+  .shipment-row-actions { justify-content: flex-start; }
+}
