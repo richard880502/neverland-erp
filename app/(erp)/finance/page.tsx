@@ -1,4 +1,5 @@
 import { getCurrentUser } from "@/lib/auth";
+import { measureErpLoad } from "@/lib/erp-timing";
 import { prisma } from "@/lib/prisma";
 import { FinanceManager } from "@/components/FinanceManager";
 import { FinanceOverview } from "@/components/FinanceOverview";
@@ -85,17 +86,17 @@ export default async function FinancePage({ searchParams }: { searchParams: Prom
 
   const [user, transactions, categories, products, channels, dashboard] = await Promise.all([
     getCurrentUser(),
-    listFinanceTransactions({ start: period.startDate, end: period.endDate, take: 500 }),
+    measureErpLoad("finance.transactions", () => listFinanceTransactions({ start: period.startDate, end: period.endDate, take: 500 })),
     listFinanceCategories(),
     prisma.product.findMany({ where: { active: true }, orderBy: { sku: "asc" }, select: { id: true, sku: true, name: true, size: true } }),
     prisma.channel.findMany({ where: { active: true }, orderBy: { name: "asc" }, select: { id: true, name: true, type: true } }),
-    getFinanceDashboardByDates(period.startDate, period.endDate),
+    measureErpLoad("finance.dashboard", () => getFinanceDashboardByDates(period.startDate, period.endDate)),
   ]);
 
-  const sourceRefs = transactions.length ? await prisma.financeTransaction.findMany({
+  const sourceRefs = transactions.length ? await measureErpLoad("finance.source-refs", () => prisma.financeTransaction.findMany({
     where: { id: { in: transactions.map((item) => item.id) } },
     select: { id: true, sourceRef: true },
-  }) : [];
+  })) : [];
   const sourceRefById = new Map(sourceRefs.map((item) => [item.id, item.sourceRef]));
   const periodDescription = `目前顯示 ${period.startDate} ～ ${period.endDate}（${period.label}）；損益、排行與查帳都使用同一日期區間。`;
 

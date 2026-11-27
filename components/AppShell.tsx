@@ -1,9 +1,9 @@
 "use client";
 
-import Link from "next/link";
+import Link, { useLinkStatus } from "next/link";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { usePathname } from "next/navigation";
-import { BarChart3, Bot, Boxes, CircleDollarSign, DatabaseZap, KeyRound, LogOut, PackagePlus, ReceiptText, Route, ShieldCheck, ShoppingBag, Users } from "lucide-react";
+import { BarChart3, Bot, Boxes, CircleDollarSign, DatabaseZap, KeyRound, LoaderCircle, LogOut, PackagePlus, ReceiptText, Route, ShieldCheck, ShoppingBag, Users } from "lucide-react";
 
 const workspaceLinks = [
   { href: "/", label: "營運儀表板", icon: BarChart3 },
@@ -15,6 +15,14 @@ const workspaceLinks = [
   { href: "/channels", label: "通路主檔", icon: PackagePlus },
 ];
 
+const settingsLinks = [
+  { href: "/account", label: "帳號與安全", icon: ShieldCheck },
+  { href: "/users", label: "使用者控管", icon: Users, adminOnly: true },
+  { href: "/settings/sync", label: "Google Sheet 同步", icon: DatabaseZap, adminOnly: true },
+  { href: "/settings/mcp", label: "AI Assistants / MCP", icon: Bot },
+  { href: "/settings/api-keys", label: "API Key 管理", icon: KeyRound, adminOnly: true },
+];
+
 const roleLabels = { ADMIN: "管理員", STAFF: "庫存人員", VIEWER: "檢視者" } as const;
 
 function activeFor(pathname: string, href: string) {
@@ -23,14 +31,7 @@ function activeFor(pathname: string, href: string) {
 }
 
 function pageLabel(pathname: string) {
-  const allLinks = [
-    ...workspaceLinks,
-    { href: "/account", label: "帳號與安全" },
-    { href: "/users", label: "使用者控管" },
-    { href: "/settings/sync", label: "Google Sheet 同步" },
-    { href: "/settings/mcp", label: "AI Assistants / MCP" },
-    { href: "/settings/api-keys", label: "API Key 管理" },
-  ];
+  const allLinks = [...workspaceLinks, ...settingsLinks];
   return allLinks.find((item) => activeFor(pathname, item.href))?.label ?? "Operations";
 }
 
@@ -42,6 +43,20 @@ function initials(name: string) {
   const words = value.split(/\s+/).filter(Boolean);
   if (words.length > 1) return words.slice(0, 2).map((word) => word[0]).join("").toUpperCase();
   return value.slice(0, 2).toUpperCase();
+}
+
+function PendingNavigation() {
+  const { pending } = useLinkStatus();
+  return pending ? <LoaderCircle className="nav-pending" size={15} aria-hidden="true" /> : null;
+}
+
+function SidebarLink({ item: { href, label, icon: Icon }, path }: { item: typeof workspaceLinks[number]; path: string }) {
+  const active = activeFor(path, href);
+  return (
+    <Link className={active ? "active" : undefined} href={href} aria-current={active ? "page" : undefined}>
+      <Icon size={16} strokeWidth={1.8} />{label}<PendingNavigation />
+    </Link>
+  );
 }
 
 export function AppShell({ user, children }: { user: { name: string; email: string; role: keyof typeof roleLabels }; children: React.ReactNode }) {
@@ -61,19 +76,12 @@ export function AppShell({ user, children }: { user: { name: string; email: stri
         <nav className="nav" aria-label="主要導覽">
           <div className="nav-group">
             <span className="nav-group-label">Workspace</span>
-            {workspaceLinks.map(({ href, label, icon: Icon }) => {
-              const active = activeFor(pathname, href);
-              return <Link className={active ? "active" : undefined} href={href} key={href} aria-current={active ? "page" : undefined}><Icon size={16} strokeWidth={1.8} />{label}</Link>;
-            })}
+            {workspaceLinks.map((item) => <SidebarLink item={item} path={pathname} key={item.href} />)}
           </div>
 
           <div className="nav-group">
             <span className="nav-group-label">Settings</span>
-            <Link className={activeFor(pathname, "/account") ? "active" : undefined} href="/account" aria-current={activeFor(pathname, "/account") ? "page" : undefined}><ShieldCheck size={16} strokeWidth={1.8} />帳號與安全</Link>
-            {user.role === "ADMIN" && <Link className={activeFor(pathname, "/users") ? "active" : undefined} href="/users" aria-current={activeFor(pathname, "/users") ? "page" : undefined}><Users size={16} strokeWidth={1.8} />使用者控管</Link>}
-            {user.role === "ADMIN" && <Link className={activeFor(pathname, "/settings/sync") ? "active" : undefined} href="/settings/sync" aria-current={activeFor(pathname, "/settings/sync") ? "page" : undefined}><DatabaseZap size={16} strokeWidth={1.8} />Google Sheet 同步</Link>}
-            <Link className={activeFor(pathname, "/settings/mcp") ? "active" : undefined} href="/settings/mcp" aria-current={activeFor(pathname, "/settings/mcp") ? "page" : undefined}><Bot size={16} strokeWidth={1.8} />AI Assistants / MCP</Link>
-            {user.role === "ADMIN" && <Link className={activeFor(pathname, "/settings/api-keys") ? "active" : undefined} href="/settings/api-keys" aria-current={activeFor(pathname, "/settings/api-keys") ? "page" : undefined}><KeyRound size={16} strokeWidth={1.8} />API Key 管理</Link>}
+            {settingsLinks.filter((item) => !item.adminOnly || user.role === "ADMIN").map((item) => <SidebarLink item={item} path={pathname} key={item.href} />)}
           </div>
         </nav>
 

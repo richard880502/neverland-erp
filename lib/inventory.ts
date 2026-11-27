@@ -44,7 +44,7 @@ export type MovementForCalc = {
   productId: string;
 };
 
-export function sumInventory(movements: MovementForCalc[]) {
+export function sumInventory(movements: Pick<MovementForCalc, "type" | "quantity">[]) {
   return movements.reduce(
     (sum, movement) => {
       const delta = deltas(movement.type, movement.quantity);
