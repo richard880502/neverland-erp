@@ -5,4 +5,5 @@ node_modules
 *.log
 coverage
 .DS_Store
-work/uploads
+/work/*
+!/work/google-sheet-import.json
