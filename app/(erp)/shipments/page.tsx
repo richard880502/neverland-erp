@@ -29,7 +29,7 @@ export default async function ShipmentsPage() {
     products={products.map((p) => ({ id: p.id, sku: p.sku, name: p.name, size: p.size, listPrice: num(p.listPrice), warehouse: warehouse.get(p.id) ?? 0 }))}
     shipments={shipments.map((s) => ({
       id: s.id, channelId: s.channelId, channel: s.channel.name, kind: s.kind, status: s.status,
-      plannedDate: s.plannedDate ? taipeiDate(s.plannedDate) : "", dispatchedAt: s.dispatchedAt?.toISOString() ?? null,
+      createdDate: taipeiDate(s.createdAt), plannedDate: s.plannedDate ? taipeiDate(s.plannedDate) : "", dispatchedAt: s.dispatchedAt?.toISOString() ?? null,
       recipient: s.recipient ?? "", contactPhone: s.contactPhone ?? "", address: s.address ?? "", note: s.note ?? "", shippingMethod: s.shippingMethod ?? "",
       freight: s.freightActual != null && s.freightPaid != null && s.freightRecoverable != null ? { actual: Number(s.freightActual), paid: Number(s.freightPaid), recoverable: Number(s.freightRecoverable) } : null,
       freightClaimed: claimed.has(`SHIPMENT:${s.id}`),

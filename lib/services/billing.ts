@@ -1,4 +1,4 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { BillingSourceType, Prisma, UserRole } from "@prisma/client";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
@@ -27,6 +27,7 @@ export const billingCreateSchema = z.object({
   settlementRate: z.coerce.number().gt(0).max(1),
   taxRate: z.coerce.number().min(0).max(1),
   shippingFee: z.coerce.number().min(0).max(1_000_000).default(0),
+  freightSnapshot: z.string().regex(/^[a-f0-9]{64}$/).optional(),
   note: z.string().trim().max(1000).optional().nullable(),
   items: z.array(billingItemSchema).min(1).max(200),
   sourceMovementIds: z.array(z.string().min(1)).max(5000).default([]),
@@ -125,7 +126,7 @@ async function getBillableShipping(db: Db, input: BillingPreviewInput, enabled: 
   }
   const all = [...groups.values()];
   const reimbursable = all.filter((group) => group.reimbursable);
-  const freightGroups = await getClaimableFreightGroups(db, input);
+  const { freightGroups, freightSnapshot, hasExplicitFreight } = await previewBillingFreight(input, db);
   const freightFee = roundMoney(freightGroups.reduce((sum, group) => sum + group.amount, 0));
   return {
     fee: roundMoney(all.reduce((sum, group) => sum + group.fee, 0) + freightFee),
@@ -134,13 +135,15 @@ async function getBillableShipping(db: Db, input: BillingPreviewInput, enabled: 
     reimbursableGroupCount: reimbursable.length + freightGroups.length,
     freightFee,
     freightGroups,
+    freightSnapshot,
+    hasExplicitFreight,
   };
 }
 
 /** Explicit freight groups (actual / paid / recoverable) are billed through a
  * unique BillingShippingClaim, so each group is recovered at most once across
  * statements; voiding the statement releases the claim. */
-async function getClaimableFreightGroups(db: Db, input: BillingPreviewInput) {
+export async function previewBillingFreight(input: BillingPreviewInput, db: Db = prisma) {
   const keys = await db.stockMovement.findMany({
     where: {
       channelId: input.channelId,
@@ -153,12 +156,18 @@ async function getClaimableFreightGroups(db: Db, input: BillingPreviewInput) {
     distinct: ["shippingGroupKey"],
   });
   const groupKeys = keys.map((row) => row.shippingGroupKey).filter((key): key is string => Boolean(key));
-  if (!groupKeys.length) return [];
-  const rows = await db.shippingGroup.findMany({
-    where: { key: { in: groupKeys }, channelId: input.channelId, recoverableAmount: { gt: 0 }, claim: { is: null } },
-    orderBy: { createdAt: "asc" },
-  });
-  return rows.map((row) => ({ key: row.key, amount: Number(row.recoverableAmount) }));
+  const rows = groupKeys.length ? await db.shippingGroup.findMany({
+    where: { key: { in: groupKeys }, channelId: input.channelId },
+    select: { key: true, recoverableAmount: true, claim: { select: { groupKey: true } } },
+    orderBy: { key: "asc" },
+  }) : [];
+  const freightGroups = rows
+    .filter((row) => !row.claim && row.recoverableAmount?.gt(0))
+    .map((row) => ({ key: row.key, amount: Number(row.recoverableAmount) }));
+  const freightSnapshot = createHash("sha256")
+    .update(JSON.stringify([input.channelId, input.periodStart, input.periodEnd, freightGroups]))
+    .digest("hex");
+  return { freightGroups, freightSnapshot, hasExplicitFreight: rows.length > 0 };
 }
 
 function groupMovementQuantities(movements: Array<{ productId: string; quantity: number }>) {
@@ -228,6 +237,7 @@ async function buildPreview(db: Db, input: BillingPreviewInput) {
     suggestedReimbursableShippingGroupCount: billableShipping.reimbursableGroupCount,
     recoverableFreightFee: billableShipping.freightFee,
     recoverableFreightGroupCount: billableShipping.freightGroups.length,
+    freightSnapshot: billableShipping.freightSnapshot,
     policy: {
       settlementCycle: channel.settlementCycle,
       billingTrigger: channel.billingTrigger,
@@ -278,6 +288,11 @@ export async function createBillingStatement(input: BillingCreateInput, actor: A
           findUnsettledMovements(tx, input, source.movementType) as Promise<SettlementSource[]>,
           getBillableShipping(tx, input, channel.includeShippingInBilling),
         ]);
+        if (input.freightSnapshot === undefined
+          ? billableShipping.hasExplicitFreight && input.shippingFee > 0
+          : input.freightSnapshot !== billableShipping.freightSnapshot) {
+          throw new Error("代墊運費已變更或已列入請款，請重新整理預覽後再建立");
+        }
         const requestedIds = [...new Set(input.sourceMovementIds)];
         let settlementSources: SettlementSource[] = [];
 

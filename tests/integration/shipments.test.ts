@@ -107,10 +107,16 @@ test("freight splits paid vs recoverable, can be filled in after dispatch, and i
   assert.equal(preview.suggestedReimbursableShippingFee, 200);
 
   const billing = { channelId: channel.id, periodStart: today, periodEnd: today, issuedAt: today, settlementRate: 0.6, taxRate: 0, sourceMovementIds: [], items: [{ productId: product.id, quantity: 1 }] };
-  await assert.rejects(createBillingStatement({ ...billing, shippingFee: 150 }, actor), /不可少於/);
-  const statement = await createBillingStatement({ ...billing, shippingFee: 200 }, actor);
+  const requested = { ...billing, shippingFee: 200, freightSnapshot: preview.freightSnapshot };
+  await assert.rejects(createBillingStatement({ ...requested, shippingFee: 150 }, actor), /不可少於/);
+  const statement = await createBillingStatement(requested, actor);
   assert.equal(await prisma.billingShippingClaim.count({ where: { statementId: statement.id } }), 3);
-  assert.equal((await previewBillingStatement({ channelId: channel.id, periodStart: today, periodEnd: today })).recoverableFreightFee, 0);
+  const refreshed = await previewBillingStatement(billing);
+  assert.equal(refreshed.recoverableFreightFee, 0);
+  // A second browser tab still holding the old preview cannot charge the same freight as a manual fee.
+  await assert.rejects(createBillingStatement(requested, actor), /代墊運費已變更或已列入請款/);
+  await assert.rejects(createBillingStatement({ ...billing, shippingFee: 200 }, actor), /重新整理預覽/);
+  assert.equal(await prisma.billingStatement.count({ where: { channelId: channel.id } }), 1);
   await assert.rejects(updateShipmentFreight(split.id, { freightActual: 120, freightPaid: 120, freightRecoverable: 50 }, actor), /已列入請款單/);
 
   await voidBillingStatement(statement.id, actor);

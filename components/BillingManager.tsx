@@ -46,6 +46,7 @@ type AutofillResult = {
   sourceType: "CONSIGNMENT" | "BUYOUT";
   sourceMovementCount: number;
   sourceMovementIds: string[];
+  freightSnapshot: string;
   suggestedShippingFee: number;
   suggestedShippingGroupCount: number;
   suggestedReimbursableShippingFee: number;
@@ -131,8 +132,10 @@ export function BillingManager({
   const [autofillSourceCount, setAutofillSourceCount] = useState(0);
   const [sourceMovementIds, setSourceMovementIds] = useState<string[]>([]);
   const [autofillVersion, setAutofillVersion] = useState(0);
+  const [freightPreview, setFreightPreview] = useState<{ key: string; snapshot: string } | null>(null);
 
   const channel = channels.find((item) => item.id === channelId) ?? null;
+  const previewKey = JSON.stringify([channelId, periodStart, periodEnd, sourceType, autofillVersion]);
   const productById = useMemo(() => new Map(products.map((product) => [product.id, product])), [products]);
   const settlementRate = Number(settlementPercent) / 100;
   const taxRate = Number(taxPercent) / 100;
@@ -163,6 +166,7 @@ export function BillingManager({
         setRows(nextRows);
         setNextRowId(nextRows.length + 1);
         setSourceMovementIds(result.sourceMovementIds ?? []);
+        setFreightPreview({ key: previewKey, snapshot: result.freightSnapshot });
         setAutofillSourceCount(result.sourceMovementCount);
         const shippingGroups = result.suggestedShippingGroupCount ?? 0;
         const reimbursableGroups = result.suggestedReimbursableShippingGroupCount ?? 0;
@@ -185,7 +189,7 @@ export function BillingManager({
       }
     }, 250);
     return () => { clearTimeout(timer); controller.abort(); };
-  }, [channelId, periodStart, periodEnd, autofillVersion, sourceType]);
+  }, [channelId, periodStart, periodEnd, previewKey, sourceType]);
 
   const previewItems = useMemo(() => {
     const grouped = new Map<string, { product: Product; quantity: number }>();
@@ -210,6 +214,7 @@ export function BillingManager({
   const totalAmount = roundMoney(subtotal + taxAmount + (Number.isFinite(shipping) ? shipping : 0));
   const hasMissingPrice = previewItems.some((item) => item.product.listPrice == null);
   const canCreate = !autofillLoading && !autofillFailed && Boolean(channel)
+    && freightPreview?.key === previewKey
     && periodStart <= periodEnd
     && Number.isFinite(settlementRate) && settlementRate > 0 && settlementRate <= 1
     && Number.isFinite(taxRate) && taxRate >= 0 && taxRate <= 1
@@ -249,7 +254,7 @@ export function BillingManager({
   }
 
   async function createStatement() {
-    if (!canCreate || !channel) return;
+    if (!canCreate || !channel || !freightPreview) return;
     setSaving(true); setMessage("");
     const response = await fetch("/api/billing", {
       method: "POST",
@@ -263,6 +268,7 @@ export function BillingManager({
         settlementRate,
         taxRate,
         shippingFee: shipping,
+        freightSnapshot: freightPreview.snapshot,
         note: note || null,
         sourceMovementIds,
         items: rows.filter((row) => row.productId).map((row) => ({ productId: row.productId, quantity: Number(row.quantity) })),

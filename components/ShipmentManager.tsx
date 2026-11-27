@@ -3,29 +3,30 @@ import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { ExternalLink, FileSpreadsheet, PackageCheck, Pencil, Plus, Trash2, Truck } from "lucide-react";
 import { PageHeader } from "@/components/ui/PageHeader";
+import { ShipmentProductPicker, type ShipmentKind, type ShipmentProduct, type ShipmentSelection } from "@/components/ShipmentProductPicker";
 
 type Channel = {
   id: string; name: string; type: string; contactName: string | null; contactPhone: string | null; billingAddress: string | null;
   settlementRate: number | null; defaultShippingMethod: string | null; defaultShippingFee: number | null; defaultShippingPayer: string | null;
   hasShippingSheet: boolean;
 };
-type Product = { id: string; sku: string; name: string; size: string | null; listPrice: number | null; warehouse: number };
 type Line = { productId: string; sku: string; name: string; size: string | null; quantity: number; retailPrice: number; tradePrice: number };
 type Freight = { actual: number; paid: number; recoverable: number } | null;
 type Shipment = {
-  id: string; channelId: string; channel: string; kind: "BUYOUT" | "CONSIGNMENT"; status: "DRAFT" | "DISPATCHED"; plannedDate: string; dispatchedAt: string | null;
+  id: string; channelId: string; channel: string; kind: ShipmentKind; status: "DRAFT" | "DISPATCHED"; createdDate: string; plannedDate: string; dispatchedAt: string | null;
   recipient: string; contactPhone: string; address: string; note: string; shippingMethod: string; freight: Freight; freightClaimed: boolean; sheetUrl: string | null; lines: Line[];
 };
 type FreightDraft = { actual: string; paid: string; recoverable: string };
 type FormState = {
-  channelId: string; kind: "CONSIGNMENT" | "BUYOUT"; plannedDate: string; recipient: string; contactPhone: string; address: string; note: string;
-  shippingMethod: string; freight: FreightDraft; lines: Array<{ key: number; productId: string; quantity: string }>;
+  channelId: string; kind: ShipmentKind; plannedDate: string; recipient: string; contactPhone: string; address: string; note: string;
+  shippingMethod: string; freight: FreightDraft; lines: ShipmentSelection[];
 };
 
 const shippingMethods = ["7-11 店到店", "全家店到店", "郵局", "黑貓宅急便", "新竹物流", "Lalamove", "親送", "其他"];
 const emptyFreight: FreightDraft = { actual: "", paid: "", recoverable: "" };
-const emptyForm = (): FormState => ({ channelId: "", kind: "CONSIGNMENT", plannedDate: "", recipient: "", contactPhone: "", address: "", note: "", shippingMethod: "", freight: emptyFreight, lines: [{ key: 1, productId: "", quantity: "1" }] });
+const emptyForm = (): FormState => ({ channelId: "", kind: "CONSIGNMENT", plannedDate: "", recipient: "", contactPhone: "", address: "", note: "", shippingMethod: "", freight: emptyFreight, lines: [] });
 const money = (value: number) => `NT$ ${new Intl.NumberFormat("zh-TW", { maximumFractionDigits: 2 }).format(value)}`;
+const percentage = new Intl.NumberFormat("zh-TW", { style: "percent", maximumFractionDigits: 2 });
 const round = (value: number) => Math.round((value + Number.EPSILON) * 100) / 100;
 const freightToDraft = (freight: Freight): FreightDraft => freight ? { actual: String(freight.actual), paid: String(freight.paid), recoverable: String(freight.recoverable) } : emptyFreight;
 
@@ -76,10 +77,10 @@ function FreightEditor({ value, onChange, disabled }: { value: FreightDraft; onC
   </div>;
 }
 
-export function ShipmentManager({ channels, products, shipments, canWrite }: { channels: Channel[]; products: Product[]; shipments: Shipment[]; canWrite: boolean }) {
+export function ShipmentManager({ channels, products, shipments, canWrite }: { channels: Channel[]; products: ShipmentProduct[]; shipments: Shipment[]; canWrite: boolean }) {
   const router = useRouter();
   const [form, setForm] = useState<FormState>(emptyForm);
-  const [nextKey, setNextKey] = useState(2);
+  const [pickerOpen, setPickerOpen] = useState(false);
   const [editing, setEditing] = useState<string | null>(null);
   const [freightEditing, setFreightEditing] = useState<{ id: string; value: FreightDraft } | null>(null);
   const [message, setMessage] = useState<{ tone: "error" | "ok"; text: string } | null>(null);
@@ -90,35 +91,42 @@ export function ShipmentManager({ channels, products, shipments, canWrite }: { c
   const productById = useMemo(() => new Map(products.map((product) => [product.id, product])), [products]);
   const rate = form.kind === "BUYOUT" ? 0.5 : channel?.settlementRate ?? null;
   const editingShipment = editing ? shipments.find((item) => item.id === editing) : undefined;
+  const dealLabel = form.kind === "BUYOUT" ? "首批買斷 50%" : rate ? `寄賣 ${percentage.format(rate)}` : "寄賣";
+
+  function pricesFor(product: ShipmentProduct, kind: ShipmentKind) {
+    // Saved drafts keep their price snapshot while channel and deal type are unchanged.
+    const snapshot = editingShipment?.channelId === form.channelId && editingShipment.kind === kind
+      ? editingShipment.lines.find((line) => line.productId === product.id)
+      : undefined;
+    const retail = snapshot?.retailPrice ?? product.listPrice;
+    const dealRate = kind === "BUYOUT" ? 0.5 : channel?.settlementRate;
+    const trade = snapshot?.tradePrice ?? (retail != null && dealRate ? round(retail * dealRate) : null);
+    return { retail, trade };
+  }
+
   const preview = form.lines.flatMap((line) => {
     const product = productById.get(line.productId);
-    const quantity = Number(line.quantity);
-    if (!product || !Number.isInteger(quantity) || quantity <= 0) return [];
-    // Saved drafts keep their price snapshot while channel and deal type are unchanged.
-    const snapshot = editingShipment && editingShipment.channelId === form.channelId && editingShipment.kind === form.kind ? editingShipment.lines.find((item) => item.productId === product.id) : undefined;
-    const retail = snapshot?.retailPrice ?? product.listPrice;
-    const trade = snapshot?.tradePrice ?? (retail != null && rate != null ? round(retail * rate) : null);
-    return [{ product, quantity, retail, trade, short: quantity > product.warehouse }];
+    if (!product) return [];
+    return [{ product, quantity: line.quantity, ...pricesFor(product, form.kind), short: line.quantity > product.warehouse }];
   });
   const totalQuantity = preview.reduce((sum, item) => sum + item.quantity, 0);
   const totalTrade = round(preview.reduce((sum, item) => sum + (item.trade ?? 0) * item.quantity, 0));
   const freightCheck = parseFreight(form.freight);
-  const duplicate = new Set(form.lines.map((line) => line.productId).filter(Boolean)).size !== form.lines.filter((line) => line.productId).length;
-  const missingPrice = preview.some((item) => item.retail == null);
-  const canSave = canWrite && !busy && Boolean(channel) && preview.length === form.lines.length && !duplicate && !missingPrice && rate != null && !freightCheck.error;
+  const missingPrice = preview.some((item) => item.product.listPrice == null);
+  const canSave = canWrite && !busy && Boolean(channel) && preview.length > 0 && preview.length === form.lines.length && !missingPrice && Boolean(rate) && !freightCheck.error;
 
   function selectChannel(id: string) {
     const next = channels.find((item) => item.id === id);
     setForm((current) => ({
       ...current, channelId: id,
-      kind: next?.type === "BUYOUT" ? "BUYOUT" : current.kind,
+      kind: next?.type === "BUYOUT" ? "BUYOUT" : "CONSIGNMENT",
       recipient: next?.contactName ?? "", contactPhone: next?.contactPhone ?? "", address: next?.billingAddress ?? "",
       shippingMethod: next?.defaultShippingMethod ?? current.shippingMethod,
       freight: channelFreightDefaults(next),
     }));
   }
 
-  function resetForm() { setForm(emptyForm()); setNextKey(2); setEditing(null); }
+  function resetForm() { setForm(emptyForm()); setEditing(null); }
 
   async function call(url: string, init: RequestInit, success: string) {
     setBusy(true); setMessage(null);
@@ -137,11 +145,12 @@ export function ShipmentManager({ channels, products, shipments, canWrite }: { c
 
   async function submit(event: React.FormEvent) {
     event.preventDefault();
+    if (!canSave) return;
     const body = {
       channelId: form.channelId, kind: form.kind, plannedDate: form.plannedDate, recipient: form.recipient, contactPhone: form.contactPhone,
       address: form.address, note: form.note, shippingMethod: form.shippingMethod,
       freightActual: freightCheck.freight?.actual ?? null, freightPaid: freightCheck.freight?.paid ?? null, freightRecoverable: freightCheck.freight?.recoverable ?? null,
-      lines: form.lines.map((line) => ({ productId: line.productId, quantity: Number(line.quantity) })),
+      lines: form.lines,
     };
     const result = await call(editing ? `/api/shipments/${editing}` : "/api/shipments", { method: editing ? "PUT" : "POST", body: JSON.stringify(body) }, editing ? "草稿已更新；若已產生出貨表，請再按一次「更新出貨表」。" : "草稿已建立，庫存尚未變動。");
     if (result) resetForm();
@@ -152,9 +161,8 @@ export function ShipmentManager({ channels, products, shipments, canWrite }: { c
     setForm({
       channelId: shipment.channelId, kind: shipment.kind, plannedDate: shipment.plannedDate, recipient: shipment.recipient, contactPhone: shipment.contactPhone,
       address: shipment.address, note: shipment.note, shippingMethod: shipment.shippingMethod, freight: freightToDraft(shipment.freight),
-      lines: shipment.lines.map((line, index) => ({ key: index + 1, productId: line.productId, quantity: String(line.quantity) })),
+      lines: shipment.lines.map(({ productId, quantity }) => ({ productId, quantity })),
     });
-    setNextKey(shipment.lines.length + 1);
     window.scrollTo({ top: 0, behavior: "smooth" });
   }
 
@@ -196,11 +204,26 @@ export function ShipmentManager({ channels, products, shipments, canWrite }: { c
     {canWrite && <form className="billing-create-grid" onSubmit={submit}>
       <div className="panel billing-form-panel">
         <div className="billing-section-head"><span>01 / DRAFT</span><h2>{editing ? "編輯出貨草稿" : "新增出貨草稿"}</h2></div>
-        <div className="billing-two-col">
-          <div className="field"><label>經銷通路</label><select className="select" required value={form.channelId} onChange={(event) => selectChannel(event.target.value)}><option value="">選擇通路</option>{channels.map((item) => <option key={item.id} value={item.id}>{item.name} · {item.type === "CONSIGNMENT" ? "寄賣" : "買斷"}</option>)}</select></div>
-          <div className="field"><label>交易方式</label><select className="select" value={form.kind} onChange={(event) => setForm({ ...form, kind: event.target.value as FormState["kind"] })}>{(!channel || channel.type === "CONSIGNMENT") && <option value="CONSIGNMENT">寄賣{channel?.settlementRate != null ? `（售價 ${Math.round(channel.settlementRate * 100)}%）` : ""}</option>}<option value="BUYOUT">首批買斷（售價 50%）</option></select></div>
+        <div className="field"><label htmlFor="shipment-channel">經銷通路</label><select id="shipment-channel" className="select" required disabled={Boolean(editingShipment?.sheetUrl)} value={form.channelId} onChange={(event) => selectChannel(event.target.value)}><option value="">選擇通路</option>{channels.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></div>
+        <div className="billing-items-editor shipment-draft-products">
+          <div className="shipment-draft-products-header">
+            <div><strong>交易方式與商品</strong>{channel && <small>{dealLabel} · {form.lines.length} 個 SKU · {totalQuantity} 件</small>}</div>
+            <button type="button" className="btn btn-secondary" disabled={!channel || busy} aria-haspopup="dialog" onClick={() => setPickerOpen(true)}>{form.lines.length ? <Pencil size={15} /> : <Plus size={15} />}{form.lines.length ? "選商品／改交易方式" : "選擇商品"}</button>
+          </div>
+          {!form.lines.length && <p className="shipment-draft-products-empty">{channel ? "尚未選擇商品" : "請先選擇經銷通路"}</p>}
+          {form.lines.length > 0 && <ul className="shipment-draft-lines">{form.lines.map((line) => {
+            const product = productById.get(line.productId);
+            const saved = editingShipment?.lines.find((item) => item.productId === line.productId);
+            const label = product?.sku ?? saved?.sku ?? "商品";
+            return <li key={line.productId}>
+              <div><strong>{product?.name ?? saved?.name ?? label}</strong><small>{[product?.size ?? saved?.size, label, !product && "商品已停用"].filter(Boolean).join(" · ")}</small></div>
+              <span>× {line.quantity}</span>
+              <button className="shipment-picker-icon" type="button" aria-label={`移除 ${label}`} disabled={busy} onClick={() => setForm((current) => ({ ...current, lines: current.lines.filter((item) => item.productId !== line.productId) }))}><Trash2 size={15} /></button>
+            </li>;
+          })}</ul>}
+          {channel && form.kind === "CONSIGNMENT" && !rate && <p className="form-error">請在通路主檔設定寄賣比例，或選擇首批買斷。</p>}
+          {preview.length !== form.lines.length && <p className="form-error">請移除已停用的品項後再儲存。</p>}
         </div>
-        {channel && channel.type === "CONSIGNMENT" && form.kind === "CONSIGNMENT" && channel.settlementRate == null && <p className="form-error">此通路尚未設定寄賣結算比例，請先到「通路主檔」設定。</p>}
         {channel && !channel.hasShippingSheet && <p className="billing-hint">此通路尚未設定出貨工作簿與範本頁籤，草稿可以先存，但要到「通路主檔」設定後才能產生試算表。</p>}
         <div className="billing-two-col">
           <div className="field"><label>預計出貨日</label><input className="input" type="date" value={form.plannedDate} onChange={(event) => setForm({ ...form, plannedDate: event.target.value })} /></div>
@@ -211,25 +234,13 @@ export function ShipmentManager({ channels, products, shipments, canWrite }: { c
         <datalist id="shipment-methods">{shippingMethods.map((name) => <option key={name} value={name} />)}</datalist>
         <div className="field"><label>地址</label><input className="input" value={form.address} onChange={(event) => setForm({ ...form, address: event.target.value })} /></div>
 
-        <div className="billing-items-editor">
-          <div className="billing-items-editor-head"><div><span>ITEMS</span><strong>出貨品項</strong></div><div className="billing-items-editor-actions"><button type="button" className="btn btn-secondary" onClick={() => { setForm({ ...form, lines: [...form.lines, { key: nextKey, productId: "", quantity: "1" }] }); setNextKey(nextKey + 1); }}><Plus size={14} />新增品項</button></div></div>
-          {form.lines.map((line) => {
-            const product = productById.get(line.productId);
-            return <div className="billing-item-row" key={line.key}>
-              <div className="field"><label>商品 / SKU{product ? ` · 總倉 ${product.warehouse} 件` : ""}</label><select className="select" required value={line.productId} onChange={(event) => setForm({ ...form, lines: form.lines.map((item) => item.key === line.key ? { ...item, productId: event.target.value } : item) })}><option value="">選擇商品</option>{products.map((item) => <option key={item.id} value={item.id}>{item.sku} · {item.name}{item.size ? ` · ${item.size}` : ""} · 庫存 {item.warehouse}{item.listPrice == null ? " · 未設定售價" : ""}</option>)}</select></div>
-              <div className="field"><label>數量</label><input className="input" type="number" min="1" step="1" required value={line.quantity} onChange={(event) => setForm({ ...form, lines: form.lines.map((item) => item.key === line.key ? { ...item, quantity: event.target.value } : item) })} /></div>
-              <button type="button" className="btn btn-danger billing-remove-item" title="移除品項" disabled={form.lines.length === 1} onClick={() => setForm({ ...form, lines: form.lines.filter((item) => item.key !== line.key) })}><Trash2 size={14} /></button>
-            </div>;
-          })}
-          {duplicate && <p className="form-error">同一商品重複了，請合併數量。</p>}
-        </div>
         <div className="field"><label>備註</label><textarea className="textarea" rows={2} value={form.note} onChange={(event) => setForm({ ...form, note: event.target.value })} /></div>
       </div>
 
       <div className="panel billing-preview-panel">
         <div className="billing-section-head"><span>02 / PREVIEW</span><h2>出貨預覽</h2></div>
         {preview.length === 0 ? <div className="billing-empty"><strong>尚未選擇品項</strong><span>草稿不會占用庫存；確認實際出貨時才會重新檢查總倉數量。</span></div> : <>
-          <div className="billing-preview-meta"><span>{preview.length} 個 SKU</span><span>{totalQuantity} 件</span><span>{form.kind === "BUYOUT" ? "首批買斷 50%" : rate != null ? `寄賣 ${Math.round(rate * 100)}%` : "未設定寄賣比例"}</span>{preview.some((item) => item.short) && <span className="warn">有品項總倉不足</span>}</div>
+          <div className="billing-preview-meta"><span>{preview.length} 個 SKU</span><span>{totalQuantity} 件</span><span>{dealLabel}</span>{preview.some((item) => item.short) && <span className="warn">有品項總倉不足</span>}</div>
           <div className="table-wrap billing-items"><table><thead><tr><th>SKU</th><th>品項</th><th>售價</th><th>{form.kind === "BUYOUT" ? "買斷價" : "寄賣價"}</th><th>數量</th><th>總倉</th></tr></thead><tbody>{preview.map((item) => <tr key={item.product.id}><td className="mono">{item.product.sku}</td><td>{item.product.name}{item.product.size ? ` · ${item.product.size}` : ""}</td><td>{item.retail == null ? "未設定" : money(item.retail)}</td><td>{item.trade == null ? "—" : money(item.trade)}</td><td>{item.quantity}</td><td>{item.short ? <span className="badge warn">{item.product.warehouse}</span> : item.product.warehouse}</td></tr>)}</tbody></table></div>
           {missingPrice && <div className="form-error billing-preview-error">有商品尚未設定建議售價，請先到商品主檔補上。</div>}
         </>}
@@ -248,6 +259,21 @@ export function ShipmentManager({ channels, products, shipments, canWrite }: { c
         </div>
       </div>
     </form>}
+
+    {pickerOpen && channel && <ShipmentProductPicker
+      channel={channel}
+      initialKind={form.kind}
+      initialLines={form.lines}
+      products={products}
+      copySources={shipments.filter((shipment) => shipment.id !== editing && shipment.lines.length).map((shipment) => ({
+        id: shipment.id,
+        label: `${shipment.channel} · ${shipment.plannedDate || shipment.createdDate} · ${shipment.status === "DRAFT" ? "草稿" : "已出貨"} · ${shipment.lines.length} SKU · #${shipment.id.slice(-6).toUpperCase()}`,
+        lines: shipment.lines,
+      }))}
+      getTradePrice={(product, kind) => pricesFor(product, kind).trade}
+      onApply={(kind, lines) => setForm((current) => ({ ...current, kind, lines }))}
+      onDismiss={() => setPickerOpen(false)}
+    />}
 
     <section className="billing-list-section">
       <div className="billing-list-head"><div><span>03 / SHIPMENTS</span><h2>出貨紀錄</h2></div>
