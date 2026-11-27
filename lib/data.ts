@@ -1,22 +1,45 @@
 import { prisma } from "@/lib/prisma";
 import { deltas, isSale, salesSign, sumInventory } from "@/lib/inventory";
+import { measureErpLoad } from "@/lib/erp-timing";
 
 export async function getInventoryRows() {
-  const products = await prisma.product.findMany({
-    where: { active: true },
-    include: { movements: { include: { channel: { select: { id: true, name: true, type: true } } } } },
-    orderBy: [{ name: "asc" }, { size: "asc" }],
-  });
+  const [products, groupedMovements, channels] = await Promise.all([
+    measureErpLoad("inventory.products", () => prisma.product.findMany({
+      where: { active: true },
+      select: { id: true, sku: true, name: true, size: true, imagePath: true, imageThumbPath: true, safetyStock: true },
+      orderBy: [{ name: "asc" }, { size: "asc" }],
+    })),
+    measureErpLoad("inventory.movement-totals", () => prisma.stockMovement.groupBy({
+      by: ["productId", "channelId", "type"],
+      where: { product: { active: true }, quantity: { not: 0 } },
+      _sum: { quantity: true },
+    })),
+    measureErpLoad("inventory.channels", () => prisma.channel.findMany({
+      select: { id: true, name: true, type: true },
+    })),
+  ]);
+  const groupedByProduct = new Map<string, typeof groupedMovements>();
+  for (const movement of groupedMovements) {
+    const rows = groupedByProduct.get(movement.productId) ?? [];
+    rows.push(movement);
+    groupedByProduct.set(movement.productId, rows);
+  }
+  const channelsById = new Map(channels.map((channel) => [channel.id, channel]));
   return products.map((product) => {
-    const totals = sumInventory(product.movements);
+    const movements = groupedByProduct.get(product.id) ?? [];
+    const totals = sumInventory(movements.map((movement) => ({
+      type: movement.type,
+      quantity: movement._sum.quantity ?? 0,
+    })));
     const locationMap = new Map<string, { id: string; name: string; type: string; quantity: number }>();
-    for (const movement of product.movements) {
-      if (!movement.channel) continue;
-      const quantity = deltas(movement.type, movement.quantity).consignment;
-      if (quantity === 0) continue;
-      const current = locationMap.get(movement.channel.id) ?? { ...movement.channel, quantity: 0 };
-      current.quantity += quantity;
-      locationMap.set(movement.channel.id, current);
+    for (const movement of movements) {
+      const channel = movement.channelId === null ? undefined : channelsById.get(movement.channelId);
+      const direction = deltas(movement.type, 1).consignment;
+      if (!channel || direction === 0) continue;
+      // Keep locations whose real movements net to zero, as in the row-by-row ledger.
+      const current = locationMap.get(channel.id) ?? { ...channel, quantity: 0 };
+      current.quantity += direction * (movement._sum.quantity ?? 0);
+      locationMap.set(channel.id, current);
     }
     return {
       id: product.id,
@@ -36,11 +59,15 @@ export async function getInventoryRows() {
 
 export async function getDashboardData() {
   const [inventory, movements] = await Promise.all([
-    getInventoryRows(),
-    prisma.stockMovement.findMany({
-      include: { product: true, channel: true },
+    measureErpLoad("dashboard.inventory", getInventoryRows),
+    measureErpLoad("dashboard.movements", () => prisma.stockMovement.findMany({
+      select: {
+        type: true, quantity: true, unitPrice: true, occurredAt: true, reversedAt: true, reversalOfId: true,
+        product: { select: { name: true } },
+        channel: { select: { id: true, name: true } },
+      },
       orderBy: { occurredAt: "asc" },
-    }),
+    })),
   ]);
   const sales = movements.filter((m) => isSale(m.type));
   const productNames = [...new Set(inventory.map((row) => row.name))].sort((a, b) => a.localeCompare(b, "zh-Hant"));

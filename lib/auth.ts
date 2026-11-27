@@ -1,8 +1,10 @@
 import { createHash, randomBytes } from "crypto";
 import { cookies } from "next/headers";
+import { cache } from "react";
 import type { UserRole } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { getClientIp } from "@/lib/client-ip";
+import { measureErpLoad } from "@/lib/erp-timing";
 
 const COOKIE_NAME = "stockflow_session";
 const MFA_COOKIE_NAME = "stockflow_mfa_challenge";
@@ -93,9 +95,9 @@ export async function getAuthContext() {
   };
 }
 
-export async function getCurrentUser() {
-  return (await getAuthContext())?.user ?? null;
-}
+export const getCurrentUser = cache(async () => {
+  return (await measureErpLoad("auth.session", getAuthContext))?.user ?? null;
+});
 
 export async function requireApiUser(options?: { roles?: UserRole[]; allowPasswordChange?: boolean }) {
   const context = await getAuthContext();

@@ -1,13 +1,14 @@
 import { prisma } from "@/lib/prisma";
 import { ChannelManager } from "@/components/ChannelManager";
 import { getCurrentUser } from "@/lib/auth";
+import { measureErpLoad } from "@/lib/erp-timing";
 
 export default async function ChannelsPage() {
   const [channels, user] = await Promise.all([
-    prisma.channel.findMany({
+    measureErpLoad("channels.list", () => prisma.channel.findMany({
       orderBy: [{ type: "asc" }, { name: "asc" }],
       include: { _count: { select: { movements: true, billingStatements: true } } },
-    }),
+    })),
     getCurrentUser(),
   ]);
   const canWrite = user?.role !== "VIEWER";

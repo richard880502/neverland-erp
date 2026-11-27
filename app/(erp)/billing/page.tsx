@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/auth";
+import { measureErpLoad } from "@/lib/erp-timing";
 import { BillingManager } from "@/components/BillingManager";
 import { DirectSettlementManager } from "@/components/DirectSettlementManager";
 
@@ -27,9 +28,9 @@ export default async function BillingPage() {
   const [channels, directChannels, directSettlements, products, statements, user] = await Promise.all([
     prisma.channel.findMany({ where: { active: true, type: { in: ["CONSIGNMENT", "BUYOUT"] } }, orderBy: { name: "asc" } }),
     prisma.channel.findMany({ where: { active: true, type: "DIRECT" }, orderBy: { name: "asc" } }),
-    prisma.directSettlement.findMany({ orderBy: [{ settledAt: "desc" }, { createdAt: "desc" }], take: 200 }),
+    measureErpLoad("billing.direct-settlements", () => prisma.directSettlement.findMany({ orderBy: [{ settledAt: "desc" }, { createdAt: "desc" }], take: 200 })),
     prisma.product.findMany({ where: { active: true }, orderBy: { sku: "asc" }, select: { id: true, sku: true, name: true, size: true, listPrice: true } }),
-    prisma.billingStatement.findMany({ include: { channel: true }, orderBy: [{ issuedAt: "desc" }, { createdAt: "desc" }], take: 200 }),
+    measureErpLoad("billing.statements", () => prisma.billingStatement.findMany({ include: { channel: true }, orderBy: [{ issuedAt: "desc" }, { createdAt: "desc" }], take: 200 })),
     getCurrentUser(),
   ]);
   const stats = statements.reduce((acc, statement) => {
