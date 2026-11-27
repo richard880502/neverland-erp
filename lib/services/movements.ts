@@ -21,6 +21,9 @@ export const movementInputSchema = z.object({
   shippingFee: z.union([z.literal(""), z.coerce.number().min(0).max(1_000_000)]).optional(),
   shippingPayer: z.union([z.literal(""), shippingPayerSchema]).optional(),
   shippingGroupKey: z.string().trim().max(120).optional(),
+  shippingActual: z.coerce.number().min(0).max(1000000).optional(),
+  shippingPaid: z.coerce.number().min(0).max(1000000).optional(),
+  shippingRecoverable: z.coerce.number().min(0).max(1000000).optional(),
 });
 
 export const consignmentDirectFulfillmentSchema = z.object({
@@ -83,7 +86,7 @@ function isRetryableSerializableError(error: unknown) {
     || failure.cause?.kind === "TransactionWriteConflict";
 }
 
-async function serializableTransaction<T>(work: (tx: Prisma.TransactionClient) => Promise<T>): Promise<T> {
+export async function serializableTransaction<T>(work: (tx: Prisma.TransactionClient) => Promise<T>): Promise<T> {
   for (let attempt = 1; attempt <= SERIALIZABLE_RETRY_LIMIT; attempt += 1) {
     try {
       return await prisma.$transaction(work, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
@@ -103,12 +106,50 @@ function hasExplicitShipping(input: MovementInput) {
   );
 }
 
-async function resolveMovementShipping(tx: Prisma.TransactionClient, input: MovementInput) {
+type ShippingOptions = { skipShippingDefaults?: boolean };
+export type ExplicitFreight = { actual: number; paid: number; recoverable: number };
+
+/** Explicit freight splits one shipment's cost into what the carrier charged,
+ * what Neverland paid, and how much of that payment the dealer owes back. */
+export function explicitFreightOf(input: Pick<MovementInput, "shippingActual" | "shippingPaid" | "shippingRecoverable" | "shippingFee" | "shippingPayer">): ExplicitFreight | null {
+  const values = [input.shippingActual, input.shippingPaid, input.shippingRecoverable];
+  if (values.every((value) => value === undefined)) return null;
+  if (values.some((value) => value === undefined)) throw new Error("明細運費需同時填寫實際運費、我方支付與向通路回收金額");
+  if ((input.shippingFee !== undefined && input.shippingFee !== "") || (input.shippingPayer !== undefined && input.shippingPayer !== "")) throw new Error("明細運費不可與舊版運費 / 運費處理欄位同時使用");
+  const freight = { actual: input.shippingActual!, paid: input.shippingPaid!, recoverable: input.shippingRecoverable! };
+  assertFreight(freight);
+  return freight;
+}
+
+export function assertFreight(freight: ExplicitFreight) {
+  if (freight.paid > freight.actual) throw new Error("我方支付的運費不可超過實際運費");
+  if (freight.recoverable > freight.paid) throw new Error("向通路回收的運費不可超過我方支付金額");
+}
+
+/** Legacy movement columns keep the amount Neverland paid so the existing
+ * Finance expense sync and reports stay correct; recoverable amounts are only
+ * billed through ShippingGroup to avoid double counting. */
+function freightAdjustedInput(input: MovementInput, freight: ExplicitFreight): MovementInput {
+  return { ...input, shippingFee: freight.paid, shippingPayer: freight.paid > 0 ? "COMPANY" : "CHANNEL", shippingActual: undefined, shippingPaid: undefined, shippingRecoverable: undefined };
+}
+
+export async function upsertShippingGroup(tx: Prisma.TransactionClient, key: string, channelId: string, freight: ExplicitFreight, { allowUpdate }: { allowUpdate: boolean }) {
+  const current = await tx.shippingGroup.findUnique({ where: { key }, include: { claim: true } });
+  if (!current) return tx.shippingGroup.create({ data: { key, channelId, actualAmount: freight.actual, paidAmount: freight.paid, recoverableAmount: freight.recoverable } });
+  if (current.channelId !== channelId) throw new Error("同一物流群組不可跨通路");
+  const same = Number(current.actualAmount) === freight.actual && Number(current.paidAmount) === freight.paid && Number(current.recoverableAmount) === freight.recoverable;
+  if (same) return current;
+  if (!allowUpdate) throw new Error("同一物流群組的運費資料不一致");
+  if (current.claim) throw new Error("這筆運費已列入請款單，請先作廢請款單再修改");
+  return tx.shippingGroup.update({ where: { key }, data: { actualAmount: freight.actual, paidAmount: freight.paid, recoverableAmount: freight.recoverable } });
+}
+
+async function resolveMovementShipping(tx: Prisma.TransactionClient, input: MovementInput, options: ShippingOptions = {}) {
   const supportsShipping = SHIPPING_MOVEMENT_TYPES.has(input.type);
   if (!supportsShipping && hasExplicitShipping(input)) throw new Error("這個庫存事件不會產生收送貨物流，請清除物流欄位");
   if (!supportsShipping) return null;
 
-  const defaults = input.channelId
+  const defaults = input.channelId && !options.skipShippingDefaults
     ? (await tx.$queryRaw<ShippingDefaultsRow[]>(Prisma.sql`
         SELECT "defaultShippingMethod", "defaultShippingFee", "defaultShippingPayer"
         FROM "Channel"
@@ -135,7 +176,7 @@ async function resolveMovementShipping(tx: Prisma.TransactionClient, input: Move
   };
 }
 
-async function syncShippingExpense(tx: Prisma.TransactionClient, input: MovementInput, actor: MovementActor, movement: { id: string; occurredAt: Date; channelId: string | null }, productName: string, channelName: string | null, shipping: NonNullable<Awaited<ReturnType<typeof resolveMovementShipping>>>) {
+export async function syncShippingExpense(tx: Prisma.TransactionClient, input: MovementInput, actor: MovementActor, movement: { id: string; occurredAt: Date; channelId: string | null }, productName: string, channelName: string | null, shipping: NonNullable<Awaited<ReturnType<typeof resolveMovementShipping>>>) {
   if (shipping.fee <= 0 || !["COMPANY", "REIMBURSABLE"].includes(shipping.payer ?? "")) return null;
   const sourceRef = `MOVEMENT_SHIPPING:${shipping.groupKey}`;
   const existing = await tx.financeTransaction.findFirst({ where: { sourceRef }, select: { id: true } });
@@ -181,7 +222,7 @@ async function syncShippingExpense(tx: Prisma.TransactionClient, input: Movement
   return financeId;
 }
 
-async function createInventoryMovementInTransaction(tx: Prisma.TransactionClient, input: MovementInput, actor: MovementActor) {
+export async function createInventoryMovementInTransaction(tx: Prisma.TransactionClient, input: MovementInput, actor: MovementActor, options: ShippingOptions = {}) {
   const requiresChannel = ["SHIP", "SALES_RETURN", "CONSIGN_OUT", "CONSIGN_RETURN", "CONSIGN_SOLD", "BUYOUT"].includes(input.type);
   if (requiresChannel && !input.channelId) throw new Error("此事件必須選擇通路");
   if (isSale(input.type) && (input.unitPrice === "" || input.unitPrice == null)) throw new Error("銷售事件請填入銷售單價，才能正確分析營收");
@@ -208,7 +249,17 @@ async function createInventoryMovementInTransaction(tx: Prisma.TransactionClient
       if (atChannel < input.quantity) throw new Error(`${channel?.name} 的寄賣庫存不足，目前只有 ${atChannel} 件`);
     }
 
-    const shipping = await resolveMovementShipping(tx, input);
+    const freight = explicitFreightOf(input);
+    let freightInput = input;
+    if (freight) {
+      if (!SHIPPING_MOVEMENT_TYPES.has(input.type)) throw new Error("這個庫存事件不會產生收送貨物流，請清除物流欄位");
+      if (!channel) throw new Error("明細運費必須指定通路");
+      if (freight.recoverable > 0 && !["CONSIGNMENT", "BUYOUT"].includes(channel.type)) throw new Error("向通路回收運費目前只適用寄賣與買斷通路");
+      const groupKey = input.shippingGroupKey?.trim() || randomUUID();
+      await upsertShippingGroup(tx, groupKey, channel.id, freight, { allowUpdate: false });
+      freightInput = { ...freightAdjustedInput(input, freight), shippingGroupKey: groupKey };
+    }
+    const shipping = await resolveMovementShipping(tx, freightInput, options);
     const created = await tx.stockMovement.create({ data: {
       occurredAt: input.occurredAt ?? new Date(), type: input.type, productId: input.productId, channelId: input.channelId || null,
       quantity: input.quantity, unitPrice: input.unitPrice === "" ? null : input.unitPrice, referenceNo: input.referenceNo || null,
@@ -268,7 +319,8 @@ export async function createInventoryMovementsBatch(inputs: MovementInput[], act
  * service; the MCP confirmation payload includes this snapshot, so changing
  * channel defaults between preview and commit invalidates the old token. */
 export async function previewMovementShipping(input: MovementInput) {
-  const shipping = await prisma.$transaction((tx) => resolveMovementShipping(tx, input));
+  const freight = explicitFreightOf(input);
+  const shipping = await prisma.$transaction((tx) => resolveMovementShipping(tx, freight ? freightAdjustedInput(input, freight) : input));
   const expenseCandidate = Boolean(shipping && shipping.fee > 0 && ["COMPANY", "REIMBURSABLE"].includes(shipping.payer ?? ""));
   const existingExpense = expenseCandidate && input.shippingGroupKey
     ? await prisma.financeTransaction.findFirst({
@@ -280,6 +332,7 @@ export async function previewMovementShipping(input: MovementInput) {
     method: shipping?.method ?? null,
     fee: shipping?.fee ?? 0,
     payer: shipping?.payer ?? null,
+    freight,
     willCreateExpense: expenseCandidate && !existingExpense,
     expenseAmount: expenseCandidate && !existingExpense ? shipping!.fee : 0,
     existingExpenseId: existingExpense?.id ?? null,
@@ -332,6 +385,8 @@ export async function reverseInventoryMovement(id: string, actor: MovementActor)
   return serializableTransaction(async (tx) => {
     const original = await tx.stockMovement.findUnique({ where: { id }, include: { reversal: true, channel: true } });
     if (!original) throw new Error("找不到這筆異動");
+    const shipmentLine = await tx.shipmentLine.findUnique({ where: { movementId: id } });
+    if (shipmentLine) throw new Error("出貨單的庫存異動不可單獨沖銷，請先處理整張出貨單的修正流程");
     if (original.reversal || original.reversedAt || original.reversalOfId) throw new Error("這筆異動已沖銷或不可再次沖銷");
 
     const [billingLock, directLock] = await Promise.all([

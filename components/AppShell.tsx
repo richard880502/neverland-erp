@@ -9,6 +9,7 @@ const workspaceLinks = [
   { href: "/", label: "營運儀表板", icon: BarChart3 },
   { href: "/inventory", label: "即時庫存", icon: Boxes },
   { href: "/movements", label: "庫存異動", icon: Route },
+  { href: "/shipments", label: "經銷出貨單", icon: PackagePlus },
   { href: "/billing", label: "請款管理", icon: ReceiptText },
   { href: "/finance", label: "財務管理", icon: CircleDollarSign },
   { href: "/products", label: "商品主檔", icon: ShoppingBag },

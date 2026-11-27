@@ -24,6 +24,8 @@ const updateSchema = z.object({
   billingWithinDays: z.number().int().min(0).max(365).nullable().optional(),
   includeShippingInBilling: z.boolean().optional(),
   requiresSalesInvoice: z.boolean().optional(),
+  shippingWorkbookId: z.string().trim().max(200).nullable().optional(),
+  shippingTemplateTab: z.string().trim().max(100).nullable().optional(),
   defaultShippingMethod: z.string().trim().max(120).nullable().optional(),
   defaultShippingFee: z.number().min(0).max(1_000_000).nullable().optional(),
   defaultShippingPayer: shippingPayerSchema.nullable().optional(),

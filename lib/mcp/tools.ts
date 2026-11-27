@@ -26,12 +26,18 @@ const shippingProperties = {
   shippingFee: { type: "number", minimum: 0, maximum: 1000000, description: "每個物流群組的總運費（不是每件運費）" },
   shippingPayer: { type: "string", enum: shippingPayer },
   shippingGroupKey: { type: "string", maxLength: 120, description: "同一箱/同批 SKU 使用共同值以避免重複運費；批次工具會自動建立，不需填寫" },
+  shippingActual: { type: "number", minimum: 0, maximum: 1000000, description: "明細運費：物流實際收費。三個明細欄位需同時填寫，且不可與 shippingFee / shippingPayer 併用" },
+  shippingPaid: { type: "number", minimum: 0, maximum: 1000000, description: "明細運費：Neverland 實際支付（記入 Finance 支出），不可超過 shippingActual" },
+  shippingRecoverable: { type: "number", minimum: 0, maximum: 1000000, description: "明細運費：之後向寄賣/買斷通路請款回收的金額，不可超過 shippingPaid；同一物流群組只會請款一次" },
 };
 const shippingInput = {
   shippingMethod: z.string().trim().max(120).optional(),
   shippingFee: z.coerce.number().min(0).max(1_000_000).optional(),
   shippingPayer: z.enum(["COMPANY", "REIMBURSABLE", "CUSTOMER", "CHANNEL", "SUPPLIER"]).optional(),
   shippingGroupKey: z.string().trim().min(1).max(120).optional(),
+  shippingActual: z.coerce.number().min(0).max(1_000_000).optional(),
+  shippingPaid: z.coerce.number().min(0).max(1_000_000).optional(),
+  shippingRecoverable: z.coerce.number().min(0).max(1_000_000).optional(),
 };
 const confirmationProperty = { type: "string", description: "第一次 preview 回傳的短效單次 token；只有使用者確認後才能傳入。" };
 function json(result: unknown) { return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }], structuredContent: result }; }

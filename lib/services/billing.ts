@@ -8,6 +8,7 @@ const reimbursementSourceRef = (statementId: string) => `BILLING_SHIPPING_REIMBU
 
 export const billingPreviewSchema = z.object({
   channelId: z.string().min(1),
+  sourceType: z.enum(["CONSIGNMENT", "BUYOUT"]).optional(),
   periodStart: z.string().regex(datePattern),
   periodEnd: z.string().regex(datePattern),
 }).refine((value) => value.periodStart <= value.periodEnd, { message: "請款期間起日不可晚於迄日" });
@@ -19,6 +20,7 @@ const billingItemSchema = z.object({
 
 export const billingCreateSchema = z.object({
   channelId: z.string().min(1),
+  sourceType: z.enum(["CONSIGNMENT", "BUYOUT"]).optional(),
   periodStart: z.string().regex(datePattern),
   periodEnd: z.string().regex(datePattern),
   issuedAt: z.string().regex(datePattern),
@@ -50,6 +52,7 @@ type SettlementSource = {
   occurredAt: Date;
   unitPrice: Prisma.Decimal | null;
   referenceNo: string | null;
+  shipmentLine: { retailPrice: Prisma.Decimal; tradePrice: Prisma.Decimal } | null;
   product: {
     id: string;
     sku: string;
@@ -72,7 +75,9 @@ function roundMoney(value: number) {
   return Math.round((value + Number.EPSILON) * 100) / 100;
 }
 
-function sourceForChannel(type: string): { sourceType: BillingSourceType; movementType: "CONSIGN_SOLD" | "BUYOUT"; financeCategoryCode: "sales" | "wholesale" } {
+function sourceForChannel(type: string, requested?: BillingSourceType): { sourceType: BillingSourceType; movementType: "CONSIGN_SOLD" | "BUYOUT"; financeCategoryCode: "sales" | "wholesale" } {
+  if (requested === "BUYOUT" && ["CONSIGNMENT", "BUYOUT"].includes(type)) return { sourceType: "BUYOUT", movementType: "BUYOUT", financeCategoryCode: "wholesale" };
+  if (requested === "CONSIGNMENT" && type !== "CONSIGNMENT") throw new Error("此通路不支援寄賣結算");
   if (type === "CONSIGNMENT") return { sourceType: "CONSIGNMENT", movementType: "CONSIGN_SOLD", financeCategoryCode: "sales" };
   if (type === "BUYOUT") return { sourceType: "BUYOUT", movementType: "BUYOUT", financeCategoryCode: "wholesale" };
   throw new Error("請款目前僅支援寄賣與買斷通路");
@@ -89,7 +94,7 @@ async function findUnsettledMovements(db: Db, input: BillingPreviewInput, moveme
       reversalOfId: null,
       billingSource: { is: null },
     },
-    include: { product: true },
+    include: { product: true, shipmentLine: true },
     orderBy: [{ product: { sku: "asc" } }, { occurredAt: "asc" }],
   });
 }
@@ -120,12 +125,40 @@ async function getBillableShipping(db: Db, input: BillingPreviewInput, enabled: 
   }
   const all = [...groups.values()];
   const reimbursable = all.filter((group) => group.reimbursable);
+  const freightGroups = await getClaimableFreightGroups(db, input);
+  const freightFee = roundMoney(freightGroups.reduce((sum, group) => sum + group.amount, 0));
   return {
-    fee: roundMoney(all.reduce((sum, group) => sum + group.fee, 0)),
-    groupCount: all.length,
-    reimbursableFee: roundMoney(reimbursable.reduce((sum, group) => sum + group.fee, 0)),
-    reimbursableGroupCount: reimbursable.length,
+    fee: roundMoney(all.reduce((sum, group) => sum + group.fee, 0) + freightFee),
+    groupCount: all.length + freightGroups.length,
+    reimbursableFee: roundMoney(reimbursable.reduce((sum, group) => sum + group.fee, 0) + freightFee),
+    reimbursableGroupCount: reimbursable.length + freightGroups.length,
+    freightFee,
+    freightGroups,
   };
+}
+
+/** Explicit freight groups (actual / paid / recoverable) are billed through a
+ * unique BillingShippingClaim, so each group is recovered at most once across
+ * statements; voiding the statement releases the claim. */
+async function getClaimableFreightGroups(db: Db, input: BillingPreviewInput) {
+  const keys = await db.stockMovement.findMany({
+    where: {
+      channelId: input.channelId,
+      occurredAt: { gte: startOfTaipeiDate(input.periodStart), lte: endOfTaipeiDate(input.periodEnd) },
+      reversedAt: null,
+      reversalOfId: null,
+      shippingGroupKey: { not: null },
+    },
+    select: { shippingGroupKey: true },
+    distinct: ["shippingGroupKey"],
+  });
+  const groupKeys = keys.map((row) => row.shippingGroupKey).filter((key): key is string => Boolean(key));
+  if (!groupKeys.length) return [];
+  const rows = await db.shippingGroup.findMany({
+    where: { key: { in: groupKeys }, channelId: input.channelId, recoverableAmount: { gt: 0 }, claim: { is: null } },
+    orderBy: { createdAt: "asc" },
+  });
+  return rows.map((row) => ({ key: row.key, amount: Number(row.recoverableAmount) }));
 }
 
 function groupMovementQuantities(movements: Array<{ productId: string; quantity: number }>) {
@@ -149,7 +182,7 @@ function quantitiesMatch(left: Map<string, number>, right: Map<string, number>) 
 async function buildPreview(db: Db, input: BillingPreviewInput) {
   const channel = await db.channel.findUnique({ where: { id: input.channelId } });
   if (!channel || !channel.active) throw new Error("找不到可用的客戶通路");
-  const source = sourceForChannel(channel.type);
+  const source = sourceForChannel(channel.type, input.sourceType);
   const [movements, billableShipping] = await Promise.all([
     findUnsettledMovements(db, input, source.movementType),
     getBillableShipping(db, input, channel.includeShippingInBilling),
@@ -162,11 +195,15 @@ async function buildPreview(db: Db, input: BillingPreviewInput) {
     size: string | null;
     listPrice: number | null;
     quantity: number;
+    settlementPrice: number | null;
   }>();
 
   for (const movement of movements) {
     const existing = grouped.get(movement.productId);
     if (existing) {
+      const price = movement.shipmentLine ? Number(movement.shipmentLine.tradePrice) : null;
+      const retail = movement.shipmentLine ? Number(movement.shipmentLine.retailPrice) : (movement.product.listPrice === null ? null : Number(movement.product.listPrice));
+      if (existing.settlementPrice !== price || existing.listPrice !== retail) throw new Error("同一商品的來源價格不同，請縮小結算期間後再試");
       existing.quantity += movement.quantity;
     } else {
       grouped.set(movement.productId, {
@@ -174,7 +211,8 @@ async function buildPreview(db: Db, input: BillingPreviewInput) {
         sku: movement.product.sku,
         productName: movement.product.name,
         size: movement.product.size,
-        listPrice: movement.product.listPrice === null ? null : Number(movement.product.listPrice),
+        listPrice: movement.shipmentLine ? Number(movement.shipmentLine.retailPrice) : (movement.product.listPrice === null ? null : Number(movement.product.listPrice)),
+        settlementPrice: movement.shipmentLine ? Number(movement.shipmentLine.tradePrice) : null,
         quantity: movement.quantity,
       });
     }
@@ -188,6 +226,8 @@ async function buildPreview(db: Db, input: BillingPreviewInput) {
     suggestedShippingGroupCount: billableShipping.groupCount,
     suggestedReimbursableShippingFee: billableShipping.reimbursableFee,
     suggestedReimbursableShippingGroupCount: billableShipping.reimbursableGroupCount,
+    recoverableFreightFee: billableShipping.freightFee,
+    recoverableFreightGroupCount: billableShipping.freightGroups.length,
     policy: {
       settlementCycle: channel.settlementCycle,
       billingTrigger: channel.billingTrigger,
@@ -227,7 +267,7 @@ export async function createBillingStatement(input: BillingCreateInput, actor: A
       return await prisma.$transaction(async (tx) => {
         const channel = await tx.channel.findUnique({ where: { id: input.channelId } });
         if (!channel || !channel.active) throw new Error("找不到可用的客戶通路");
-        const source = sourceForChannel(channel.type);
+        const source = sourceForChannel(channel.type, input.sourceType);
 
         const quantities = groupRequestedQuantities(input.items);
         const productIds = [...quantities.keys()];
@@ -255,9 +295,12 @@ export async function createBillingStatement(input: BillingCreateInput, actor: A
         const productById = new Map(products.map((product) => [product.id, product]));
         const items = products
           .map((product) => {
-            if (product.listPrice === null) throw new Error(`商品 ${product.sku} 尚未設定建議售價`);
-            const listPrice = Number(product.listPrice);
-            const settlementPrice = roundMoney(listPrice * input.settlementRate);
+            const productSources = settlementSources.filter((movement) => movement.productId === product.id);
+            const snapshots = productSources.map((movement) => movement.shipmentLine);
+            if (snapshots.some(Boolean) && (snapshots.some((item) => !item) || snapshots.some((item) => item && (Number(item.retailPrice) !== Number(snapshots[0]?.retailPrice) || Number(item.tradePrice) !== Number(snapshots[0]?.tradePrice))))) throw new Error("同一商品的來源價格不同，請縮小結算期間後再試");
+            if (!snapshots[0] && product.listPrice === null) throw new Error(`商品 ${product.sku} 尚未設定建議售價`);
+            const listPrice = snapshots[0] ? Number(snapshots[0].retailPrice) : Number(product.listPrice);
+            const settlementPrice = snapshots[0] ? Number(snapshots[0].tradePrice) : roundMoney(listPrice * input.settlementRate);
             const quantity = quantities.get(product.id) ?? 0;
             return {
               productId: product.id,
@@ -275,6 +318,7 @@ export async function createBillingStatement(input: BillingCreateInput, actor: A
         const subtotal = roundMoney(items.reduce((sum, item) => sum + item.subtotal, 0));
         const taxAmount = roundMoney(subtotal * input.taxRate);
         const shippingFee = roundMoney(input.shippingFee);
+        if (shippingFee + 0.001 < billableShipping.freightFee) throw new Error(`本期有 ${billableShipping.freightGroups.length} 筆出貨待回收運費共 ${billableShipping.freightFee}，請款運費不可少於此金額；若要少收，請到出貨單調整「向通路回收」金額`);
         const reimbursableShippingFee = roundMoney(Math.min(shippingFee, billableShipping.reimbursableFee));
         const regularShippingFee = roundMoney(shippingFee - reimbursableShippingFee);
         const revenueAmount = roundMoney(subtotal + taxAmount + regularShippingFee);
@@ -314,6 +358,12 @@ export async function createBillingStatement(input: BillingCreateInput, actor: A
           },
           include: { items: true, channel: true },
         });
+
+        if (billableShipping.freightGroups.length > 0) {
+          await tx.billingShippingClaim.createMany({
+            data: billableShipping.freightGroups.map((group) => ({ groupKey: group.key, statementId: statement.id, amount: group.amount })),
+          });
+        }
 
         if (settlementSources.length > 0) {
           await tx.billingStatementSource.createMany({
@@ -411,6 +461,7 @@ export async function createBillingStatement(input: BillingCreateInput, actor: A
               shippingFee,
               reimbursableShippingFee,
               regularShippingFee,
+              freightClaimKeys: billableShipping.freightGroups.map((group) => group.key),
               entryMode: settlementSources.length ? "SETTLEMENT" : "MANUAL",
               itemCount: items.length,
               sourceMovementCount: settlementSources.length,
@@ -496,6 +547,7 @@ export async function voidBillingStatement(id: string, actor: Actor) {
 
     const movementIds = existing.sources.map((source) => source.movementId);
     if (movementIds.length > 0) await tx.billingStatementSource.deleteMany({ where: { statementId: id } });
+    const releasedFreight = await tx.billingShippingClaim.deleteMany({ where: { statementId: id } });
     const updated = await tx.billingStatement.update({ where: { id }, data: { status: "VOID" } });
     await tx.financeTransaction.updateMany({
       where: { sourceRef: { in: [`BILLING:${id}`, reimbursementSourceRef(id)] } },
@@ -507,7 +559,7 @@ export async function voidBillingStatement(id: string, actor: Actor) {
         action: "BILLING_STATEMENT_VOIDED",
         entityType: "BillingStatement",
         entityId: id,
-        metadata: { statementNo: existing.statementNo, releasedSourceCount: movementIds.length, movementIds, financeVoided: true },
+        metadata: { statementNo: existing.statementNo, releasedSourceCount: movementIds.length, movementIds, releasedFreightClaimCount: releasedFreight.count, financeVoided: true },
         ipAddress: actor.ipAddress ?? null,
       },
     });

@@ -8,6 +8,7 @@ export async function GET(request: Request) {
     const url = new URL(request.url);
     const parsed = billingPreviewSchema.safeParse({
       channelId: url.searchParams.get("channelId"),
+      sourceType: url.searchParams.get("sourceType") || undefined,
       periodStart: url.searchParams.get("periodStart"),
       periodEnd: url.searchParams.get("periodEnd"),
     });

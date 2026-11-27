@@ -55,6 +55,7 @@ export function MovementBatchEntry({ products, channels }: { products: Product[]
   const [shippingMethod, setShippingMethod] = useState("");
   const [shippingFee, setShippingFee] = useState("");
   const [shippingPayer, setShippingPayer] = useState("");
+  const [shippingRecoverable, setShippingRecoverable] = useState("");
   const [shippingGroupKey, setShippingGroupKey] = useState(() => crypto.randomUUID());
   const [rows, setRows] = useState<BatchRow[]>([emptyRow("initial")]);
   const [message, setMessage] = useState("");
@@ -136,7 +137,10 @@ export function MovementBatchEntry({ products, channels }: { products: Product[]
     const missingPriceIndex = isSale(type) ? activeRows.findIndex((row) => row.unitPrice === "" || Number(row.unitPrice) < 0) : -1;
     if (missingPriceIndex >= 0) return setMessage(`第 ${missingPriceIndex + 1} 筆需要填成交單價`);
     if (shippingEnabled && shippingFee !== "" && Number(shippingFee) < 0) return setMessage("運費不能小於 0");
-    if (shippingPayer === "REIMBURSABLE" && !supportsReimbursable) return setMessage("公司代墊運費只能用在寄賣或買斷通路");
+    if ((shippingPayer === "REIMBURSABLE" || shippingPayer === "SPLIT") && !supportsReimbursable) return setMessage("公司代墊運費只能用在寄賣或買斷通路");
+    const splitFreight = shippingEnabled && shippingPayer === "SPLIT";
+    if (splitFreight && (shippingFee === "" || shippingRecoverable === "")) return setMessage("部分分攤請填寫實際運費與向通路回收金額");
+    if (splitFreight && (Number(shippingRecoverable) < 0 || Number(shippingRecoverable) > Number(shippingFee))) return setMessage("向通路回收的運費需介於 0 與實際運費之間");
 
     setLoading(true);
     let created = 0;
@@ -155,9 +159,10 @@ export function MovementBatchEntry({ products, channels }: { products: Product[]
           referenceNo,
           note: [commonNote, row.note].filter(Boolean).join("；"),
           shippingMethod: shippingEnabled ? shippingMethod : "",
-          shippingFee: shippingEnabled ? shippingFee : "",
-          shippingPayer: shippingEnabled ? shippingPayer : "",
+          shippingFee: shippingEnabled && !splitFreight ? shippingFee : "",
+          shippingPayer: shippingEnabled && !splitFreight ? shippingPayer : "",
           shippingGroupKey: shippingEnabled ? shippingGroupKey : "",
+          ...(splitFreight ? { shippingActual: shippingFee, shippingPaid: shippingFee, shippingRecoverable } : {}),
         }),
       });
       const result = await response.json();
@@ -175,7 +180,9 @@ export function MovementBatchEntry({ products, channels }: { products: Product[]
     setRows([emptyRow()]);
     setShippingGroupKey(crypto.randomUUID());
     const hasShippingExpense = shippingEnabled && Number(shippingFee || 0) > 0 && ["COMPANY", "REIMBURSABLE"].includes(shippingPayer || "COMPANY");
-    const shippingMessage = shippingPayer === "REIMBURSABLE"
+    const shippingMessage = splitFreight
+      ? `這次只建立 1 筆運費財務支出，其中 ${shippingRecoverable} 元會在 B2B 請款時向通路回收一次。`
+      : shippingPayer === "REIMBURSABLE"
       ? "這次只建立 1 筆運費財務支出，並標記為後續 B2B 請款回收。"
       : hasShippingExpense ? "這次寫入只建立 1 筆運費財務支出。" : "";
     setMessage(`已寫入 ${created} 筆；日期、事件、通路、單號與物流設定已保留。${shippingMessage}`);
@@ -186,6 +193,8 @@ export function MovementBatchEntry({ products, channels }: { products: Product[]
     ? "不產生物流支出"
     : shippingPayer === "REIMBURSABLE"
       ? "先記支出，結算時再回收"
+      : shippingPayer === "SPLIT"
+        ? "先記全額支出，結算時回收部分"
       : (shippingPayer || "COMPANY") === "COMPANY"
         ? "每批只建立 1 筆運費支出"
         : "不建立公司物流支出";
@@ -207,7 +216,8 @@ export function MovementBatchEntry({ products, channels }: { products: Product[]
       <div className="form-grid" style={{ padding: 0, marginTop: 16 }}>
         <div className="field"><label>收送貨方式</label><input className="input" list="movement-batch-shipping-methods" value={shippingMethod} onChange={(event) => setShippingMethod(event.target.value)} disabled={!shippingEnabled} placeholder={shippingEnabled ? "通路有預設時會自動帶入" : "此事件不需物流"} /></div>
         <div className="field"><label>運費</label><input className="input" type="number" min="0" step="1" value={shippingFee} onChange={(event) => setShippingFee(event.target.value)} disabled={!shippingEnabled} placeholder={shippingEnabled ? "0" : "—"} /></div>
-        <div className="field"><label>運費處理</label><select className="select" value={shippingPayer} onChange={(event) => setShippingPayer(event.target.value)} disabled={!shippingEnabled}><option value="">自動（依通路預設）</option><option value="COMPANY">公司負擔（公司吸收）</option>{supportsReimbursable && <option value="REIMBURSABLE">公司代墊（後續請款）</option>}<option value="CUSTOMER">客戶直接負擔</option><option value="CHANNEL">通路直接負擔</option><option value="SUPPLIER">供應商負擔</option></select></div>
+        <div className="field"><label>運費處理</label><select className="select" value={shippingPayer} onChange={(event) => setShippingPayer(event.target.value)} disabled={!shippingEnabled}><option value="">自動（依通路預設）</option><option value="COMPANY">公司負擔（公司吸收）</option>{supportsReimbursable && <option value="REIMBURSABLE">公司代墊（後續請款）</option>}{supportsReimbursable && <option value="SPLIT">公司代墊・部分分攤</option>}<option value="CUSTOMER">客戶直接負擔</option><option value="CHANNEL">通路直接負擔</option><option value="SUPPLIER">供應商負擔</option></select></div>
+        {shippingEnabled && shippingPayer === "SPLIT" && <div className="field"><label>向通路回收</label><input className="input" type="number" min="0" step="1" value={shippingRecoverable} onChange={(event) => setShippingRecoverable(event.target.value)} placeholder="例如 80" /></div>}
         <div className="field"><label>財務同步</label><div className="input" style={{ display: "flex", alignItems: "center", color: "var(--muted)", cursor: "default" }}>{financeSyncText}</div></div>
       </div>
 

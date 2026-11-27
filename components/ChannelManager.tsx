@@ -30,6 +30,8 @@ type Channel = {
   billingWithinDays: number | null;
   includeShippingInBilling: boolean;
   requiresSalesInvoice: boolean;
+  shippingWorkbookId: string | null;
+  shippingTemplateTab: string | null;
   defaultShippingMethod: string | null;
   defaultShippingFee: number | null;
   defaultShippingPayer: string | null;
@@ -50,6 +52,8 @@ type ChannelDraft = {
   billingWithinDays: string;
   includeShippingInBilling: boolean;
   requiresSalesInvoice: boolean;
+  shippingWorkbookId: string;
+  shippingTemplateTab: string;
   defaultShippingMethod: string;
   defaultShippingFee: string;
   defaultShippingPayer: string;
@@ -122,6 +126,8 @@ function toDraft(channel: Channel): ChannelDraft {
     billingWithinDays: channel.billingWithinDays == null ? (channel.type === "BUYOUT" ? "7" : "") : String(channel.billingWithinDays),
     includeShippingInBilling: channel.defaultShippingPayer === "REIMBURSABLE" ? true : channel.includeShippingInBilling,
     requiresSalesInvoice: channel.requiresSalesInvoice,
+    shippingWorkbookId: channel.shippingWorkbookId ?? "",
+    shippingTemplateTab: channel.shippingTemplateTab ?? "",
     defaultShippingMethod: channel.defaultShippingMethod ?? "",
     defaultShippingFee: channel.defaultShippingFee == null ? "" : String(channel.defaultShippingFee),
     defaultShippingPayer: channel.defaultShippingPayer ?? "COMPANY",
@@ -206,6 +212,8 @@ export function ChannelManager({ channels, canWrite }: { channels: Channel[]; ca
     setLoadingId(editing.id); setMessage("");
     const nullable = (value: string) => value.trim() || null;
     const payload: Record<string, unknown> = {
+      shippingWorkbookId: nullable(draft.shippingWorkbookId),
+      shippingTemplateTab: nullable(draft.shippingTemplateTab),
       defaultShippingMethod: nullable(draft.defaultShippingMethod),
       defaultShippingFee: draft.defaultShippingFee === "" ? null : Number(draft.defaultShippingFee),
       defaultShippingPayer: nullable(draft.defaultShippingPayer),
@@ -334,6 +342,8 @@ export function ChannelManager({ channels, canWrite }: { channels: Channel[]; ca
                   <div style={{ marginBottom: 22 }}>
                     <div className="billing-list-head" style={{ marginBottom: 12 }}><div><span>SHIPPING</span><h3>物流 / 運費預設</h3><p className="helper">新增庫存異動時會自動帶入，當次仍可修改；「公司代墊」會先記實際物流支出，再於 B2B 結算自動帶入待回收運費。</p></div></div>
                     <div className="billing-three-col">
+                      <div className="field"><label>出貨工作簿 ID</label><input className="input" value={draft.shippingWorkbookId} onChange={(event) => setDraft({ ...draft, shippingWorkbookId: event.target.value })} /></div>
+                      <div className="field"><label>出貨範本頁籤</label><input className="input" value={draft.shippingTemplateTab} onChange={(event) => setDraft({ ...draft, shippingTemplateTab: event.target.value })} /></div>
                       <div className="field"><label>預設收送貨方式</label><input className="input" list="channel-shipping-methods" value={draft.defaultShippingMethod} onChange={(event) => setDraft({ ...draft, defaultShippingMethod: event.target.value })} placeholder="例如 7-11 店到店" /></div>
                       <div className="field"><label>預設運費</label><input className="input" type="number" min="0" step="1" value={draft.defaultShippingFee} onChange={(event) => setDraft({ ...draft, defaultShippingFee: event.target.value })} placeholder="0" /></div>
                       <div className="field"><label>預設運費處理</label><select className="select" value={draft.defaultShippingPayer} onChange={(event) => {

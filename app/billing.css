@@ -93,3 +93,19 @@
 
 /* Direct PDF/XLSX downloads were retired in #84; guide staff to Google Sheets. */
 .billing-export-hint { margin: 6px 0 0; font-size: 12px; color: var(--text-muted, #71717a); }
+
+/* Dealer shipment notes */
+.shipment-freight { display: grid; gap: 10px; }
+.shipment-freight-presets { display: flex; flex-wrap: wrap; gap: 6px; }
+.shipment-freight-presets .btn { padding: 6px 10px; font-size: 11px; }
+.shipment-actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-top: 12px; }
+.shipment-actions .billing-create-button { flex: 1; }
+.shipment-row-actions { display: flex; flex-wrap: wrap; gap: 6px; justify-content: flex-end; }
+.shipment-row-actions .btn { padding: 6px 9px; font-size: 11px; gap: 5px; white-space: nowrap; }
+.shipment-filter { display: flex; gap: 6px; }
+.shipment-filter .btn { padding: 6px 12px; font-size: 11px; }
+.shipment-freight-row td { background: var(--surface-muted, #f7f6f1); }
+@media (max-width: 760px) {
+  .shipment-freight .billing-three-col { grid-template-columns: 1fr; }
+  .shipment-row-actions { justify-content: flex-start; }
+}

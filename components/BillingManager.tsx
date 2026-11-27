@@ -57,7 +57,7 @@ type AutofillResult = {
     includeShippingInBilling: boolean;
     requiresSalesInvoice: boolean;
   };
-  items: Array<{ productId: string; sku: string; productName: string; size: string | null; listPrice: number | null; quantity: number }>;
+  items: Array<{ productId: string; sku: string; productName: string; size: string | null; listPrice: number | null; settlementPrice: number | null; quantity: number }>;
 };
 
 const statusLabels = { DRAFT: "草稿", ISSUED: "待收款", PAID: "已收款", VOID: "已作廢" } as const;
@@ -108,6 +108,8 @@ export function BillingManager({
   const range = localMonthRange();
   const initialChannel = channels[0] ?? null;
   const [channelId, setChannelId] = useState(initialChannel?.id ?? "");
+  const [sourceType, setSourceType] = useState<"" | "CONSIGNMENT" | "BUYOUT">("");
+  const [sourcePrices, setSourcePrices] = useState<Record<string, { listPrice: number | null; settlementPrice: number | null }>>({});
   const [periodStart, setPeriodStart] = useState(range.start);
   const [periodEnd, setPeriodEnd] = useState(range.end);
   const [issuedAt, setIssuedAt] = useState(range.today);
@@ -124,6 +126,7 @@ export function BillingManager({
   const [saving, setSaving] = useState(false);
   const [search, setSearch] = useState("");
   const [autofillLoading, setAutofillLoading] = useState(false);
+  const [autofillFailed, setAutofillFailed] = useState(false);
   const [autofillMessage, setAutofillMessage] = useState("");
   const [autofillSourceCount, setAutofillSourceCount] = useState(0);
   const [sourceMovementIds, setSourceMovementIds] = useState<string[]>([]);
@@ -141,18 +144,22 @@ export function BillingManager({
     const controller = new AbortController();
     const timer = setTimeout(async () => {
       setAutofillLoading(true);
+      setAutofillFailed(false);
       setAutofillMessage("");
       try {
         const params = new URLSearchParams({ channelId, periodStart, periodEnd });
+        if (sourceType) params.set("sourceType", sourceType);
         const response = await fetch(`/api/billing/preview?${params}`, { signal: controller.signal });
         const result = await response.json() as AutofillResult & { error?: string };
         if (!response.ok) {
+          setAutofillFailed(true);
           setAutofillMessage(result.error ?? "讀取待結算銷貨失敗");
           return;
         }
         const nextRows: ItemRow[] = result.items.length > 0
           ? result.items.map((item, index) => ({ id: index + 1, productId: item.productId, quantity: String(item.quantity) }))
           : [{ id: 1, productId: "", quantity: "1" }];
+        setSourcePrices(Object.fromEntries(result.items.map((item) => [item.productId, { listPrice: item.listPrice, settlementPrice: item.settlementPrice }])));
         setRows(nextRows);
         setNextRowId(nextRows.length + 1);
         setSourceMovementIds(result.sourceMovementIds ?? []);
@@ -172,13 +179,13 @@ export function BillingManager({
           ? `找到 ${result.sourceMovementCount} 筆尚未結算銷貨，已彙整成 ${result.items.length} 個 SKU${shippingText}。建立後會鎖定銷貨來源並同步一筆應收到收支。`
           : `這個期間沒有尚未結算的銷貨${shippingText}；若是例外請款，仍可手動新增品項。`);
       } catch (error) {
-        if ((error as Error).name !== "AbortError") setAutofillMessage("讀取待結算銷貨失敗，你仍然可以手動建立請款。");
+        if ((error as Error).name !== "AbortError") { setAutofillFailed(true); setAutofillMessage("讀取待結算銷貨失敗，請重新整理。"); }
       } finally {
         if (!controller.signal.aborted) setAutofillLoading(false);
       }
     }, 250);
     return () => { clearTimeout(timer); controller.abort(); };
-  }, [channelId, periodStart, periodEnd, autofillVersion]);
+  }, [channelId, periodStart, periodEnd, autofillVersion, sourceType]);
 
   const previewItems = useMemo(() => {
     const grouped = new Map<string, { product: Product; quantity: number }>();
@@ -191,17 +198,18 @@ export function BillingManager({
       else grouped.set(product.id, { product, quantity });
     }
     return [...grouped.values()].map(({ product, quantity }) => {
-      const listPrice = product.listPrice ?? 0;
-      const settlementPrice = roundMoney(listPrice * (Number.isFinite(settlementRate) ? settlementRate : 0));
+      const snapshot = autoSettlement ? sourcePrices[product.id] : undefined;
+      const listPrice = snapshot?.listPrice ?? product.listPrice ?? 0;
+      const settlementPrice = snapshot?.settlementPrice ?? roundMoney(listPrice * (Number.isFinite(settlementRate) ? settlementRate : 0));
       return { product, quantity, listPrice, settlementPrice, subtotal: roundMoney(settlementPrice * quantity) };
     }).sort((a, b) => a.product.sku.localeCompare(b.product.sku, "zh-Hant", { numeric: true }));
-  }, [rows, productById, settlementRate]);
+  }, [rows, productById, settlementRate, autoSettlement, sourcePrices]);
 
   const subtotal = roundMoney(previewItems.reduce((sum, item) => sum + item.subtotal, 0));
   const taxAmount = roundMoney(subtotal * (Number.isFinite(taxRate) ? taxRate : 0));
   const totalAmount = roundMoney(subtotal + taxAmount + (Number.isFinite(shipping) ? shipping : 0));
   const hasMissingPrice = previewItems.some((item) => item.product.listPrice == null);
-  const canCreate = Boolean(channel)
+  const canCreate = !autofillLoading && !autofillFailed && Boolean(channel)
     && periodStart <= periodEnd
     && Number.isFinite(settlementRate) && settlementRate > 0 && settlementRate <= 1
     && Number.isFinite(taxRate) && taxRate >= 0 && taxRate <= 1
@@ -248,6 +256,7 @@ export function BillingManager({
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
         channelId,
+        ...(sourceType ? { sourceType } : {}),
         periodStart,
         periodEnd,
         issuedAt,
@@ -284,6 +293,7 @@ export function BillingManager({
       <div className="panel billing-form-panel">
         <div className="billing-section-head"><span>01 / SETTLEMENT</span><h2>建立結算</h2></div>
         {message && <div className="form-error">{message}</div>}
+        <div className="field"><label>結算來源</label><select className="select" value={sourceType} onChange={(event) => setSourceType(event.target.value as "" | "CONSIGNMENT" | "BUYOUT")}><option value="">通路預設</option><option value="CONSIGNMENT">寄賣售出</option><option value="BUYOUT">買斷</option></select></div>
         <div className="field"><label>客戶 / 通路</label><select className="select" value={channelId} onChange={(event) => selectChannel(event.target.value)}><option value="">選擇客戶</option>{channels.map((item) => <option key={item.id} value={item.id}>{item.name} · {item.type === "CONSIGNMENT" ? "寄賣" : "買斷"}</option>)}</select></div>
         {channel && <div className="billing-customer-card">
           <div><Store size={16} /><strong>{channel.companyName || channel.name}</strong></div>
